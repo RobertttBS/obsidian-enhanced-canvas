@@ -1,7 +1,7 @@
 # Obsidian - Enhanced Canvas
 # Overview
 
-This Obsidian plugin manages node connections in Canvas and automatically synchronizes them with the related property in notes. It streamlines the visualization and maintenance of document relationships within your notes and Canvas.
+This Obsidian plugin manages node connections in Canvas and automatically synchronizes them with the `related` property in notes. It streamlines the visualization and maintenance of document relationships within your notes and Canvas.
 
 **The most exciting thing is that creating edges in canvas results in the Graph View connection due to the establishment of the markdown link.**
 
@@ -39,7 +39,7 @@ When removing a Canvas edge (link):
 
 When updating edge destination endpoints:
 - Automatically synchronizes the source node's `related` property
-- Ensures bidirectional consistency between Canvas visual representations and markdown-linked related properties
+- Ensures bidirectional consistency between Canvas visual representations and markdown-linked `related` properties
 
 ![Updating Edges in Canvas](./UpdatingEdge.gif)
 
@@ -52,6 +52,38 @@ When updating edge destination endpoints:
     - Automatically create Canvas edges (links) between nodes that have Markdown link relationships
 
 ![Command Usage](./CommandUsage.gif)
+
+## Manual Installation Steps
+
+### 1. Create Plugin Directory
+- Create a new folder in your plugins directory: `<vault>/.obsidian/plugins/`
+  (where `<vault>` is your Obsidian vault root directory)
+- Complete path example: `<vault>/.obsidian/plugins/obsidian-enhanced-canvas/`
+
+### 2. Download Required Files
+Download the following files from the plugin's GitHub Release page and place them in the newly created folder:
+
+Required files:
+- `main.js` - Main plugin code
+- `manifest.json` - Plugin configuration file
+Optional file:
+- `styles.css` - Custom stylesheet
+
+### 3. Restart Obsidian
+- Close and reopen Obsidian
+
+### 4. Enable the Plugin
+- Open Settings
+- Navigate to Community plugins
+- Locate the installed plugin in the list
+- Toggle the switch to enable the plugin
+
+### Notes
+- You can obtain the plugin files through either:
+  	- Download from the plugin's GitHub Release page
+	- Build from source: Clone the repository and compile it yourself
+		- `npm i` (Node.js and npm are prerequisites)
+		- `npm run dev`
 
 
 # Contributing
