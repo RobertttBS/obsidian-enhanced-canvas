@@ -21,74 +21,62 @@ export default class LinkNodesInCanvas extends Plugin {
 			name: 'Auto connect nodes and adjust edge with shortest path',
 			checkCallback: (checking: boolean) => {
 				const canvasView = this.app.workspace.getActiveViewOfType(ItemView);
-				if (canvasView?.getViewType() === "canvas") {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						// @ts-ignore
-						const canvas = canvasView.canvas;
-						const selection = canvas.selection;
-						const currentData = canvas.getData();
-						// @ts-ignore
-						const selectedNodes = Array.from(selection);
-
-						// @ts-ignore
-						const fileNodes = Array.from(selection).filter((node) => node?.filePath !== undefined && node?.filePath !== null); ;
-
-						const resolvedLinks = this.app.metadataCache.resolvedLinks;
-						const allEdgesData: CanvasEdgeData[] = [];
-						fileNodes.forEach((node) => {
-							// @ts-ignore
-							if (!node.filePath || !resolvedLinks[node.filePath]) {
-								return;
-							}
-							// @ts-ignore
-							const allLinks = (Object.keys(resolvedLinks[node.filePath]) as Array<string>);
-							for (let i = 0; i < fileNodes.length; i++) {
-								// @ts-ignore
-								if (allLinks.includes(fileNodes[i].filePath)) { 
-									if (node !== fileNodes[i]) { // fileNodes[i] is linked to node
-										const newEdge = this.createEdge(node, fileNodes[i]);
-
-										// find if the edge already exists
-										const existingEdgeIndex = currentData.edges.findIndex((edge: CanvasEdgeData) => 
-											edge.fromNode === newEdge.fromNode && edge.toNode === newEdge.toNode
-										);
-
-										if (existingEdgeIndex === -1) {
-											allEdgesData.push(newEdge);
-										}
-									}
-								}
-							}
-						});
-
-						currentData.edges = [
-							...currentData.edges,
-							...allEdgesData,
-						];
-
-						const currentEdges = currentData.edges;
-						currentEdges.forEach((edge: CanvasEdgeData) => {
-							if (edge.fromNode && edge.toNode) {
-								const fromNode = currentData.nodes.find((node: any) => node.id === edge.fromNode);
-								const toNode = currentData.nodes.find((node: any) => node.id === edge.toNode);
-
-								const newEdge = this.createEdge(fromNode, toNode);
-
-								// find if the edge already exists
-								if (edge.fromSide !== newEdge.fromSide || edge.toSide !== newEdge.toSide) {
-									edge.fromSide = newEdge.fromSide;
-									edge.toSide = newEdge.toSide;
-								}
-							}
-						});
-
-						canvas.setData(currentData);
-						canvas.requestSave();
-					}
+				if (canvasView?.getViewType() !== "canvas") {
+					return false;
+				}
+			
+				if (checking) {
 					return true;
 				}
+			
+				const canvas = canvasView.canvas;
+				const selectedNodes = Array.from(canvas.selection);
+				const fileNodes = selectedNodes.filter(node => node?.filePath);
+				const resolvedLinks = this.app.metadataCache.resolvedLinks;
+				const allEdgesData: CanvasEdgeData[] = [];
+			
+				// get all existing edges
+				const existingEdgesSet = new Set(canvas.getData().edges.map(edge => `${edge.fromNode}->${edge.toNode}`));
+			
+				fileNodes.forEach(node => {
+					if (!node.filePath || !resolvedLinks[node.filePath]) {
+						return;
+					}
+			
+					const allLinksSet = new Set(Object.keys(resolvedLinks[node.filePath]));
+					fileNodes.forEach(targetNode => {
+						if (allLinksSet.has(targetNode.filePath) && node !== targetNode) {
+							const newEdge = this.createEdge(node, targetNode);
+							const edgeKey = `${newEdge.fromNode}->${newEdge.toNode}`;
+							if (!existingEdgesSet.has(edgeKey)) {
+								allEdgesData.push(newEdge);
+								existingEdgesSet.add(edgeKey);
+							}
+						}
+					});
+				});
+			
+				const currentData = canvas.getData();
+				currentData.edges.push(...allEdgesData);
+			
+				// adjust edge with shortest path
+				currentData.edges.forEach(edge => {
+					if (edge.fromNode && edge.toNode) {
+						const fromNode = currentData.nodes.find(node => node.id === edge.fromNode);
+						const toNode = currentData.nodes.find(node => node.id === edge.toNode);
+						if (fromNode && toNode) {
+							const updatedEdge = this.createEdge(fromNode, toNode);
+							if (edge.fromSide !== updatedEdge.fromSide || edge.toSide !== updatedEdge.toSide) {
+								edge.fromSide = updatedEdge.fromSide;
+								edge.toSide = updatedEdge.toSide;
+							}
+						}
+					}
+				});
+			
+				canvas.setData(currentData);
+				canvas.requestSave();
+				return true;
 			}
 		});
 	}
@@ -174,19 +162,7 @@ export default class LinkNodesInCanvas extends Plugin {
 				const fromFile = this.app.vault.getFileByPath(fromNode.filePath);
 				if (!fromFile) return;
 
-				this.app.fileManager.processFrontMatter(fromFile, (frontmatter) => {
-					if (!frontmatter || !frontmatter.related) return;
-			
-					if (!Array.isArray(frontmatter.related)) {
-						frontmatter.related = [frontmatter.related];
-					}
-			
-					frontmatter.related = frontmatter.related.filter(l => l !== link);
-			
-					if (frontmatter.related.length === 0) {
-						delete frontmatter.related;
-					}
-				});
+				updateFrontmatterRelated(fromFile, link, 'remove');
 			}
 		};
 
@@ -281,11 +257,8 @@ export default class LinkNodesInCanvas extends Plugin {
 
 		// compute angle between two nodes
 		const angle = Math.atan2(node2.y - node1.y, node2.x - node1.x) * 180 / Math.PI;
-    
-		// normalize angle to 0-360
 		const normalizedAngle = angle < 0 ? angle + 360 : angle;
 		
-		// determine the side of the node to connect
 		let fromSide: NodeSide;
 		let toSide: NodeSide;
 		
