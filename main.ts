@@ -136,7 +136,7 @@ export default class LinkNodesInCanvas extends Plugin {
 					.map(node => node.file)
 			);
 		
-			// 移除不相關的連結
+			// remove unrelated link
 			fromNodeLinks.forEach(filePath => {
 				if (!edgeToNodesFilePathSet.has(filePath)) {
 					const targetFile = this.app.vault.getFileByPath(filePath);
@@ -147,7 +147,7 @@ export default class LinkNodesInCanvas extends Plugin {
 				}
 			});
 		
-			// 添加新的相關連結
+			// add related link
 			if (toNode?.filePath) {
 				const targetFile = this.app.vault.getFileByPath(toNode.filePath);
 				if (!targetFile) return;
