@@ -97,16 +97,62 @@ export default class LinkNodesInCanvas extends Plugin {
 
 	registerCanvasAutoLink() {
 		const updateTargetNode = debounce(async (e: any) => {
-			if (!e.to.node.filePath) return;
+			
 			if (!e.from.node?.filePath && !Object.hasOwn(e.from.node, 'text')) return;
 
+			const fromFile = this.app.vault.getFileByPath(e.from.node.filePath);
+
+			// Get all resolved links from fromNode
+			const resolvedLinks = this.app.metadataCache.resolvedLinks;
+			const fromNodeLinks = (Object.keys(resolvedLinks[e.from.node.filePath]) as Array<string>);
+
+			// Get all edges from fromNode
+			const currentData = e.canvas.getData();
+			const allEdges = currentData.edges;
+			const fromNodeEdges = allEdges.filter((edge: CanvasEdgeData) => edge.fromNode === e.from.node.id);
+
+			// Find all files that edge.to points to
+			const edgeToNodes = fromNodeEdges.map((edge: CanvasEdgeData) => {
+				return currentData.nodes.find((node: any) => node.id === edge.toNode);
+			});
+
+			// 拿到 edgeToNodes 對應的 filePath
+			const edgeToNodesFilePath = edgeToNodes.map((node: any) => node.file);
+
+			// 遍歷 fromNode 的所有 resolved link，如果不在 edgeToNodesFilePath 裡面，就從 frontmatter.related 移除
+			fromNodeLinks.forEach((filePath: string) => {
+				if (!edgeToNodesFilePath.includes(filePath)) {
+					const targetFile = this.app.vault.getFileByPath(filePath);
+					if (!targetFile) return;
+
+					let link = this.app.fileManager.generateMarkdownLink(targetFile, filePath);
+					link = link.replace(/^!(\[\[.*\]\])$/, '$1');
+
+					if (!fromFile) return;
+					this.app.fileManager.processFrontMatter(fromFile, (frontmatter) => {
+						if (!frontmatter || !frontmatter.related) return;
+				
+						if (!Array.isArray(frontmatter.related)) {
+							frontmatter.related = [frontmatter.related];
+						}
+				
+						frontmatter.related = frontmatter.related.filter(l => l !== link);
+				
+						if (frontmatter.related.length === 0) {
+							delete frontmatter.related;
+						}
+					});
+				}
+			});
+
+
+			// with to.node.filePath, we can get the file object
+			if (!e.to.node.filePath) return;
 			const file = this.app.vault.getFileByPath(e.to.node.filePath);
 			if (!file) return;
 
 			let link = this.app.fileManager.generateMarkdownLink(file, e.canvas.view.file.path);
 			link = link.replace(/^!(\[\[.*\]\])$/, '$1');
-
-			console.log('updateTargetNode with link ', link);
 
 			if (e.from.node.filePath) {
 				const fromFile = this.app.vault.getFileByPath(e.from.node.filePath);
@@ -124,18 +170,6 @@ export default class LinkNodesInCanvas extends Plugin {
 					}
 				});
 			}
-
-			// 先拿出 fromNode 裡面所有的 resolved link
-
-			// 拿出 fromNode 的所有 edge 的 toNode 的 filePath
-
-			// 遍歷 fromNode 的所有 resolved link
-
-			// 如果該 resolved link 沒被包含在所有 edge.to 指到的檔案，且該 resolved link 在 frontmatter.related 裡面
-
-			// 就把該 resolved link 從 frontmatter.related 裡面刪除
-
-
 		}, 1000);
 
 		const updateOriginalNode = async (edge: any) => {
@@ -179,11 +213,12 @@ export default class LinkNodesInCanvas extends Plugin {
 					return function (...args: any[]) {
 						const result = next.call(this, ...args);
 						updateTargetNode(this);
-						
 						return result;
 					};
 				}
 			});
+
+			console.log('patch edge success');
 		};
 
 		const self = this;
@@ -217,7 +252,6 @@ export default class LinkNodesInCanvas extends Plugin {
 			around(canvas.constructor.prototype, {
 				addEdge: (next: any) => {
 					return function (edge: any) {
-						console.warn('addEdge', edge);
 						const result = next.call(this, edge);
 						if (!self.patchedEdge) {
 							selfPatched(edge);
