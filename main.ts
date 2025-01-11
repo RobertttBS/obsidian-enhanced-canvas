@@ -116,10 +116,10 @@ export default class LinkNodesInCanvas extends Plugin {
 				return currentData.nodes.find((node: any) => node.id === edge.toNode);
 			});
 
-			// 拿到 edgeToNodes 對應的 filePath
+			// Get the filePath corresponding to edgeToNodes
 			const edgeToNodesFilePath = edgeToNodes.map((node: any) => node.file);
 
-			// 遍歷 fromNode 的所有 resolved link，如果不在 edgeToNodesFilePath 裡面，就從 frontmatter.related 移除
+			// Iterate through all resolved links of fromNode, if not present in edgeToNodesFilePath, remove it from frontmatter.related
 			fromNodeLinks.forEach((filePath: string) => {
 				if (!edgeToNodesFilePath.includes(filePath)) {
 					const targetFile = this.app.vault.getFileByPath(filePath);
