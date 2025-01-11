@@ -1,11 +1,11 @@
 {
-	"id": "auto-canvas-connector",
-	"name": "Auto Canvas Connector",
+	"id": "obsidian-enhanced-canvas",
+	"name": "Enhanced Canvas",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"description": "When creating links on Canvas, automatically add properties and Markdown links to notes. A command automatically creates canvas links based on Markdown links, and it adjusts all links to use the shortest path.",
+	"author": "RobertttBS",
+	"authorUrl": "https://github.com/RobertttBS/",
+	"fundingUrl": "https://buymeacoffee.com/robertttbs",
 	"isDesktopOnly": false
 }

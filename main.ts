@@ -10,14 +10,14 @@ export default class LinkNodesInCanvas extends Plugin {
 	public patchedEdge: boolean; // flag to check if edge is patched
 
 	async onload() {
-		console.log('Loading Auto Canvas Connector plugin');
+		console.log('Loading Enhanced Canvas');
 		this.registerCustomCommands();
 		this.registerCanvasAutoLink();
 	}
 
 	registerCustomCommands() {
 		this.addCommand({
-			id: 'auto-canvas-connector',
+			id: 'obsidian-enhanced-canvas',
 			name: 'Auto connect nodes and adjust edge with shortest path',
 			checkCallback: (checking: boolean) => {
 				const canvasView = this.app.workspace.getActiveViewOfType(ItemView);
@@ -71,7 +71,6 @@ export default class LinkNodesInCanvas extends Plugin {
 						const currentEdges = currentData.edges;
 						currentEdges.forEach((edge: CanvasEdgeData) => {
 							if (edge.fromNode && edge.toNode) {
-
 								const fromNode = currentData.nodes.find((node: any) => node.id === edge.fromNode);
 								const toNode = currentData.nodes.find((node: any) => node.id === edge.toNode);
 
@@ -88,7 +87,6 @@ export default class LinkNodesInCanvas extends Plugin {
 						canvas.setData(currentData);
 						canvas.requestSave();
 					}
-
 					return true;
 				}
 			}
@@ -97,7 +95,6 @@ export default class LinkNodesInCanvas extends Plugin {
 
 	registerCanvasAutoLink() {
 		const updateTargetNode = debounce(async (e: any) => {
-			
 			if (!e.from.node?.filePath && !Object.hasOwn(e.from.node, 'text')) return;
 
 			const fromFile = this.app.vault.getFileByPath(e.from.node.filePath);
@@ -144,7 +141,6 @@ export default class LinkNodesInCanvas extends Plugin {
 					});
 				}
 			});
-
 
 			// with to.node.filePath, we can get the file object
 			if (!e.to.node.filePath) return;
