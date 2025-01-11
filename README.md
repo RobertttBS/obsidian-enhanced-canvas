@@ -55,14 +55,23 @@ When updating edge destination endpoints:
 
 ![Command Usage](./CommandUsage.gif)
 
-## Manual Installation Steps
+# Use Case 5: Update related Property from Canvas (not included in release 1.0.0)
 
-### 1. Create Plugin Directory
+- When opening a canvas, the `related` property of all notes (file nodes) in the canvas will be updated based on the canvas edges.
+- This allows users to update the `related` property simply by opening the Canvas file.
+- This feature is not included in release 1.0.0. You need to manually install this plugin to use this feature.
+
+![PropertyFromCanvas](./PropertyFromCanvas.gif)
+
+
+# Manual Installation Steps
+
+## 1. Create Plugin Directory
 - Create a new folder in your plugins directory: `<vault>/.obsidian/plugins/`
   (where `<vault>` is your Obsidian vault root directory)
 - Complete path example: `<vault>/.obsidian/plugins/obsidian-enhanced-canvas/`
 
-### 2. Download Required Files
+## 2. Download Required Files
 Download the following files from the plugin's GitHub Release page and place them in the newly created folder:
 
 Required files:
@@ -71,16 +80,16 @@ Required files:
 Optional file:
 - `styles.css` - Custom stylesheet
 
-### 3. Restart Obsidian
+## 3. Restart Obsidian
 - Close and reopen Obsidian
 
-### 4. Enable the Plugin
+## 4. Enable the Plugin
 - Open Settings
 - Navigate to Community plugins
 - Locate the installed plugin in the list
 - Toggle the switch to enable the plugin
 
-### Notes
+## Notes
 - You can obtain the plugin files through either:
   	- Download from the plugin's GitHub Release page
 	- Build from source: Clone the repository and compile it yourself
