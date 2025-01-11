@@ -57,3 +57,6 @@ When updating edge destination endpoints:
 # Contributing
 
 All contributions are welcome! 
+
+# Say Thank You
+If you are enjoying Enhanced Canvas, then please support my work and enthusiasm by buying me a coffee on https://buymeacoffee.com/robertttbs.
