@@ -11,7 +11,6 @@ This Obsidian plugin manages node connections in Canvas and automatically synchr
 	- Supporting file nodes, nested Canvas (xxx.canvas), images, PDFs, and any content that can be displayed as markdown links. When connecting them in canvas, it will result in the relate property of the source file node.
  	- Cards (text nodes) are not supported since they cannot be represented as markdown links.
 - **Shortest Path Optimization** for node connections
-	- Supporting all kinds of node in Canvas. 
 - **Bidirectional Link Management** between Canvas and markdown content
 
 # Command Features
@@ -19,7 +18,7 @@ This Obsidian plugin manages node connections in Canvas and automatically synchr
 - Command: **"Auto Connect Nodes and Adjust Edge with Shortest Path"**
     - Automatically establishes connections based on markdown links in the notes.
     - Optimizes existing edges (links, connections) in Canvas for shortest paths.
-	    - Supports all kinds of nodes (text nodes, group nodes, etc.).
+	    - Supports all kinds of nodes (text nodes, group nodes, image, nested canvases, etc.).
 
 # Use Case 1: Creating Edge in Canvas
 
