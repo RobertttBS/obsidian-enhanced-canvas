@@ -3,12 +3,15 @@
 
 This Obsidian plugin manages node connections in Canvas and automatically synchronizes them with the `related` property in notes. It streamlines the visualization and maintenance of document relationships within your notes and Canvas.
 
-**The most exciting thing is that creating edges in canvas results in the Graph View connection due to the establishment of the markdown link.**
+**The most exciting thing is that creating edges in Canvas results in the Graph View connection due to the establishment of the markdown link.**
 
 # Key Features
 
 - **Automated Frontmatter Synchronization** of `related` fields in properties.
+	- Supporting file nodes, nested Canvas (xxx.canvas), images, PDFs, and any content that can be displayed as markdown links. When connecting them in canvas, it will result in the relate property of the source file node.
+ 	- Cards (text nodes) are not supported since they cannot be represented as markdown links.
 - **Shortest Path Optimization** for node connections
+	- Supporting all kinds of node in Canvas. 
 - **Bidirectional Link Management** between Canvas and markdown content
 
 # Command Features
