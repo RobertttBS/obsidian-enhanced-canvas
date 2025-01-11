@@ -94,77 +94,66 @@ export default class LinkNodesInCanvas extends Plugin {
 	}
 
 	registerCanvasAutoLink() {
-		const updateTargetNode = debounce(async (e: any) => {
-			if (!e.from.node?.filePath && !Object.hasOwn(e.from.node, 'text')) return;
-
-			const fromFile = this.app.vault.getFileByPath(e.from.node.filePath);
-
-			// Get all resolved links from fromNode
-			const resolvedLinks = this.app.metadataCache.resolvedLinks;
-			const fromNodeLinks = (Object.keys(resolvedLinks[e.from.node.filePath]) as Array<string>);
-
-			// Get all edges from fromNode
-			const currentData = e.canvas.getData();
-			const allEdges = currentData.edges;
-			const fromNodeEdges = allEdges.filter((edge: CanvasEdgeData) => edge.fromNode === e.from.node.id);
-
-			// Find all files that edge.to points to
-			const edgeToNodes = fromNodeEdges.map((edge: CanvasEdgeData) => {
-				return currentData.nodes.find((node: any) => node.id === edge.toNode);
-			});
-
-			// Get the filePath corresponding to edgeToNodes
-			const edgeToNodesFilePath = edgeToNodes.map((node: any) => node.file);
-
-			// Iterate through all resolved links of fromNode, if not present in edgeToNodesFilePath, remove it from frontmatter.related
-			fromNodeLinks.forEach((filePath: string) => {
-				if (!edgeToNodesFilePath.includes(filePath)) {
-					const targetFile = this.app.vault.getFileByPath(filePath);
-					if (!targetFile) return;
-
-					let link = this.app.fileManager.generateMarkdownLink(targetFile, filePath);
-					link = link.replace(/^!(\[\[.*\]\])$/, '$1');
-
-					if (!fromFile) return;
-					this.app.fileManager.processFrontMatter(fromFile, (frontmatter) => {
-						if (!frontmatter || !frontmatter.related) return;
-				
-						if (!Array.isArray(frontmatter.related)) {
-							frontmatter.related = [frontmatter.related];
-						}
-				
-						frontmatter.related = frontmatter.related.filter(l => l !== link);
-				
-						if (frontmatter.related.length === 0) {
-							delete frontmatter.related;
-						}
-					});
+		const updateFrontmatterRelated = (file: any, link: any, action: any) => {
+			this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+				if (!frontmatter) return;
+		
+				if (!frontmatter.related) {
+					frontmatter.related = [];
+				} else if (!Array.isArray(frontmatter.related)) {
+					frontmatter.related = [frontmatter.related];
+				}
+		
+				if (action === 'add' && !frontmatter.related.includes(link)) {
+					frontmatter.related.push(link);
+				} else if (action === 'remove') {
+					frontmatter.related = frontmatter.related.filter(l => l !== link);
+					if (frontmatter.related.length === 0) {
+						delete frontmatter.related;
+					}
 				}
 			});
+		};
 
-			// with to.node.filePath, we can get the file object
-			if (!e.to.node.filePath) return;
-			const file = this.app.vault.getFileByPath(e.to.node.filePath);
-			if (!file) return;
-
-			let link = this.app.fileManager.generateMarkdownLink(file, e.canvas.view.file.path);
-			link = link.replace(/^!(\[\[.*\]\])$/, '$1');
-
-			if (e.from.node.filePath) {
-				const fromFile = this.app.vault.getFileByPath(e.from.node.filePath);
-				if (!fromFile) return;
-
-				this.app.fileManager.processFrontMatter(fromFile, (frontmatter) => {
-					if (!frontmatter.related) {
-						frontmatter.related = [];
-					}
-					if (!Array.isArray(frontmatter.related)) {
-						frontmatter.related = [frontmatter.related];
-					}
-					if (!frontmatter.related.includes(link)) {
-						frontmatter.related.push(link);
-					}
-				});
+		const updateTargetNode = debounce(async (e: any) => {
+			const fromNode = e.from.node;
+			const toNode = e.to.node;
+		
+			if (!fromNode?.filePath && !Object.hasOwn(fromNode, 'text')) return;
+		
+			const fromFile = this.app.vault.getFileByPath(fromNode.filePath);
+			if (!fromFile) return;
+		
+			const resolvedLinks = this.app.metadataCache.resolvedLinks[fromNode.filePath] || {};
+			const fromNodeLinks = Object.keys(resolvedLinks);
+		
+			const { edges, nodes } = e.canvas.getData();
+			const fromNodeEdges = edges.filter(edge => edge.fromNode === fromNode.id);
+			const edgeToNodesFilePathSet = new Set(
+				fromNodeEdges
+					.map(edge => nodes.find(node => node.id === edge.toNode))
+					.filter(node => node && node.file)
+					.map(node => node.file)
+			);
+		
+			// 移除不相關的連結
+			fromNodeLinks.forEach(filePath => {
+				if (!edgeToNodesFilePathSet.has(filePath)) {
+					const targetFile = this.app.vault.getFileByPath(filePath);
+					if (!targetFile) return;
+		
+					let link = this.app.fileManager.generateMarkdownLink(targetFile, filePath).replace(/^!(\[\[.*\]\])$/, '$1');
+					updateFrontmatterRelated(fromFile, link, 'remove');
+				}
+			});
+		
+			// 添加新的相關連結
+			if (toNode?.filePath) {
+				const targetFile = this.app.vault.getFileByPath(toNode.filePath);
+				if (!targetFile) return;
+		
+				let link = this.app.fileManager.generateMarkdownLink(targetFile, e.canvas.view.file.path).replace(/^!(\[\[.*\]\])$/, '$1');
+				updateFrontmatterRelated(fromFile, link, 'add');
 			}
 		}, 1000);
 
@@ -179,7 +168,7 @@ export default class LinkNodesInCanvas extends Plugin {
 			if (!file) return;
 
 			let link = this.app.fileManager.generateMarkdownLink(file, edge.to.node.filePath);
-			link = link.replace(/^!(\[\[.*\]\])$/, '$1');
+			link = link.replace(/^!(\[\[.*\]\])$/, '$1'); // for image links
 
 			if (fromNode?.filePath) {
 				const fromFile = this.app.vault.getFileByPath(fromNode.filePath);
