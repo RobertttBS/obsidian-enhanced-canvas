@@ -17,7 +17,7 @@ export default class LinkNodesInCanvas extends Plugin {
 
 	registerCustomCommands() {
 		this.addCommand({
-			id: 'obsidian-enhanced-canvas',
+			id: 'enhanced-canvas',
 			name: 'Auto connect nodes and adjust edge with shortest path',
 			checkCallback: (checking: boolean) => {
 				const canvasView = this.app.workspace.getActiveViewOfType(ItemView);
