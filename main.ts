@@ -103,14 +103,22 @@ export default class LinkNodesInCanvas extends Plugin {
 			});
 		};
 
-		const updateTargetNode = debounce(async (e: any) => {
-			const fromNode = e.from.node;
-			const toNode = e.to.node;
+		const processNodeUpdate = async (e: any) => {
+			const fromNode = e?.from?.node;
+			const toNode = e?.to?.node;
+		  
+			if (!fromNode || !toNode) {
+				return;
+			}
 		
-			if (!fromNode?.filePath && !Object.hasOwn(fromNode, 'text')) return;
+			if (!fromNode?.filePath && !Object.hasOwn(fromNode, 'text')) {
+				return;
+			}
 		
 			const fromFile = this.app.vault.getFileByPath(fromNode.filePath);
-			if (!fromFile) return;
+			if (!fromFile) {
+				return;
+			}
 		
 			const resolvedLinks = this.app.metadataCache.resolvedLinks[fromNode.filePath] || {};
 			const fromNodeLinks = Object.keys(resolvedLinks);
@@ -138,12 +146,22 @@ export default class LinkNodesInCanvas extends Plugin {
 			// add related link
 			if (toNode?.filePath) {
 				const targetFile = this.app.vault.getFileByPath(toNode.filePath);
-				if (!targetFile) return;
+				if (!targetFile) {
+					return;
+				}
 		
 				let link = this.app.fileManager.generateMarkdownLink(targetFile, e.canvas.view.file.path).replace(/^!(\[\[.*\]\])$/, '$1');
 				updateFrontmatterRelated(fromFile, link, 'add');
 			}
+		};
+
+		const updateTargetNode = debounce(async (e: any) => {
+			processNodeUpdate(e);
 		}, 1000);
+
+		const updateTargetNodeImmediate = async (e: any) => {
+			await processNodeUpdate(e);
+		};
 
 		const updateOriginalNode = async (edge: any) => {
 			if (!edge.to.node.filePath) return;
@@ -217,6 +235,7 @@ export default class LinkNodesInCanvas extends Plugin {
 						if (!self.patchedEdge) {
 							selfPatched(edge);
 						}
+						updateTargetNodeImmediate(edge);
 						return result;
 					};
 				},
