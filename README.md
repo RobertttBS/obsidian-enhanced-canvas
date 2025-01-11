@@ -45,7 +45,7 @@ When updating edge destination endpoints:
 
 # Use Case 4: Canvas Command
 
-- Provides a command "Auto-connect nodes and adjust edges with shortest path"
+- Provides a command "Auto connect nodes and adjust edges with shortest path"
 - When multiple nodes are selected, this command will:
     - If there are edges between the selected nodes:
         - Optimize edges to create the shortest path, as existing connections may no longer be optimal after nodes are moved
