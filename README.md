@@ -38,14 +38,14 @@ When removing a Canvas edge (link):
 # Use Case 3: Updating Edges in Canvas
 
 When updating edge destination endpoints:
-- Automatically synchronizes the source node's related property
+- Automatically synchronizes the source node's `related` property
 - Ensures bidirectional consistency between Canvas visual representations and markdown-linked related properties
 
 ![Updating Edges in Canvas](./UpdatingEdge.gif)
 
 # Use Case 4: Canvas Command
 
-- Provides a command "Auto-connect nodes and adjust edges with shortest path"
+- Provides a command "Auto connect nodes and adjust edges with shortest path"
 - When multiple nodes are selected, this command will:
     - If there are edges between the selected nodes:
         - Optimize edges to create the shortest path, as existing connections may no longer be optimal after nodes are moved
@@ -57,3 +57,6 @@ When updating edge destination endpoints:
 # Contributing
 
 All contributions are welcome! 
+
+# Say Thank You
+If you are enjoying Enhanced Canvas, then please support my work and enthusiasm by buying me a coffee on https://buymeacoffee.com/robertttbs.
