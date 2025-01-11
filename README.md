@@ -18,7 +18,7 @@ This Obsidian plugin manages node connections in Canvas and automatically synchr
 - Command: **"Auto Connect Nodes and Adjust Edge with Shortest Path"**
     - Automatically establishes connections based on markdown links in the notes.
     - Optimizes existing edges (links, connections) in Canvas for shortest paths.
-	    - Supports all kinds of nodes (text nodes, group nodes, image, nested canvases, etc.).
+	    - Supports all kinds of nodes (text nodes, group nodes, image, nested Canvases, etc.).
 
 # Use Case 1: Creating Edge in Canvas
 
@@ -55,9 +55,9 @@ When updating edge destination endpoints:
 
 ![Command Usage](./CommandUsage.gif)
 
-# Use Case 5: Update related Property from Canvas (not included in release 1.0.0)
+# Use Case 5: Update `related` Property from Canvas File (not included in release 1.0.0)
 
-- When opening a canvas, the `related` property of all notes (file nodes) in the canvas will be updated based on the canvas edges.
+- When opening a Canvas file, the `related` property of all notes (file nodes) in the Canvas file will be updated based on the Canvas edges.
 - This allows users to update the `related` property simply by opening the Canvas file.
 - This feature is not included in release 1.0.0. You need to manually install this plugin to use this feature.
 
