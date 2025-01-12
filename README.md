@@ -55,11 +55,10 @@ When updating edge destination endpoints:
 
 ![Command Usage](./CommandUsage.gif)
 
-# Use Case 5: Update `related` Property from Canvas File (not included in release 1.0.0)
+# Use Case 5: Update `related` Property from Canvas File
 
 - When opening a Canvas file, the `related` property of all notes (file nodes) in the Canvas file will be updated based on the Canvas edges.
 - This allows users to update the `related` property simply by opening the Canvas file.
-- This feature is not included in release 1.0.0. You need to manually build this plugin from source to use this feature.
 
 ![PropertyFromCanvas](./PropertyFromCanvas.gif)
 
