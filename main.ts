@@ -159,13 +159,11 @@ export default class LinkNodesInCanvas extends Plugin {
 		};
 
 		const updateTargetNode = debounce(async (e: any) => {
-			console.warn('edge update', e);
 			processNodeUpdate(e);
 		}, 1000);
 
 		const updateTargetNodeImmediate = async (e: any) => {
-			console.warn('edge update immediat', e);
-			await processNodeUpdate(e);
+			processNodeUpdate(e);
 		};
 
 		const updateOriginalNode = async (edge: any) => {
@@ -240,6 +238,7 @@ export default class LinkNodesInCanvas extends Plugin {
 						if (!self.patchedEdge) {
 							selfPatched(edge);
 						}
+						edge.idAdded = false;
 						updateTargetNodeImmediate(edge);
 						return result;
 					};
