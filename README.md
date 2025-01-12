@@ -1,76 +1,95 @@
 # Obsidian - Enhanced Canvas
-# Overview
+## Overview
 
-This Obsidian plugin manages node connections in Canvas and automatically synchronizes them with the `related` property in notes. It streamlines the visualization and maintenance of document relationships within your notes and Canvas.
+This Obsidian plugin enhances Canvas functionality by automatically managing node connections and synchronizing them with note properties. 
 
-**The most exciting thing is that creating edges in Canvas results in the Graph View connection due to the establishment of the markdown link.**
+When you create connections in Canvas, the plugin automatically tracks relationships by adding properties named after the canvas file to your notes. 
 
-# Key Features
+Most importantly, creating edges in Canvas establishes connections visible in the Graph View through markdown links.
 
-- **Automated Frontmatter Synchronization** of `related` fields in properties.
-	- Supporting file nodes, nested Canvas (xxx.canvas), images, PDFs, and any content that can be displayed as markdown links. When connecting them in canvas, it will result in the relate property of the source file node.
- 	- Cards (text nodes) are not supported since they cannot be represented as markdown links.
-- **Shortest Path Optimization** for node connections
-- **Bidirectional Link Management** between Canvas and markdown content
+## Key Features
 
-# Command Features
+- **Automated Property Synchronization**
+  - Automatically creates properties in source notes when connecting nodes in Canvas
+  - Properties are named after the canvas file to track relationships
+  - Supports file nodes, nested Canvas files (.canvas), images, PDFs, and any content that can be represented as markdown links
+  - Note: Text nodes (cards) are not supported as they cannot be represented as markdown links
+- **Shortest Path Optimization** for node connections
+- **Bidirectional Link Management** between Canvas and note content
 
-- Command: **"Auto Connect Nodes and Adjust Edge with Shortest Path"**
-    - Automatically establishes connections based on markdown links in the notes.
-    - Optimizes existing edges (links, connections) in Canvas for shortest paths.
-	    - Supports all kinds of nodes (text nodes, group nodes, image, nested Canvases, etc.).
+## Command Features
 
-# Use Case 1: Creating Edge in Canvas
+**"Auto Connect Nodes and Adjust Edge with Shortest Path"**
+- Automatically establishes connections based on existing markdown links in notes
+- Optimizes edge paths in Canvas for minimal distance
+- Supports all node types (text nodes, group nodes, images, nested Canvases, etc.)
 
-When connecting NoteA to NoteB in Canvas:
-- Automatically updates NoteA's `related` property with a link to NoteB
-- Preserves existing markdown links in Note A's content to prevent duplicate links.
-- Handles image nodes
+## Use Cases
 
-![Creating Edge in Canvas](./CreatingEdge.gif)
+### 1. Creating Edges in Canvas
+When connecting nodes (e.g., NoteA to NoteB):
+- Automatically adds the target node's link to the source node's properties
+- Property name is based on the canvas filename
+- Supports images, nested Canvas nodes, and other markdown-link compatible nodes
 
-# Use Case 2: Deleting Edge in Canvas
+![CreateEdge](./CreateEdge.gif)
 
-When removing a Canvas edge (link):
-- Automatically removes corresponding `related` property from source note's frontmatter
+
+### 2. Deleting Edges in Canvas
+When removing a Canvas edge:
+- Automatically removes the corresponding link from the source note's canvas-specific property
 - Preserves existing markdown links within note content
 
-![Deleting Edge in Canvas](./DeletingEdge.gif)
+![DeleteEdge](./DeleteEdge.gif)
 
-# Use Case 3: Updating Edges in Canvas
+### 3. Updating Edge Endpoints
+When modifying edge connections:
+- Automatically updates the source node's canvas-specific properties
+- Maintains bidirectional consistency between Canvas visualization and property links
 
-When updating edge destination endpoints:
-- Automatically synchronizes the source node's `related` property
-- Ensures bidirectional consistency between Canvas visual representations and markdown-linked `related` properties
+![UpdateEdge](./UpdateEdge.gif)
 
-![Updating Edges in Canvas](./UpdatingEdge.gif)
+### 4. Canvas Command Usage
+The **"Auto connect nodes and adjust edges with shortest path"** command:
+- Optimizes existing edges between selected nodes for shortest paths
+- Creates new Canvas edges based on markdown link relationships
+- Particularly useful after moving nodes to maintain optimal connections
 
-# Use Case 4: Canvas Command
+![CommandUsage](./CommandUsage.gif)
 
-- Provides a command "Auto connect nodes and adjust edges with shortest path"
-- When multiple nodes are selected, this command will:
-    - If there are edges between the selected nodes:
-        - Optimize edges to create the shortest path, as existing connections may no longer be optimal after nodes are moved
-    - Automatically create Canvas edges (links) between nodes that have Markdown link relationships
+### 5. Canvas File Opening
+When opening a Canvas file:
+- Automatically updates canvas-specific properties for all file nodes
+- Property names are generated based on the canvas filename
+- Enables easy property synchronization through simple file opening
 
-![Command Usage](./CommandUsage.gif)
+![OpenCanvas](./OpenCanvas.gif)
 
-# Use Case 5: Update `related` Property from Canvas File
+### 6. Canvas File Deletion
+When deleting a Canvas file:
+- Automatically removes associated canvas-specific properties from all notes
+- Cleans up all properties named after the deleted canvas
 
-- When opening a Canvas file, the `related` property of all notes (file nodes) in the Canvas file will be updated based on the Canvas edges.
-- This allows users to update the `related` property simply by opening the Canvas file.
+![DeleteCanvas](./DeleteCanvas.gif)
 
-![PropertyFromCanvas](./PropertyFromCanvas.gif)
+### 7. Canvas File Renaming
+When renaming a Canvas file:
+- Automatically updates property names in all associated notes
+- Renames properties to match the new canvas filename
+- Preserves all existing relationships under the new property name
+
+![RenameCanvas](./RenameCanvas.gif)
 
 
-# Manual Installation Steps
 
-## 1. Create Plugin Directory
+## Manual Installation Steps
+
+### 1. Create Plugin Directory
 - Create a new folder in your plugins directory: `<vault>/.obsidian/plugins/`
   (where `<vault>` is your Obsidian vault root directory)
 - Complete path example: `<vault>/.obsidian/plugins/obsidian-enhanced-canvas/`
 
-## 2. Download Required Files
+### 2. Download Required Files
 Download the following files from the plugin's GitHub Release page and place them in the newly created folder:
 
 Required files:
@@ -79,10 +98,10 @@ Required files:
 Optional file:
 - `styles.css` - Custom stylesheet
 
-## 3. Restart Obsidian
+### 3. Restart Obsidian
 - Close and reopen Obsidian
 
-## 4. Enable the Plugin
+### 4. Enable the Plugin
 - Open Settings
 - Navigate to Community plugins
 - Locate the installed plugin in the list
@@ -96,9 +115,9 @@ Optional file:
 		- `npm run dev`
 
 
-# Contributing
+## Contributing
 
 All contributions are welcome! 
 
-# Say Thank You
+## Say Thank You
 If you are enjoying Enhanced Canvas, then please support my work and enthusiasm by buying me a coffee on https://buymeacoffee.com/robertttbs.

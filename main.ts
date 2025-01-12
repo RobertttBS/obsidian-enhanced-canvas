@@ -3,101 +3,223 @@ import {
 	ItemView,
 	Plugin,
 } from 'obsidian';
-import { CanvasEdgeData, NodeSide } from "obsidian/canvas";
+import { CanvasEdgeData, NodeSide, CanvasData } from "obsidian/canvas";
 import { around } from "monkey-around";
 
-export default class LinkNodesInCanvas extends Plugin {
+export default class EnhancedCanvas extends Plugin {
 	public patchedEdge: boolean; // flag to check if edge is patched
 
-	async onload() {
-		console.log('Loading Enhanced Canvas');
-		this.registerCustomCommands();
-		this.registerCanvasAutoLink();
+	addLinkAndOptimizeEdge(canvas: any) {
+		const selectedNodes = Array.from(canvas.selection);
+		const fileNodes = selectedNodes.filter(node => node?.filePath);
+		const resolvedLinks = this.app.metadataCache.resolvedLinks;
+		const allEdgesData: CanvasEdgeData[] = [];
+	
+		// get all existing edges
+		const existingEdgesSet = new Set(canvas.getData().edges.map(edge => `${edge.fromNode}->${edge.toNode}`));
+	
+		fileNodes.forEach(node => {
+			if (!node.filePath || !resolvedLinks[node.filePath]) {
+				return;
+			}
+	
+			const allLinksSet = new Set(Object.keys(resolvedLinks[node.filePath]));
+			fileNodes.forEach(targetNode => {
+				if (allLinksSet.has(targetNode.filePath) && node !== targetNode) {
+					const newEdge = this.createEdge(node, targetNode);
+					const edgeKey = `${newEdge.fromNode}->${newEdge.toNode}`;
+					if (!existingEdgesSet.has(edgeKey)) {
+						allEdgesData.push(newEdge);
+						existingEdgesSet.add(edgeKey);
+					}
+				}
+			});
+		});
+	
+		const currentData = canvas.getData();
+		currentData.edges.push(...allEdgesData);
+	
+		// adjust edge with shortest path
+		currentData.edges.forEach(edge => {
+			if (edge.fromNode && edge.toNode) {
+				const fromNode = currentData.nodes.find(node => node.id === edge.fromNode);
+				const toNode = currentData.nodes.find(node => node.id === edge.toNode);
+				if (fromNode && toNode) {
+					const updatedEdge = this.createEdge(fromNode, toNode);
+					if (edge.fromSide !== updatedEdge.fromSide || edge.toSide !== updatedEdge.toSide) {
+						edge.fromSide = updatedEdge.fromSide;
+						edge.toSide = updatedEdge.toSide;
+					}
+				}
+			}
+		});
+	
+		canvas.setData(currentData);
+		canvas.requestSave();
 	}
 
-	registerCustomCommands() {
-		this.addCommand({
-			id: 'enhanced-canvas',
-			name: 'Auto connect nodes and adjust edge with shortest path',
-			checkCallback: (checking: boolean) => {
-				const canvasView = this.app.workspace.getActiveViewOfType(ItemView);
-				if (canvasView?.getViewType() !== "canvas") {
-					return false;
-				}
+	removeProperty(node: any, propertyName: string) {
+		const file = this.app.vault.getFileByPath(node.file);
+		if (!file) return;
+
+		this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+			if (!frontmatter) return;
+
+			delete frontmatter[propertyName];
+		});			
+	}
+
+	renameProperty(node: any, oldName: string, newName: string) {
+		const file = this.app.vault.getFileByPath(node.file);
+		if (!file) return;
+	
+		const baseName = newName.split('/').pop() || newName;
+
+		this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+			if (!frontmatter) return;
 			
-				if (checking) {
-					return true;
-				}
-			
-				const canvas = canvasView.canvas;
-				const selectedNodes = Array.from(canvas.selection);
-				const fileNodes = selectedNodes.filter(node => node?.filePath);
-				const resolvedLinks = this.app.metadataCache.resolvedLinks;
-				const allEdgesData: CanvasEdgeData[] = [];
-			
-				// get all existing edges
-				const existingEdgesSet = new Set(canvas.getData().edges.map(edge => `${edge.fromNode}->${edge.toNode}`));
-			
-				fileNodes.forEach(node => {
-					if (!node.filePath || !resolvedLinks[node.filePath]) {
-						return;
-					}
-			
-					const allLinksSet = new Set(Object.keys(resolvedLinks[node.filePath]));
-					fileNodes.forEach(targetNode => {
-						if (allLinksSet.has(targetNode.filePath) && node !== targetNode) {
-							const newEdge = this.createEdge(node, targetNode);
-							const edgeKey = `${newEdge.fromNode}->${newEdge.toNode}`;
-							if (!existingEdgesSet.has(edgeKey)) {
-								allEdgesData.push(newEdge);
-								existingEdgesSet.add(edgeKey);
-							}
-						}
-					});
-				});
-			
-				const currentData = canvas.getData();
-				currentData.edges.push(...allEdgesData);
-			
-				// adjust edge with shortest path
-				currentData.edges.forEach(edge => {
-					if (edge.fromNode && edge.toNode) {
-						const fromNode = currentData.nodes.find(node => node.id === edge.fromNode);
-						const toNode = currentData.nodes.find(node => node.id === edge.toNode);
-						if (fromNode && toNode) {
-							const updatedEdge = this.createEdge(fromNode, toNode);
-							if (edge.fromSide !== updatedEdge.fromSide || edge.toSide !== updatedEdge.toSide) {
-								edge.fromSide = updatedEdge.fromSide;
-								edge.toSide = updatedEdge.toSide;
-							}
-						}
-					}
-				});
-			
-				canvas.setData(currentData);
-				canvas.requestSave();
-				return true;
+			if (oldName in frontmatter) {
+				const value = frontmatter[oldName];
+				frontmatter[baseName] = value;
+				delete frontmatter[oldName];
 			}
 		});
 	}
 
+	removeAllProperty(canvas: any, canvasData: CanvasData) {
+		const nodes = canvasData.nodes;
+		nodes.forEach(node => {
+			if (!node?.file) return;
+
+			this.removeProperty(node, canvas.view.file.name);
+		});
+		canvas.setData(canvasData);
+		canvas.requestSave();
+	}
+
+	// unused function, return the content without frontmatter.
+	getContentWithoutFrontmatter = async (file: any) => {
+		const content = await this.app.vault.read(file);
+		if (!content) return;
+
+		const fileCache = this.app.metadataCache.getFileCache(file);
+		if (!fileCache?.sections?.length) return content;
+
+		const firstSection = fileCache.sections[0];
+		if (firstSection.type !== "yaml") return content;
+
+		return content.substring(firstSection.position.end.offset + 1);
+	}
+
+	private ifActiveViewIsCanvas = (commandFn: (canvas: any, canvasData: CanvasData) => void) => (checking: boolean) => {
+		const activeView = this.app.workspace.getActiveViewOfType(ItemView);
+		if (activeView?.getViewType() !== 'canvas') {
+			return checking ? false : undefined;
+		}
+		
+		if (checking) return true;
+		
+		// @ts-ignore
+		const canvas = activeView.canvas;
+		const canvasData = canvas?.getData();
+		
+		if (!canvas || !canvasData) return;
+		return commandFn(canvas, canvasData);
+	}
+
+	async onload() {
+		console.log('Loading Enhanced Canvas');
+
+		this.registerCustomCommands();
+		this.registerCanvasAutoLink();
+		this.registerCanvasFileDeletion();
+	}
+
+	registerCanvasFileDeletion() {
+		const deleteCanvasFile = async (file: any) => {
+			if (file.extension !== 'canvas') return;
+			if (file.deleted === true) return;
+			// @ts-ignore
+			const content = await this.app.vault.read(file);
+			const canvasData = JSON.parse(content);
+			// @ts-ignore
+			canvasData.nodes.forEach((node) => {
+				if (node.type !== 'file') return;
+
+				this.removeProperty(node, file.name);
+			});
+		}
+
+		const renameCanvasFile = async (file: any, newPath: string) => {
+			if (file.extension !== 'canvas') return;
+			if (file.deleted === true) return;
+			// @ts-ignore
+			const content = await this.app.vault.read(file);
+			const canvasData = JSON.parse(content);
+			// @ts-ignore
+			canvasData.nodes.forEach((node) => {
+				if (node.type !== 'file') return;
+				this.renameProperty(node, file.name, newPath);
+			});
+		}
+
+		around(this.app.fileManager.constructor.prototype, {
+			trashFile: (next: any) => {
+				return function (file: any) {
+					deleteCanvasFile(file);
+					const result = next.call(this, file);
+					return result;
+				};
+			}
+		});
+
+		around(this.app.fileManager.constructor.prototype, {
+			renameFile: (next: any) => {
+				return function (file: any, newPath: string) {
+					renameCanvasFile(file, newPath);
+					const result = next.call(this, file, newPath);
+					return result;
+				};
+			}
+		});
+	}
+
+	registerCustomCommands() {
+		this.addCommand({
+			id: 'add-link-and-optimize-edge',
+			name: 'Auto connect nodes and adjust edges with shortest path',
+			checkCallback: this.ifActiveViewIsCanvas((canvas, canvasData) => {
+				this.addLinkAndOptimizeEdge(canvas);
+			})
+		});
+
+		// With automatic property updates for dateFile and renameFile, this command is unnecessary.
+		// this.addCommand({
+		// 	id: 'remove-canvas-property',
+		// 	name: 'Remove the property of all nodes in current canvas',
+		// 	checkCallback: this.ifActiveViewIsCanvas((canvas, canvasData) => {
+		// 		this.removeAllProperty(canvas, canvasData);
+		// 	})
+		// });
+	}
+
 	registerCanvasAutoLink() {
-		const updateFrontmatterRelated = (file: any, link: any, action: any) => {
+		const updateFrontmatterRelated = async (file: any, link: any, action: any, propertyName: string) => {
 			this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 				if (!frontmatter) return;
-		
-				if (!frontmatter.related) {
-					frontmatter.related = [];
-				} else if (!Array.isArray(frontmatter.related)) {
-					frontmatter.related = [frontmatter.related];
+
+				if (!frontmatter[propertyName]) {
+					Reflect.set(frontmatter, propertyName, []);
+				} else if (!Array.isArray(frontmatter[propertyName])) {
+					Reflect.set(frontmatter, propertyName, [frontmatter[propertyName]]);
 				}
 		
-				if (action === 'add' && !frontmatter.related.includes(link)) {
-					frontmatter.related.push(link);
+				if (action === 'add' && !frontmatter[propertyName].includes(link)) {
+					frontmatter[propertyName].push(link);
 				} else if (action === 'remove') {
-					frontmatter.related = frontmatter.related.filter(l => l !== link);
-					if (frontmatter.related.length === 0) {
-						delete frontmatter.related;
+					frontmatter[propertyName] = frontmatter[propertyName].filter(l => l !== link);
+					if (frontmatter[propertyName].length === 0) {
+						delete frontmatter[propertyName];
 					}
 				}
 			});
@@ -107,19 +229,13 @@ export default class LinkNodesInCanvas extends Plugin {
 			const fromNode = e?.from?.node;
 			const toNode = e?.to?.node;
 		  
-			if (!fromNode || !toNode) {
-				return;
-			}
-		
-			if (!fromNode?.filePath && !Object.hasOwn(fromNode, 'text')) {
-				return;
-			}
+			if (!fromNode || !toNode) return;
+			if (!fromNode?.filePath && !Object.hasOwn(fromNode, 'text')) return;
 		
 			const fromFile = this.app.vault.getFileByPath(fromNode.filePath);
-			if (!fromFile) {
-				return;
-			}
-		
+			if (!fromFile) return;
+
+			const canvasName = e.canvas.view.file.name;
 			const resolvedLinks = this.app.metadataCache.resolvedLinks[fromNode.filePath] || {};
 			const fromNodeLinks = Object.keys(resolvedLinks);
 		
@@ -139,22 +255,17 @@ export default class LinkNodesInCanvas extends Plugin {
 					if (!targetFile) return;
 		
 					let link = this.app.fileManager.generateMarkdownLink(targetFile, filePath).replace(/^!(\[\[.*\]\])$/, '$1');
-					updateFrontmatterRelated(fromFile, link, 'remove');
+					updateFrontmatterRelated(fromFile, link, 'remove', canvasName);
 				}
 			});
 		
 			// add related link
 			if (toNode?.filePath) {
 				const targetFile = this.app.vault.getFileByPath(toNode.filePath);
-				if (!targetFile) {
-					return;
-				}
+				if (!targetFile) return;
 		
 				let link = this.app.fileManager.generateMarkdownLink(targetFile, e.canvas.view.file.path).replace(/^!(\[\[.*\]\])$/, '$1');
-				const fileContent = await this.app.vault.read(fromFile);
-				if (fileContent.includes(link)) return;
-
-				updateFrontmatterRelated(fromFile, link, 'add');
+				updateFrontmatterRelated(fromFile, link, 'add', canvasName);
 			}
 		};
 
@@ -170,6 +281,7 @@ export default class LinkNodesInCanvas extends Plugin {
 			if (!edge.to.node.filePath) return;
 			if (!edge.from.node?.filePath && !Object.hasOwn(edge.from.node, 'text')) return;
 
+			const canvasName = edge.canvas.view.file.name;
 			const toNode = edge.to.node;
 			const fromNode = edge.from.node;
 
@@ -183,7 +295,7 @@ export default class LinkNodesInCanvas extends Plugin {
 				const fromFile = this.app.vault.getFileByPath(fromNode.filePath);
 				if (!fromFile) return;
 
-				updateFrontmatterRelated(fromFile, link, 'remove');
+				updateFrontmatterRelated(fromFile, link, 'remove', canvasName);
 			}
 		};
 
@@ -199,8 +311,6 @@ export default class LinkNodesInCanvas extends Plugin {
 					};
 				}
 			});
-
-			console.log('patch edge success');
 		};
 
 		const self = this;
@@ -214,7 +324,7 @@ export default class LinkNodesInCanvas extends Plugin {
 			if (!canvas) return false;
 
 			const edge = canvas.edges.values().next().value;
-			if (edge) { // if edge exists, patch it.
+			if (edge) {
 				this.patchedEdge = true;
 				selfPatched(edge);
 			}
@@ -236,6 +346,7 @@ export default class LinkNodesInCanvas extends Plugin {
 					return function (edge: any) {
 						const result = next.call(this, edge);
 						if (!self.patchedEdge) {
+							this.patchedEdge = true;
 							selfPatched(edge);
 						}
 						updateTargetNodeImmediate(edge);
@@ -254,14 +365,14 @@ export default class LinkNodesInCanvas extends Plugin {
 					};
 				},
 			});
-
-			console.log('patch canvas success');
 		};
 
 		this.app.workspace.onLayoutReady(() => {
 			if (!patchCanvas()) {
 				const evt = this.app.workspace.on("layout-change", () => {
-					patchCanvas() && this.app.workspace.offref(evt);
+					if (patchCanvas()) {
+						this.app.workspace.offref(evt);
+					}
 				});
 				this.registerEvent(evt);
 			}
