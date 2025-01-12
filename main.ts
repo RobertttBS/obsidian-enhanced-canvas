@@ -151,15 +151,20 @@ export default class LinkNodesInCanvas extends Plugin {
 				}
 		
 				let link = this.app.fileManager.generateMarkdownLink(targetFile, e.canvas.view.file.path).replace(/^!(\[\[.*\]\])$/, '$1');
+				const fileContent = await this.app.vault.read(fromFile);
+				if (fileContent.includes(link)) return;
+
 				updateFrontmatterRelated(fromFile, link, 'add');
 			}
 		};
 
 		const updateTargetNode = debounce(async (e: any) => {
+			console.warn('edge update', e);
 			processNodeUpdate(e);
 		}, 1000);
 
 		const updateTargetNodeImmediate = async (e: any) => {
+			console.warn('edge update immediat', e);
 			await processNodeUpdate(e);
 		};
 
