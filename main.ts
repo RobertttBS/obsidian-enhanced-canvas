@@ -238,7 +238,6 @@ export default class LinkNodesInCanvas extends Plugin {
 						if (!self.patchedEdge) {
 							selfPatched(edge);
 						}
-						edge.idAdded = false;
 						updateTargetNodeImmediate(edge);
 						return result;
 					};
