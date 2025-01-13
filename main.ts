@@ -14,40 +14,50 @@ export default class EnhancedCanvas extends Plugin {
 		const fileNodes = selectedNodes.filter(node => node?.filePath);
 		const resolvedLinks = this.app.metadataCache.resolvedLinks;
 		const allEdgesData: CanvasEdgeData[] = [];
+		const currentData = canvas.getData();
 	
 		// get all existing edges
-		const existingEdgesSet = new Set(canvas.getData().edges.map(edge => `${edge.fromNode}->${edge.toNode}`));
-	
+		const existingEdgesSet = new Set(currentData.edges.map(edge => `${edge.fromNode}->${edge.toNode}`));
+
+		const filePathToNodeMap = new Map<string, any>();
 		fileNodes.forEach(node => {
-			if (!node.filePath || !resolvedLinks[node.filePath]) return;
+			if (node.filePath) {
+				filePathToNodeMap.set(node.filePath, node);
+			}
+		});
+
+		fileNodes.forEach(sourceNode => {
+			const links = resolvedLinks[sourceNode.filePath];
+			if (!links) return;
 	
-			const allLinksSet = new Set(Object.keys(resolvedLinks[node.filePath]));
-			fileNodes.forEach(targetNode => {
-				if (allLinksSet.has(targetNode.filePath) && node !== targetNode) {
-					const newEdge = this.createEdge(node, targetNode);
-					const edgeKey = `${newEdge.fromNode}->${newEdge.toNode}`;
-					if (!existingEdgesSet.has(edgeKey)) {
-						allEdgesData.push(newEdge);
-						existingEdgesSet.add(edgeKey);
-					}
+			const targetFilePaths = Object.keys(links).filter(targetPath => 
+				filePathToNodeMap.has(targetPath) && filePathToNodeMap.get(targetPath) !== sourceNode
+			);
+	
+			targetFilePaths.forEach(targetPath => {
+				const targetNode = filePathToNodeMap.get(targetPath);
+				const edgeKey = `${sourceNode.id}->${targetNode.id}`;
+	
+				if (!existingEdgesSet.has(edgeKey)) {
+					const newEdge = this.createEdge(sourceNode, targetNode);
+					allEdgesData.push(newEdge);
+					existingEdgesSet.add(edgeKey);
 				}
 			});
 		});
 	
-		const currentData = canvas.getData();
 		currentData.edges.push(...allEdgesData);
 	
 		// adjust edge with shortest path
+		const nodeIdMap = new Map(currentData.nodes.map(node => [node.id, node]));
 		currentData.edges.forEach(edge => {
-			if (edge.fromNode && edge.toNode) {
-				const fromNode = currentData.nodes.find(node => node.id === edge.fromNode);
-				const toNode = currentData.nodes.find(node => node.id === edge.toNode);
-				if (fromNode && toNode) {
-					const updatedEdge = this.createEdge(fromNode, toNode);
-					if (edge.fromSide !== updatedEdge.fromSide || edge.toSide !== updatedEdge.toSide) {
-						edge.fromSide = updatedEdge.fromSide;
-						edge.toSide = updatedEdge.toSide;
-					}
+			const fromNode = nodeIdMap.get(edge.fromNode);
+			const toNode = nodeIdMap.get(edge.toNode);
+			if (fromNode && toNode) {
+				const updatedEdge = this.createEdge(fromNode, toNode);
+				if (edge.fromSide !== updatedEdge.fromSide || edge.toSide !== updatedEdge.toSide) {
+					edge.fromSide = updatedEdge.fromSide;
+					edge.toSide = updatedEdge.toSide;
 				}
 			}
 		});
@@ -66,45 +76,66 @@ export default class EnhancedCanvas extends Plugin {
 
 		this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
+	
+			// remove the property
+			if (frontmatter[propertyName]) {
+				delete frontmatter[propertyName];
+			}
+	
+			// remove the link from the canvas property
+			if (frontmatter.canvas) {
+				const canvasLink = `[[${propertyName}]]`;
+				frontmatter.canvas = frontmatter.canvas.filter((link: string) => link !== canvasLink);
 
-			const canvasLink = `[[${propertyName}]]`;
-			this.updateFrontmatter(file, canvasLink, 'remove', 'canvas');
-			delete frontmatter[propertyName];
+				if (frontmatter.canvas.length === 0) {
+					delete frontmatter.canvas;
+				}
+			}
 		});
 	}
 
 	// For JSON nodes only, which are stored in the canvas file, not the canvas node in Obsidian.
 	renameProperty(node: any, oldName: string, newName: string) {
+		console.log('renameProperty', oldName, newName);
 		const file = this.app.vault.getFileByPath(node.file);
-		if (!file) return;
+		if (!file) {
+			console.error(`File not found: ${node.file}`);
+			return;
+		}
 	
-		const baseName = newName.split('/').pop() || newName;
-		const oldBaseName = oldName.split('/').pop() || oldName;
+		const getBaseName = (name: string) => name.substring(name.lastIndexOf('/') + 1);
+
+		const baseName = getBaseName(newName);
+		const oldBaseName = getBaseName(oldName);
 	
 		this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
 
 			if (frontmatter.canvas) {
-				const canvasLink = `[[${oldBaseName}]]`;
-				frontmatter.canvas = frontmatter.canvas.filter(l => l !== canvasLink);
-				frontmatter.canvas.push(`[[${baseName}]]`);
+				const oldCanvasLink = `[[${oldBaseName}]]`;
+				const newCanvasLink = `[[${baseName}]]`;
+				frontmatter.canvas = frontmatter.canvas
+					.map((link: string) => link === oldCanvasLink ? newCanvasLink : link)
+					.filter((link: string) => link);
 			}
-			
-			if (oldName in frontmatter) {
-				const value = frontmatter[oldName];
 
-				if (Array.isArray(value)) {
-					frontmatter[baseName] = value.map(item => {
-						if (typeof item === 'string' && item.includes(`[[${oldBaseName}]]`)) {
-							return item.replace(`[[${oldBaseName}]]`, `[[${baseName}]]`);
-						}
-						return item;
-					});
-				} else {
-					frontmatter[baseName] = value;
-				}
+			if (frontmatter.hasOwnProperty(oldName)) {
+				frontmatter[baseName] = frontmatter[oldName];
 				delete frontmatter[oldName];
 			}
+			
+			Object.keys(frontmatter).forEach(key => {
+				if (key === baseName) {
+					const value = frontmatter[key];
+					if (Array.isArray(value)) {
+						frontmatter[key] = value.map(item =>
+							typeof item === 'string' ? item.replace(new RegExp(`\\[\\[${oldBaseName}\\]\\]`, 'g'), `[[${baseName}]]`) : item
+						);
+					} else if (typeof value === 'string') {
+						frontmatter[key] = value.replace(new RegExp(`\\[\\[${oldBaseName}\\]\\]`, 'g'), `[[${baseName}]]`);
+					}
+				}
+			});
 		});
 	}
 
@@ -253,9 +284,9 @@ export default class EnhancedCanvas extends Plugin {
 		const processNodeUpdate = async (e: any) => {
 			const fromNode = e?.from?.node;
 			const toNode = e?.to?.node;
-		  
+
 			if (!fromNode || !toNode) return;
-			if (!fromNode?.filePath && !Object.hasOwn(fromNode, 'text')) return;
+			if (!fromNode?.filePath) return;
 		
 			const fromFile = this.app.vault.getFileByPath(fromNode.filePath);
 			if (!fromFile) return;
@@ -305,8 +336,7 @@ export default class EnhancedCanvas extends Plugin {
 
 		//  update original node when edge is removed
 		const updateOriginalNode = async (edge: any) => {
-			if (!edge.to.node.filePath) return;
-			if (!edge.from.node?.filePath && !Object.hasOwn(edge.from.node, 'text')) return;
+			if (!edge.to.node?.filePath || !edge.from.node?.filePath) return;
 
 			const canvasName = edge.canvas.view.file.name;
 			const toNode = edge.to.node;
@@ -402,7 +432,9 @@ export default class EnhancedCanvas extends Plugin {
 				removeNode: (next: any) => {
 					return function (node: any) {
 						const result = next.call(this, node);
-						removeNodeUpdate(node);
+						if (this.isClearing !== true) {
+							removeNodeUpdate(node);
+						}
 						return result;
 					};
 				}
