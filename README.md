@@ -7,7 +7,7 @@ When you edit in Canvas, the plugin automatically tracks relationships by adding
 
 Most importantly, creating edges in Canvas establishes connections visible in the Graph View through markdown links.
 
-![enhanced-canvas](./enhanced-canvas.png)
+![enhanced-canvas](./Attachments/enhanced-canvas.png)
 
 - Based on this screenshot:
   1. When adding a node to the canvas, it creates a 'canvas' property containing a link to the corresponding canvas file.
@@ -43,7 +43,7 @@ When connecting nodes (e.g., NoteA to NoteB):
 - Property name is based on the canvas filename
 - Supports images, nested Canvas nodes, and other markdown-link compatible nodes
 
-![CreateEdge](./CreateEdge.gif)
+![CreateEdge](./Attachments/CreateEdge.gif)
 
 
 ### 2. Deleting Edges in Canvas
@@ -51,14 +51,14 @@ When removing a Canvas edge:
 - Automatically removes the corresponding link from the source note's canvas-specific property
 - Preserves existing markdown links within note content
 
-![DeleteEdge](./DeleteEdge.gif)
+![DeleteEdge](./Attachments/DeleteEdge.gif)
 
 ### 3. Updating Edge Endpoints
 When modifying edge connections:
 - Automatically updates the source node's canvas-specific properties
 - Maintains bidirectional consistency between Canvas visualization and property links
 
-![UpdateEdge](./UpdateEdge.gif)
+![UpdateEdge](./Attachments/UpdateEdge.gif)
 
 ### 4. Canvas Command Usage
 The **"Auto connect nodes and adjust edges with shortest path"** command:
@@ -66,7 +66,7 @@ The **"Auto connect nodes and adjust edges with shortest path"** command:
 - Creates new Canvas edges based on markdown link relationships
 - Particularly useful after moving nodes to maintain optimal connections
 
-![CommandUsage](./CommandUsage.gif)
+![CommandUsage](./Attachments/CommandUsage.gif)
 
 ### 5. Canvas File Opening
 When opening a Canvas file:
@@ -74,14 +74,14 @@ When opening a Canvas file:
 - Property names are generated based on the canvas filename
 - Enables easy property synchronization through simple file opening
 
-![OpenCanvas](./OpenCanvas.gif)
+![OpenCanvas](./Attachments/OpenCanvas.gif)
 
 ### 6. Canvas File Deletion
 When deleting a Canvas file:
 - Automatically removes associated canvas-specific properties from all notes
 - Cleans up all properties named after the deleted canvas
 
-![DeleteCanvas](./DeleteCanvas.gif)
+![DeleteCanvas](./Attachments/DeleteCanvas.gif)
 
 ### 7. Canvas File Renaming
 When renaming a Canvas file:
@@ -89,7 +89,7 @@ When renaming a Canvas file:
 - Renames properties to match the new canvas filename
 - Preserves all existing relationships under the new property name
 
-![RenameCanvas](./RenameCanvas.gif)
+![RenameCanvas](./Attachments/RenameCanvas.gif)
 
 
 
