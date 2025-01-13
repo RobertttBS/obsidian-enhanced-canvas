@@ -170,6 +170,10 @@ export default class EnhancedCanvas extends Plugin {
 		this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
 
+			if (!frontmatter.canvas) {
+				frontmatter.canvas = [];
+			}
+
 			if (!frontmatter[propertyName]) {
 				Reflect.set(frontmatter, propertyName, []);
 			} else if (!Array.isArray(frontmatter[propertyName])) {
