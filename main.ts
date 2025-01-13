@@ -69,10 +69,7 @@ export default class EnhancedCanvas extends Plugin {
 	// For JSON nodes only, which are stored in the canvas file, not the canvas node in Obsidian.
 	removeProperty(node: any, propertyName: string) {
 		const file = this.app.vault.getFileByPath(node.file);
-		if (!file) {
-			console.error('file not found', node.file);
-			return;
-		}
+		if (!file) return;
 
 		this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
@@ -96,12 +93,8 @@ export default class EnhancedCanvas extends Plugin {
 
 	// For JSON nodes only, which are stored in the canvas file, not the canvas node in Obsidian.
 	renameProperty(node: any, oldName: string, newName: string) {
-		console.log('renameProperty', oldName, newName);
 		const file = this.app.vault.getFileByPath(node.file);
-		if (!file) {
-			console.error(`File not found: ${node.file}`);
-			return;
-		}
+		if (!file) return;
 	
 		const getBaseName = (name: string) => name.substring(name.lastIndexOf('/') + 1);
 
