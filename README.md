@@ -26,6 +26,8 @@ Most importantly, creating edges in Canvas establishes connections visible in th
 
 ## Use Cases
 
+- In addition to the edges in Canvas, nodes in Canvas will trigger property updates.
+
 ### 1. Creating Edges in Canvas
 When connecting nodes (e.g., NoteA to NoteB):
 - Automatically adds the target node's link to the source node's properties
@@ -108,11 +110,17 @@ Optional file:
 - Toggle the switch to enable the plugin
 
 ## Notes
+
+### Source files
 - You can obtain the plugin files through either:
   	- Download from the plugin's GitHub Release page
 	- Build from source: Clone the repository and compile it yourself
 		- `npm i` (Node.js and npm are prerequisites)
 		- `npm run dev`
+
+### Property icons
+
+- Using the "File Property Enhancer" plugin to edit property icons will make the properties in "Enhanced Canvas" look better.
 
 
 ## Contributing
