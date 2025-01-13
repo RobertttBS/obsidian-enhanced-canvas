@@ -98,37 +98,15 @@ export default class EnhancedCanvas extends Plugin {
 	
 		const getBaseName = (name: string) => name.substring(name.lastIndexOf('/') + 1);
 
-		const baseName = getBaseName(newName);
-		const oldBaseName = getBaseName(oldName);
+		newName = getBaseName(newName);
 	
 		this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
 
-			if (frontmatter.canvas) {
-				const oldCanvasLink = `[[${oldBaseName}]]`;
-				const newCanvasLink = `[[${baseName}]]`;
-				frontmatter.canvas = frontmatter.canvas
-					.map((link: string) => link === oldCanvasLink ? newCanvasLink : link)
-					.filter((link: string) => link);
-			}
-
 			if (frontmatter.hasOwnProperty(oldName)) {
-				frontmatter[baseName] = frontmatter[oldName];
+				frontmatter[newName] = frontmatter[oldName];
 				delete frontmatter[oldName];
 			}
-			
-			Object.keys(frontmatter).forEach(key => {
-				if (key === baseName) {
-					const value = frontmatter[key];
-					if (Array.isArray(value)) {
-						frontmatter[key] = value.map(item =>
-							typeof item === 'string' ? item.replace(new RegExp(`\\[\\[${oldBaseName}\\]\\]`, 'g'), `[[${baseName}]]`) : item
-						);
-					} else if (typeof value === 'string') {
-						frontmatter[key] = value.replace(new RegExp(`\\[\\[${oldBaseName}\\]\\]`, 'g'), `[[${baseName}]]`);
-					}
-				}
-			});
 		});
 	}
 
