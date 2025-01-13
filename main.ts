@@ -477,8 +477,12 @@ export default class EnhancedCanvas extends Plugin {
 			return t.join("");
 		};
 
-		// compute angle between two nodes
-		const angle = Math.atan2(node2.y - node1.y, node2.x - node1.x) * 180 / Math.PI;
+		const node1CenterX = node1.x + node1.width / 2;
+		const node1CenterY = node1.y + node1.height / 2;
+		const node2CenterX = node2.x + node2.width / 2;
+		const node2CenterY = node2.y + node2.height / 2;
+	  
+		const angle = Math.atan2(node2CenterY - node1CenterY, node2CenterX - node1CenterX) * 180 / Math.PI;
 		const normalizedAngle = angle < 0 ? angle + 360 : angle;
 		
 		let fromSide: NodeSide;
