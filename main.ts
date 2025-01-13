@@ -67,16 +67,16 @@ export default class EnhancedCanvas extends Plugin {
 	}
 
 	// For JSON nodes only, which are stored in the canvas file, not the canvas node in Obsidian.
-	removeProperty(node: any, propertyName: string) {
-		const file = this.app.vault.getFileByPath(node.file);
+	removeProperty(node: any, propertyName: string, basename: string) {
+		const file = this.app.vault.getFileByPath(node.file); // node is JSON node, not canvas node
 		if (!file) return;
 
 		this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
 	
 			// remove the property
-			if (frontmatter[propertyName]) {
-				delete frontmatter[propertyName];
+			if (frontmatter[basename]) {
+				delete frontmatter[basename];
 			}
 	
 			// remove the link from the canvas property
@@ -99,13 +99,15 @@ export default class EnhancedCanvas extends Plugin {
 		const getBaseName = (name: string) => name.substring(name.lastIndexOf('/') + 1);
 
 		newName = getBaseName(newName);
+		const oldBaseName = oldName.replace('.canvas', '');
+		const newBaseName = newName.replace('.canvas', '');
 	
 		this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
 
-			if (frontmatter.hasOwnProperty(oldName)) {
-				frontmatter[newName] = frontmatter[oldName];
-				delete frontmatter[oldName];
+			if (frontmatter.hasOwnProperty(oldBaseName)) { // oldName is "xxx.canvas", should be "xxx"
+				frontmatter[newBaseName] = frontmatter[oldBaseName];
+				delete frontmatter[oldBaseName];
 			}
 		});
 	}
@@ -116,7 +118,7 @@ export default class EnhancedCanvas extends Plugin {
 		nodes.forEach(node => {
 			if (!node?.file) return;
 
-			this.removeProperty(node, canvas.view.file.name);
+			this.removeProperty(node, canvas.view.file.name,canvas.view.file.basename);
 		});
 		canvas.setData(canvasData);
 		canvas.requestSave();
@@ -198,13 +200,14 @@ export default class EnhancedCanvas extends Plugin {
 			canvasData.nodes.forEach((node) => { // JSON nodes, not canvas nodes
 				if (node.type !== 'file') return;
 
-				this.removeProperty(node, file.name);
+				this.removeProperty(node, file.name, file.basename);
 			});
 		}
 
 		const renameCanvasFile = async (file: any, newPath: string) => {
 			if (file.extension !== 'canvas') return;
 			if (file.deleted === true) return;
+			
 			// @ts-ignore
 			const content = await this.app.vault.read(file);
 			const canvasData = JSON.parse(content);
@@ -266,7 +269,7 @@ export default class EnhancedCanvas extends Plugin {
 			const fromFile = this.app.vault.getFileByPath(fromNode.filePath);
 			if (!fromFile) return;
 
-			const canvasName = e.canvas.view.file.name;
+			const canvasName = e.canvas.view.file.basename;
 			const resolvedLinks = this.app.metadataCache.resolvedLinks[fromNode.filePath] || {};
 			const fromNodeLinks = Object.keys(resolvedLinks);
 		
@@ -313,7 +316,7 @@ export default class EnhancedCanvas extends Plugin {
 		const updateOriginalNode = async (edge: any) => {
 			if (!edge.to.node?.filePath || !edge.from.node?.filePath) return;
 
-			const canvasName = edge.canvas.view.file.name;
+			const canvasName = edge.canvas.view.file.basename;
 			const toNode = edge.to.node;
 			const fromNode = edge.from.node;
 
@@ -349,7 +352,7 @@ export default class EnhancedCanvas extends Plugin {
 				// use the method for JSON node to remove the property named after the canvas file name.
 				let tmpNode: { file?: string } = {};
 				tmpNode.file = node.filePath;
-				this.removeProperty(tmpNode, canvasName);
+				this.removeProperty(tmpNode, canvasName, canvasFile.basename);
 			}
 		};
 
@@ -359,8 +362,6 @@ export default class EnhancedCanvas extends Plugin {
 			const file = await resolvedNode?.file;
 			if (!file) return;
 			if (file.extension !== 'md') return;
-
-			const canvasName = node.canvas.view.file.name;
 
 			if (node.filePath) {
 				const fromFile = this.app.vault.getFileByPath(node.filePath);
