@@ -3,9 +3,18 @@
 
 This Obsidian plugin enhances Canvas functionality by automatically managing node connections and synchronizing them with note properties. 
 
-When you create connections in Canvas, the plugin automatically tracks relationships by adding properties named after the canvas file to your notes. 
+When you edit in Canvas, the plugin automatically tracks relationships by adding properties named after the canvas file to your notes. 
 
 Most importantly, creating edges in Canvas establishes connections visible in the Graph View through markdown links.
+
+![enhanced-canvas](./enhanced-canvas.png)
+
+- Based on this screenshot:
+  1. When adding a node to the canvas, it creates a 'canvas' property containing a link to the corresponding canvas file.
+  2. Similarly, creating an edge in the Canvas generates an 'Untitled.md' property with a link to "Note B".
+  3. These markdown links within properties are then reflected in the Local Graph View.
+
+Note: The property icon for 'canvas' is customized using the "File Property Enhancer" plugin.
 
 ## Key Features
 

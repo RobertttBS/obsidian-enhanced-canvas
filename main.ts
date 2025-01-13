@@ -19,9 +19,7 @@ export default class EnhancedCanvas extends Plugin {
 		const existingEdgesSet = new Set(canvas.getData().edges.map(edge => `${edge.fromNode}->${edge.toNode}`));
 	
 		fileNodes.forEach(node => {
-			if (!node.filePath || !resolvedLinks[node.filePath]) {
-				return;
-			}
+			if (!node.filePath || !resolvedLinks[node.filePath]) return;
 	
 			const allLinksSet = new Set(Object.keys(resolvedLinks[node.filePath]));
 			fileNodes.forEach(targetNode => {
