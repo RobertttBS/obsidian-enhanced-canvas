@@ -38,10 +38,6 @@ Note: The property icon for 'canvas' is customized using the "File Property Enha
 
 ## Other Use Cases
 
-- In addition to the edges in Canvas, nodes in Canvas will trigger property updates.
-
-
-
 ### 1. Canvas File Opening
 When opening a Canvas file:
 - Automatically updates canvas-specific properties for all file nodes
