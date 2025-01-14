@@ -13,42 +13,46 @@ export default class EnhancedCanvas extends Plugin {
 		const selectedNodes = Array.from(canvas.selection);
 		const fileNodes = selectedNodes.filter(node => node?.filePath);
 		const resolvedLinks = this.app.metadataCache.resolvedLinks;
-		const allEdgesData: CanvasEdgeData[] = [];
 		const currentData = canvas.getData();
-	
-		// get all existing edges
-		const existingEdgesSet = new Set(currentData.edges.map(edge => `${edge.fromNode}->${edge.toNode}`));
 
-		const filePathToNodeMap = new Map<string, any>();
+		// create a map of existing edges for quick lookup
+		const existingEdgesMap = new Map();
+		currentData.edges.forEach(edge => {
+			existingEdgesMap.set(`${edge.fromNode}->${edge.toNode}`, edge);
+		});
+
+		// map from file path to node
+		const filePathToNodeMap = new Map();
 		fileNodes.forEach(node => {
 			if (node.filePath) {
 				filePathToNodeMap.set(node.filePath, node);
 			}
 		});
 
+		const newEdges = [];
+
 		fileNodes.forEach(sourceNode => {
 			const links = resolvedLinks[sourceNode.filePath];
 			if (!links) return;
 	
-			const targetFilePaths = Object.keys(links).filter(targetPath => 
-				filePathToNodeMap.has(targetPath) && filePathToNodeMap.get(targetPath) !== sourceNode
-			);
-	
-			targetFilePaths.forEach(targetPath => {
+			Object.keys(links).forEach(targetPath => {
 				const targetNode = filePathToNodeMap.get(targetPath);
-				const edgeKey = `${sourceNode.id}->${targetNode.id}`;
-	
-				if (!existingEdgesSet.has(edgeKey)) {
-					const newEdge = this.createEdge(sourceNode, targetNode);
-					allEdgesData.push(newEdge);
-					existingEdgesSet.add(edgeKey);
+				if (targetNode && targetNode !== sourceNode) {
+					const edgeKey = `${sourceNode.id}->${targetNode.id}`;
+					if (!existingEdgesMap.has(edgeKey)) {
+						const newEdge = this.createEdge(sourceNode, targetNode);
+						newEdges.push(newEdge);
+						existingEdgesMap.set(edgeKey, newEdge);
+					}
 				}
 			});
 		});
 	
-		currentData.edges.push(...allEdgesData);
+		if (newEdges.length > 0) {
+			currentData.edges.push(...newEdges);
+		}
 	
-		// adjust edge with shortest path
+		// adjust the edge sides
 		const nodeIdMap = new Map(currentData.nodes.map(node => [node.id, node]));
 		currentData.edges.forEach(edge => {
 			const fromNode = nodeIdMap.get(edge.fromNode);
@@ -61,7 +65,7 @@ export default class EnhancedCanvas extends Plugin {
 				}
 			}
 		});
-	
+
 		canvas.setData(currentData);
 		canvas.requestSave();
 	}
