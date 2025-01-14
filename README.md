@@ -7,12 +7,13 @@ When you edit in Canvas, the plugin automatically tracks relationships by adding
 
 Most importantly, creating edges in Canvas establishes connections visible in the Graph View through markdown links.
 
-![enhanced-canvas](./Attachments/enhanced-canvas.png)
+![enhanced-canvas](./Attachments/demo.gif)
 
-- Based on this screenshot:
+- Based on this demo:
   1. When adding a node to the canvas, it creates a 'canvas' property containing a link to the corresponding canvas file.
-  2. Similarly, creating an edge in the Canvas generates an 'Untitled' property with a link to "Note B". The property name is "Untitled" without ".canvas" extension.
+  2. Similarly, creating an edge in the Canvas generates a 'Canvas 1' property with a link to the target note, where the property name is derived from the canvas file name without its '.canvas' extension.
   3. These markdown links within properties are then reflected in the Local Graph View.
+  4. When remove note from the canvas, all the property related to the canvas file will be removed.
 
 Note: The property icon for 'canvas' is customized using the "File Property Enhancer" plugin.
 
@@ -28,47 +29,21 @@ Note: The property icon for 'canvas' is customized using the "File Property Enha
 
 ## Command Features
 
+
+![demoCommand](./Attachments/demoCommand.gif)
+
 **"Auto Connect Nodes and Adjust Edge with Shortest Path"**
 - Automatically establishes connections based on existing markdown links in notes
 - Optimizes edge paths in Canvas for minimal distance
 - Supports all node types (text nodes, group nodes, images, nested Canvases, etc.)
 
-## Use Cases
+## Other Use Cases
 
 - In addition to the edges in Canvas, nodes in Canvas will trigger property updates.
 
-### 1. Creating Edges in Canvas
-When connecting nodes (e.g., NoteA to NoteB):
-- Automatically adds the target node's link to the source node's properties
-- Property name is based on the canvas filename
-- Supports images, nested Canvas nodes, and other markdown-link compatible nodes
-
-![CreateEdge](./Attachments/CreateEdge.gif)
 
 
-### 2. Deleting Edges in Canvas
-When removing a Canvas edge:
-- Automatically removes the corresponding link from the source note's canvas-specific property
-- Preserves existing markdown links within note content
-
-![DeleteEdge](./Attachments/DeleteEdge.gif)
-
-### 3. Updating Edge Endpoints
-When modifying edge connections:
-- Automatically updates the source node's canvas-specific properties
-- Maintains bidirectional consistency between Canvas visualization and property links
-
-![UpdateEdge](./Attachments/UpdateEdge.gif)
-
-### 4. Canvas Command Usage
-The **"Auto connect nodes and adjust edges with shortest path"** command:
-- Optimizes existing edges between selected nodes for shortest paths
-- Creates new Canvas edges based on markdown link relationships
-- Particularly useful after moving nodes to maintain optimal connections
-
-![CommandUsage](./Attachments/CommandUsage.gif)
-
-### 5. Canvas File Opening
+### 1. Canvas File Opening
 When opening a Canvas file:
 - Automatically updates canvas-specific properties for all file nodes
 - Property names are generated based on the canvas filename
@@ -76,14 +51,14 @@ When opening a Canvas file:
 
 ![OpenCanvas](./Attachments/OpenCanvas.gif)
 
-### 6. Canvas File Deletion
+### 2. Canvas File Deletion
 When deleting a Canvas file:
 - Automatically removes associated canvas-specific properties from all notes
 - Cleans up all properties named after the deleted canvas
 
 ![DeleteCanvas](./Attachments/DeleteCanvas.gif)
 
-### 7. Canvas File Renaming
+### 3. Canvas File Renaming
 When renaming a Canvas file:
 - Automatically updates property names in all associated notes
 - Renames properties to match the new canvas filename
