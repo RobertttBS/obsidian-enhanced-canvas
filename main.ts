@@ -285,35 +285,40 @@ export default class EnhancedCanvas extends Plugin {
 					.filter(node => node && node.file)
 					.map(node => node.file)
 			);
+
+			const updatePromises: Promise<void>[] = [];
+			const getFilePath = (path: string) => this.app.vault.getFileByPath(path);
 		
 			// remove unrelated link
 			fromNodeLinks.forEach(filePath => {
 				if (!edgeToNodesFilePathSet.has(filePath)) {
 					if (filePath === e.canvas.view.file.path) return;
-					const targetFile = this.app.vault.getFileByPath(filePath);
+					const targetFile = getFilePath(filePath);
 					if (!targetFile) return;
 		
 					let link = this.app.fileManager.generateMarkdownLink(targetFile, filePath).replace(/^!(\[\[.*\]\])$/, '$1');
-					this.updateFrontmatter(fromFile, link, 'remove', canvasName);
+					updatePromises.push(this.updateFrontmatter(fromFile, link, 'remove', canvasName));
 				}
 			});
 		
-			// add related link
+			// add related link in current canvas
 			if (toNode?.filePath) {
-				const targetFile = this.app.vault.getFileByPath(toNode.filePath);
+				const targetFile = getFilePath(toNode.filePath);
 				if (!targetFile) return;
 		
-				let link = this.app.fileManager.generateMarkdownLink(targetFile, e.canvas.view.file.path).replace(/^!(\[\[.*\]\])$/, '$1');
-				this.updateFrontmatter(fromFile, link, 'add', canvasName);
+				let link = this.app.fileManager.generateMarkdownLink(targetFile, toNode.filePath).replace(/^!(\[\[.*\]\])$/, '$1');
+				updatePromises.push(this.updateFrontmatter(fromFile, link, 'add', canvasName));
 			}
+
+			await Promise.all(updatePromises);
 		};
 
 		const updateTargetNode = debounce(async (e: any) => {
-			processNodeUpdate(e);
+			await processNodeUpdate(e);
 		}, 1000);
 
 		const updateTargetNodeImmediate = async (e: any) => {
-			processNodeUpdate(e);
+			await processNodeUpdate(e);
 		};
 
 		//  update original node when edge is removed
@@ -327,7 +332,7 @@ export default class EnhancedCanvas extends Plugin {
 			const file = this.app.vault.getFileByPath(toNode.filePath);
 			if (!file) return;
 
-			let link = this.app.fileManager.generateMarkdownLink(file, edge.to.node.filePath);
+			let link = this.app.fileManager.generateMarkdownLink(file, toNode.filePath);
 			link = link.replace(/^!(\[\[.*\]\])$/, '$1'); // for image links
 
 			if (fromNode?.filePath) {
@@ -364,16 +369,15 @@ export default class EnhancedCanvas extends Plugin {
 		const addNodeUpdate = async (node: any) => {
 			const resolvedNode = await node;
 			const file = await resolvedNode?.file;
-			if (!file) return;
-			if (file.extension !== 'md') return;
+			if (!file || file.extension !== 'md') return;
 
 			if (node.filePath) {
 				const fromFile = this.app.vault.getFileByPath(node.filePath);
 				if (!fromFile) return;
 
-				let link = this.app.fileManager.generateMarkdownLink(node.canvas.view.file, node.canvas.view.file.path);
-				link = link.replace(/^!(\[\[.*\]\])$/, '$1');
+				const toFile = node.canvas.view.file;
 
+				const link = this.app.fileManager.generateMarkdownLink(toFile, toFile.path).replace(/^!(\[\[.*\]\])$/, '$1');
 				this.updateFrontmatter(fromFile, link, 'add', 'canvas');
 			}
 		};
@@ -390,6 +394,8 @@ export default class EnhancedCanvas extends Plugin {
 					};
 				}
 			});
+
+			console.log('patched edge');
 		};
 
 		const self = this;
@@ -403,7 +409,7 @@ export default class EnhancedCanvas extends Plugin {
 			if (!canvas) return false;
 
 			const edge = canvas.edges.values().next().value;
-			if (edge) {
+			if (edge && !this.patchedEdge) {
 				this.patchedEdge = true;
 				selfPatched(edge);
 			}
@@ -466,6 +472,8 @@ export default class EnhancedCanvas extends Plugin {
 					};
 				},
 			});
+
+			console.log('patched canvas');
 		};
 
 		this.app.workspace.onLayoutReady(() => {
