@@ -12,8 +12,7 @@ Most importantly, creating edges in Canvas establishes connections visible in th
 - Based on this demo:
   1. When adding a node to the canvas, it creates a 'canvas' property containing a link to the corresponding canvas file.
   2. Similarly, creating an edge in the Canvas generates a 'Canvas 1' property with a link to the target note, where the property name is derived from the canvas file name without its '.canvas' extension.
-  3. These markdown links within properties are then reflected in the Local Graph View.
-  4. When remove note from the canvas, all the property related to the canvas file will be removed.
+  3. When remove note from the canvas, all the property related to the canvas file will be removed.
 
 Note: The property icon for 'canvas' is customized using the "File Property Enhancer" plugin.
 
