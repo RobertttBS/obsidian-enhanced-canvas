@@ -70,6 +70,28 @@ export default class EnhancedCanvas extends Plugin {
 		canvas.requestSave();
 	}
 
+	// add 'canvas' and canvas basename properties to the node frontmatter.
+	addProperty(node: any, propertyName: string, basename: string) {
+		const file = this.app.vault.getFileByPath(node.file); // node is JSON node, not canvas node
+		if (!file) return;
+
+		this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+			if (!frontmatter) return;
+
+			if (!frontmatter.canvas) {
+				frontmatter.canvas = [];
+			}
+			const canvasLink = `[[${propertyName}]]`;
+			if (!frontmatter.canvas.includes(canvasLink)) {
+				frontmatter.canvas.push(canvasLink);
+			}
+	
+			if (!frontmatter[basename]) {
+				frontmatter[basename] = [];
+			}
+		});
+	}
+
 	// For JSON nodes only, which are stored in the canvas file, not the canvas node in Obsidian.
 	removeProperty(node: any, propertyName: string, basename: string) {
 		const file = this.app.vault.getFileByPath(node.file); // node is JSON node, not canvas node
@@ -351,40 +373,33 @@ export default class EnhancedCanvas extends Plugin {
 
 		// remove the node frontmatter when the node is removed
 		const removeNodeUpdate = async (node: any) => {
-			if (node?.file?.extension !== 'md') return;
+			const resolvedNode = await node;
+			if (resolvedNode?.file?.extension !== 'md') return;
 
-			const canvasFile = node?.canvas?.view?.file;
+			const canvasFile = resolvedNode?.canvas?.view?.file;
 			if (!canvasFile || !canvasFile.name) return;
-		
-			const canvasName = canvasFile.name;
 
-			if (node?.filePath) {				
-				// remove the canvas file link from the property named 'canvas'
-				let link = this.app.fileManager.generateMarkdownLink(canvasFile, canvasFile.path);
-				link = link.replace(/^!(\[\[.*\]\])$/, '$1');
-				this.updateFrontmatter(node.file, link, 'remove', 'canvas');
-
+			if (resolvedNode?.filePath) {
 				// use the method for JSON node to remove the property named after the canvas file name.
 				let tmpNode: { file?: string } = {};
-				tmpNode.file = node.filePath;
-				this.removeProperty(tmpNode, canvasName, canvasFile.basename);
+				tmpNode.file = resolvedNode.filePath;
+				this.removeProperty(tmpNode, canvasFile.name, canvasFile.basename);
 			}
 		};
 
 		// aims to add the canvas file link to the property named after the canvas file name.
 		const addNodeUpdate = async (node: any) => {
 			const resolvedNode = await node;
-			const file = await resolvedNode?.file;
-			if (!file || file.extension !== 'md') return;
+			if (resolvedNode?.file?.extension !== 'md') return;
 
-			if (node.filePath) {
-				const fromFile = this.app.vault.getFileByPath(node.filePath);
-				if (!fromFile) return;
+			const canvasFile = resolvedNode.canvas.view.file;
+			if (!canvasFile || !canvasFile.name) return;
 
-				const toFile = node.canvas.view.file;
-
-				const link = this.app.fileManager.generateMarkdownLink(toFile, toFile.path).replace(/^!(\[\[.*\]\])$/, '$1');
-				this.updateFrontmatter(fromFile, link, 'add', 'canvas');
+			if (resolvedNode.filePath) {
+				// use the method for JSON node to add the property named after the canvas file name.
+				let tmpNode: { file?: string } = {};
+				tmpNode.file = resolvedNode.filePath;
+				this.addProperty(tmpNode, canvasFile.name, canvasFile.basename);
 			}
 		};
 
