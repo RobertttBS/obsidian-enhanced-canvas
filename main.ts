@@ -444,10 +444,7 @@ export default class EnhancedCanvas extends Plugin {
 						}
 						return result;
 					};
-				}
-			});
-
-			around(canvas.constructor.prototype, {
+				},
 				addNode: (next: any) => {
 					return function (node: any) {
 						const result = next.call(this, node);
@@ -455,9 +452,6 @@ export default class EnhancedCanvas extends Plugin {
 						return result;
 					};
 				},
-			});
-
-			around(canvas.constructor.prototype, {
 				removeEdge: (next: any) => {
 					return function (edge: any) {
 						const result = next.call(this, edge);
@@ -466,10 +460,7 @@ export default class EnhancedCanvas extends Plugin {
 						}
 						return result;
 					};
-				}
-			});
-
-			around(canvas.constructor.prototype, {
+				},
 				addEdge: (next: any) => {
 					return function (edge: any) {
 						const result = next.call(this, edge);
@@ -481,9 +472,6 @@ export default class EnhancedCanvas extends Plugin {
 						return result;
 					};
 				},
-			});
-
-			around(canvas.constructor.prototype, {
 				clear: (next: any) => {
 					return function () {
 						this.isClearing = true;
@@ -493,7 +481,6 @@ export default class EnhancedCanvas extends Plugin {
 					};
 				},
 			});
-
 			console.log('patched canvas');
 		};
 
