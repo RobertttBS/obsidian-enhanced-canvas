@@ -56,7 +56,6 @@ export default class EnhancedCanvas extends Plugin {
 	
 		// adjust the edge sides
 		currentData.edges.forEach(edge => {
-			// 檢查 edge 是否與選中的節點相關
 			if (selectedNodeIds.has(edge.fromNode) && selectedNodeIds.has(edge.toNode)) {
 				const fromNode = currentData.nodes.find(node => node.id === edge.fromNode);
 				const toNode = currentData.nodes.find(node => node.id === edge.toNode);
