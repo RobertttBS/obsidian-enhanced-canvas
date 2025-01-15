@@ -51,17 +51,21 @@ export default class EnhancedCanvas extends Plugin {
 		if (newEdges.length > 0) {
 			currentData.edges.push(...newEdges);
 		}
+
+		const selectedNodeIds = new Set(selectedNodes.map(node => node.id));
 	
 		// adjust the edge sides
-		const nodeIdMap = new Map(currentData.nodes.map(node => [node.id, node]));
 		currentData.edges.forEach(edge => {
-			const fromNode = nodeIdMap.get(edge.fromNode);
-			const toNode = nodeIdMap.get(edge.toNode);
-			if (fromNode && toNode) {
-				const updatedEdge = this.createEdge(fromNode, toNode);
-				if (edge.fromSide !== updatedEdge.fromSide || edge.toSide !== updatedEdge.toSide) {
-					edge.fromSide = updatedEdge.fromSide;
-					edge.toSide = updatedEdge.toSide;
+			// 檢查 edge 是否與選中的節點相關
+			if (selectedNodeIds.has(edge.fromNode) && selectedNodeIds.has(edge.toNode)) {
+				const fromNode = currentData.nodes.find(node => node.id === edge.fromNode);
+				const toNode = currentData.nodes.find(node => node.id === edge.toNode);
+				if (fromNode && toNode) {
+					const updatedEdge = this.createEdge(fromNode, toNode);
+					if (edge.fromSide !== updatedEdge.fromSide || edge.toSide !== updatedEdge.toSide) {
+						edge.fromSide = updatedEdge.fromSide;
+						edge.toSide = updatedEdge.toSide;
+					}
 				}
 			}
 		});
@@ -481,6 +485,7 @@ export default class EnhancedCanvas extends Plugin {
 					};
 				},
 			});
+
 			console.log('patched canvas');
 		};
 
