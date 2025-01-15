@@ -108,11 +108,20 @@ export default class EnhancedCanvas extends Plugin {
 	
 		this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
-
-			if (frontmatter.hasOwnProperty(oldBaseName)) { // oldName is "xxx.canvas", should be "xxx"
-				frontmatter[newBaseName] = frontmatter[oldBaseName];
-				delete frontmatter[oldBaseName];
-			}
+	
+			// rebuild the frontmatter with the new property name
+			const newFrontmatter = Object.fromEntries(
+				Object.entries(frontmatter).map(([key, value]) => [
+					key === oldBaseName ? newBaseName : key,
+					value
+				])
+			);
+	
+			// remove all properties and assign the new frontmatter
+			Object.keys(frontmatter).forEach(key => {
+				delete frontmatter[key];
+			});
+			Object.assign(frontmatter, newFrontmatter);
 		});
 	}
 
@@ -161,9 +170,6 @@ export default class EnhancedCanvas extends Plugin {
 				frontmatter[propertyName].push(link);
 			} else if (action === 'remove') {
 				frontmatter[propertyName] = frontmatter[propertyName].filter(l => l !== link);
-				if (frontmatter[propertyName].length === 0) {
-					delete frontmatter[propertyName];
-				}
 			}
 		});
 	};
