@@ -221,6 +221,30 @@ export default class EnhancedCanvas extends Plugin {
 		this.registerCustomCommands();
 		this.registerCanvasAutoLink();
 		this.registerCanvasFileDeletion();
+
+		this.registerEvent(
+			this.app.workspace.on('layout-change', async () => {
+				// get current active leaf
+				const activeLeaf = this.app.workspace.getActiveViewOfType(ItemView);
+				if (!activeLeaf || activeLeaf.getViewType() !== 'canvas') return;
+
+				const prevFile = this.app.workspace.getLastOpenFiles()[0];
+				if (!prevFile) return;
+
+				// @ts-ignore
+				const canvas = await activeLeaf.canvas;
+				if (!canvas) return;
+	
+				// find the node with the same file path as the prevFile and zoom to it
+				for (const [key, value] of canvas.nodes) {
+					if (value?.filePath === prevFile) {
+						canvas.select(value);
+    					canvas.zoomToSelection()
+						break;
+					}
+				}
+			})
+		);
 	}
 
 	registerCanvasFileDeletion() {
