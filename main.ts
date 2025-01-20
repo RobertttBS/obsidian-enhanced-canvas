@@ -239,7 +239,7 @@ export default class EnhancedCanvas extends Plugin {
 				for (const [key, value] of canvas.nodes) {
 					if (value?.filePath === prevFile) {
 						canvas.select(value);
-    					canvas.zoomToSelection()
+    					canvas.zoomToSelection();
 						break;
 					}
 				}
