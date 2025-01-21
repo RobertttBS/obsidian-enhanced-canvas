@@ -10,7 +10,7 @@ Most importantly, creating edges in Canvas establishes connections visible in th
 ![enhanced-canvas](./Attachments/demo.gif)
 
 - Based on this demo:
-  1. When adding a node to the canvas, it creates a 'canvas' property containing a link to the corresponding canvas file.
+  1. When a node is added to the canvas, it generates a 'canvas' property with a link to its corresponding canvas file. Upon clicking this link from a note, the system automatically focuses and zooms to the associated node in the canvas.
   2. Similarly, creating an edge in the Canvas generates a 'Canvas 1' property with a link to the target note, where the property name is derived from the canvas file name without its '.canvas' extension.
   3. When remove note from the canvas, all the property related to the canvas file will be removed.
 
