@@ -223,7 +223,7 @@ export default class EnhancedCanvas extends Plugin {
 		this.registerCanvasFileDeletion();
 
 		this.registerEvent(
-			this.app.workspace.on('layout-change', async () => {
+			this.app.workspace.on('active-leaf-change', async () => {
 				// get current active leaf
 				const activeLeaf = this.app.workspace.getActiveViewOfType(ItemView);
 				if (!activeLeaf || activeLeaf.getViewType() !== 'canvas') return;
