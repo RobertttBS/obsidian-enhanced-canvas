@@ -2,7 +2,7 @@
 	"id": "enhanced-canvas",
 	"name": "Enhanced Canvas",
 	"version": "1.0.0",
-	"minAppVersion": "0.15.0",
+	"minAppVersion": "1.7.7",
 	"description": "When creating links on Canvas, automatically add properties and Markdown links to notes. A command automatically creates canvas links based on Markdown links, and it adjusts all links to use the shortest path.",
 	"author": "RobertttBS",
 	"authorUrl": "https://github.com/RobertttBS/",

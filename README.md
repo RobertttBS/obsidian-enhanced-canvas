@@ -1,4 +1,4 @@
-# Obsidian - Enhanced Canvas
+# Enhanced Canvas
 ## Overview
 
 This Obsidian plugin enhances Canvas functionality by automatically managing node connections and synchronizing them with note properties. 

@@ -216,8 +216,6 @@ export default class EnhancedCanvas extends Plugin {
 	}
 
 	async onload() {
-		console.log('Loading Enhanced Canvas');
-
 		this.registerCustomCommands();
 		this.registerCanvasAutoLink();
 		this.registerCanvasFileDeletion();
@@ -248,55 +246,51 @@ export default class EnhancedCanvas extends Plugin {
 	}
 
 	registerCanvasFileDeletion() {
+		const plugin = this;
+		
 		const deleteCanvasFile = async (file: any) => {
 			if (file.extension !== 'canvas') return;
 			if (file.deleted === true) return;
-			// @ts-ignore
-			const content = await this.app.vault.read(file);
+			
+			const content = await plugin.app.vault.read(file);
 			const canvasData = JSON.parse(content);
-
-			// @ts-ignore
-			canvasData.nodes.forEach((node) => { // JSON nodes, not canvas nodes
+			
+			canvasData.nodes.forEach((node: any) => {
 				if (node.type !== 'file') return;
-
-				this.removeProperty(node, file.name, file.basename);
+				plugin.removeProperty(node, file.name, file.basename);
 			});
 		}
-
+	
 		const renameCanvasFile = async (file: any, newPath: string) => {
 			if (file.extension !== 'canvas') return;
 			if (file.deleted === true) return;
 			
-			// @ts-ignore
-			const content = await this.app.vault.read(file);
+			const content = await plugin.app.vault.read(file);
 			const canvasData = JSON.parse(content);
-			// @ts-ignore
-			canvasData.nodes.forEach((node) => {
+			
+			canvasData.nodes.forEach((node: any) => {
 				if (node.type !== 'file') return;
-				this.renameProperty(node, file.name, newPath);
+				plugin.renameProperty(node, file.name, newPath);
 			});
 		}
-
-		around(this.app.fileManager.constructor.prototype, {
-			trashFile: (next: any) => {
-				return function (file: any) {
+	
+		const uninstaller = around(this.app.fileManager.constructor.prototype, {
+			trashFile(old: Function) {
+				return function(file: any) {
 					deleteCanvasFile(file);
-					const result = next.call(this, file);
-					return result;
+					return old.call(this, file);
+				};
+			},
+			renameFile(old: Function) {
+				return function(file: any, newPath: string) {
+					renameCanvasFile(file, newPath);
+					return old.call(this, file, newPath);
 				};
 			}
 		});
 
-		around(this.app.fileManager.constructor.prototype, {
-			renameFile: (next: any) => {
-				return function (file: any, newPath: string) {
-					renameCanvasFile(file, newPath);
-					const result = next.call(this, file, newPath);
-					return result;
-				};
-			}
-		});
-	}
+		this.register(uninstaller);
+	}	
 
 	registerCustomCommands() {
 		this.addCommand({
@@ -318,6 +312,8 @@ export default class EnhancedCanvas extends Plugin {
 	}
 
 	registerCanvasAutoLink() {
+		const plugin = this;
+
 		const processNodeUpdate = async (e: any) => {
 			const fromNode = e?.from?.node;
 			const toNode = e?.to?.node;
@@ -433,7 +429,7 @@ export default class EnhancedCanvas extends Plugin {
 		const selfPatched = (edge: any) => {
 			this.patchedEdge = true;
 
-			around(edge.constructor.prototype, {
+			const uninstaller = around(edge.constructor.prototype, {
 				update: (next: any) => {
 					return function (...args: any[]) {
 						const result = next.call(this, ...args);
@@ -443,85 +439,73 @@ export default class EnhancedCanvas extends Plugin {
 				}
 			});
 
-			console.log('patched edge');
+			plugin.register(uninstaller);
 		};
 
-		const self = this;
-
 		const patchCanvas = () => {
-			const canvasView = this.app.workspace.getLeavesOfType('canvas')[0]?.view;
-			if (!canvasView) return false;
+			const canvasView = plugin.app.workspace.getLeavesOfType('canvas')[0]?.view;
+			if (!canvasView?.canvas) return false;
 
-			// @ts-ignore
-			const canvas = canvasView.canvas;
-			if (!canvas) return false;
-
-			const edge = canvas.edges.values().next().value;
-			if (edge && !this.patchedEdge) {
-				this.patchedEdge = true;
-				selfPatched(edge);
-			}
-
-			around(canvas.constructor.prototype, {
-				removeNode: (next: any) => {
-					return function (node: any) {
-						const result = next.call(this, node);
+			const uninstaller = around(canvasView.canvas.constructor.prototype, {
+				removeNode(old: Function) {
+					return function(node: any) {
+						const result = old.call(this, node);
 						if (this.isClearing !== true) {
 							removeNodeUpdate(node);
 						}
 						return result;
 					};
 				},
-				addNode: (next: any) => {
-					return function (node: any) {
-						const result = next.call(this, node);
+				addNode(old: Function) {
+					return function(node: any) {
+						const result = old.call(this, node);
 						addNodeUpdate(node);
 						return result;
 					};
 				},
-				removeEdge: (next: any) => {
-					return function (edge: any) {
-						const result = next.call(this, edge);
+				removeEdge(old: Function) {
+					return function(edge: any) {
+						const result = old.call(this, edge);
 						if (this.isClearing !== true) {
 							updateOriginalNode(edge);
 						}
 						return result;
 					};
 				},
-				addEdge: (next: any) => {
-					return function (edge: any) {
-						const result = next.call(this, edge);
-						if (!self.patchedEdge) {
-							this.patchedEdge = true;
+				addEdge(old: Function) {
+					return function(edge: any) {
+						const result = old.call(this, edge);
+						if (!plugin.patchedEdge) {
+							plugin.patchedEdge = true;
 							selfPatched(edge);
 						}
 						updateTargetNodeImmediate(edge);
 						return result;
 					};
 				},
-				clear: (next: any) => {
-					return function () {
+				clear(old: Function) {
+					return function() {
 						this.isClearing = true;
-						const result = next.call(this);
+						const result = old.call(this);
 						this.isClearing = false;
 						return result;
 					};
-				},
+				}
 			});
 
-			console.log('patched canvas');
+			plugin.register(uninstaller);
+			
+			return true;	
+		};
+		
+		const layoutChangeHandler = () => {
+			if (patchCanvas()) {
+				// when canvas patched successfully, remove the layout change listener
+				plugin.app.workspace.off('active-leaf-change', layoutChangeHandler);
+			}
 		};
 
-		this.app.workspace.onLayoutReady(() => {
-			if (!patchCanvas()) {
-				const evt = this.app.workspace.on("layout-change", () => {
-					if (patchCanvas()) {
-						this.app.workspace.offref(evt);
-					}
-				});
-				this.registerEvent(evt);
-			}
-		});
+		plugin.app.workspace.on('active-leaf-change', layoutChangeHandler);		
 	}
 
 	createEdge(node1: any, node2: any) {
