@@ -304,7 +304,7 @@ export default class EnhancedCanvas extends Plugin {
 		// With automatic property updates for dateFile and renameFile, this command is unnecessary.
 		this.addCommand({
 			id: 'remove-canvas-property',
-			name: 'Remove the property of all nodes in current canvas',
+			name: 'Remove the property of all nodes in current Canvas',
 			checkCallback: this.ifActiveViewIsCanvas((canvas, canvasData) => {
 				this.removeAllProperty(canvas, canvasData);
 			})
