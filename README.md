@@ -76,8 +76,6 @@ Download the following files from the plugin's GitHub Release page and place the
 Required files:
 - `main.js` - Main plugin code
 - `manifest.json` - Plugin configuration file
-Optional file:
-- `styles.css` - Custom stylesheet
 
 ### 3. Restart Obsidian
 - Close and reopen Obsidian
