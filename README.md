@@ -15,6 +15,7 @@ Most importantly, creating edges in Canvas establishes connections visible in th
   3. When remove note from the canvas, all the property related to the canvas file will be removed.
 
 Note 1: All properties added by this plugin will be removed upon disabling.
+
 Note 2: The property icon for 'canvas' is customized using the "File Property Enhancer" plugin.
 
 ## Key Features
