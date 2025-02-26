@@ -571,14 +571,10 @@ export default class EnhancedCanvas extends Plugin {
 					};
 					
 					this.removeAllProperty(tempCanvas, canvasData);
-					
-					console.log(`Enhanced Canvas: Cleaned up properties for ${canvasFile.path}`);
 				} catch (error) {
 					console.error(`Enhanced Canvas: Error cleaning up ${canvasFile.path}`, error);
 				}
 			});
-			
-			console.log('Enhanced Canvas: Plugin unloaded and cleanup completed');
 		} catch (error) {
 			console.error('Enhanced Canvas: Error during plugin unload cleanup', error);
 		}
