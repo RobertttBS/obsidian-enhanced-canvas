@@ -554,5 +554,33 @@ export default class EnhancedCanvas extends Plugin {
 	}
 
 	onunload() {
+		try {
+			const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
+			
+			canvasFiles.forEach(async (canvasFile) => {
+				try {
+					const content = await this.app.vault.read(canvasFile);
+					const canvasData = JSON.parse(content) as CanvasData;
+					
+					const tempCanvas = {
+						view: {
+							file: canvasFile
+						},
+						setData: () => {},
+						requestSave: () => {}
+					};
+					
+					this.removeAllProperty(tempCanvas, canvasData);
+					
+					console.log(`Enhanced Canvas: Cleaned up properties for ${canvasFile.path}`);
+				} catch (error) {
+					console.error(`Enhanced Canvas: Error cleaning up ${canvasFile.path}`, error);
+				}
+			});
+			
+			console.log('Enhanced Canvas: Plugin unloaded and cleanup completed');
+		} catch (error) {
+			console.error('Enhanced Canvas: Error during plugin unload cleanup', error);
+		}
 	}
 }
