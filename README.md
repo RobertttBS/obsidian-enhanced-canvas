@@ -14,7 +14,8 @@ Most importantly, creating edges in Canvas establishes connections visible in th
   2. Similarly, creating an edge in the Canvas generates a 'Canvas 1' property with a link to the target note, where the property name is derived from the canvas file name without its '.canvas' extension.
   3. When remove note from the canvas, all the property related to the canvas file will be removed.
 
-Note: The property icon for 'canvas' is customized using the "File Property Enhancer" plugin.
+Note 1: All properties added by this plugin will be removed upon disabling.
+Note 2: The property icon for 'canvas' is customized using the "File Property Enhancer" plugin.
 
 ## Key Features
 
