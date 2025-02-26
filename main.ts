@@ -553,11 +553,12 @@ export default class EnhancedCanvas extends Plugin {
 		return edgeData;
 	}
 
-	onunload() {
+	async onunload() {
 		try {
 			const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
 			
-			canvasFiles.forEach(async (canvasFile) => {
+			// 使用 Promise.all 等待所有異步操作完成
+			await Promise.all(canvasFiles.map(async (canvasFile) => {
 				try {
 					const content = await this.app.vault.read(canvasFile);
 					const canvasData = JSON.parse(content) as CanvasData;
@@ -574,9 +575,10 @@ export default class EnhancedCanvas extends Plugin {
 				} catch (error) {
 					console.error(`Enhanced Canvas: Error cleaning up ${canvasFile.path}`, error);
 				}
-			});
+			}));
 		} catch (error) {
 			console.error('Enhanced Canvas: Error during plugin unload cleanup', error);
 		}
 	}
+	
 }
