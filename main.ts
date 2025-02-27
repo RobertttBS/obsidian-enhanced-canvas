@@ -221,40 +221,41 @@ export default class EnhancedCanvas extends Plugin {
 		this.registerCanvasFileDeletion();
 
 		this.registerEvent( // Implement the feature to zoom to the last opened file when switching to the canvas view.
-			this.app.workspace.on('active-leaf-change', async () => {
-				// get current active leaf
-				const activeLeaf = this.app.workspace.getActiveViewOfType(ItemView);
-				if (!activeLeaf || activeLeaf.getViewType() !== 'canvas') return;
-
-				let prevFile = this.app.workspace.getLastOpenFiles()[0];
-				if (!prevFile) return;
-				if (prevFile.endsWith('.canvas')) {
-					const secondFile = this.app.workspace.getLastOpenFiles()[1];
-					if (secondFile && secondFile.endsWith('.md')) {
-						prevFile = secondFile;
+			this.app.workspace.on('active-leaf-change', () => {
+				Promise.resolve().then(async () => {
+					// get current active leaf
+					const activeLeaf = this.app.workspace.getActiveViewOfType(ItemView);
+					if (!activeLeaf || activeLeaf.getViewType() !== 'canvas') return;
+		
+					const recentFiles = this.app.workspace.getRecentFiles();
+					let prevFile = recentFiles[0];
+					if (!prevFile) return;
+					if (prevFile.endsWith('.canvas')) {
+						prevFile = recentFiles[1];
+						if (!prevFile || !prevFile.endsWith('.md')) return;
 					}
-				}
-				
-				// @ts-ignore
-				const canvas = await activeLeaf.canvas;
-				if (!canvas) return;
-
-				const nodes = await canvas.nodes;
-				if (!nodes) return;
-	
-				// find the node with the same file path as the prevFile and zoom to it
-				for (const [key, value] of nodes) {
-					const nodeFilePath = await value?.filePath;
-					if (nodeFilePath === prevFile) {
-						canvas.select(value);
-						setTimeout(() => {
-                            canvas.zoomToSelection();
-                        }, 200);
-						break;
+					
+					// @ts-ignore
+					const canvas = await activeLeaf.canvas;
+					if (!canvas) return;
+		
+					const nodes = await canvas.nodes;
+					if (!nodes) return;
+		
+					// find the node with the same file path as the prevFile and zoom to it
+					for (const [key, value] of nodes) {
+						const nodeFilePath = await value?.filePath;
+						if (nodeFilePath === prevFile) {
+							canvas.select(value);
+							setTimeout(() => {
+								canvas.zoomToSelection();
+							}, 200);
+							break;
+						}
 					}
-				}
+				});
 			})
-		);
+		);		
 	}
 
 	registerCanvasFileDeletion() {
