@@ -355,29 +355,20 @@ export default class EnhancedCanvas extends Plugin {
 					const activeLeaf = this.app.workspace.getActiveViewOfType(ItemView);
 					if (!activeLeaf || activeLeaf.getViewType() !== 'canvas') return;
 		
-					const recentFiles = this.app.workspace.getRecentFiles();
-					let prevFile = recentFiles[0];
+					const prevFile = this.app.workspace.getLastOpenFiles()[0];
 					if (!prevFile) return;
-					if (prevFile.endsWith('.canvas')) {
-						prevFile = recentFiles[1];
-						if (!prevFile || !prevFile.endsWith('.md')) return;
-					}
 					
 					// @ts-ignore
 					const canvas = await activeLeaf.canvas;
 					if (!canvas) return;
 		
-					const nodes = await canvas.nodes;
-					if (!nodes) return;
-		
 					// find the node with the same file path as the prevFile and zoom to it
-					for (const [key, value] of nodes) {
-						const nodeFilePath = await value?.filePath;
-						if (nodeFilePath === prevFile) {
+					for (const [key, value] of canvas.nodes) {
+						if (value?.filePath === prevFile) {
 							canvas.select(value);
 							setTimeout(() => {
 								canvas.zoomToSelection();
-							}, 200);
+							}, 100);
 							break;
 						}
 					}
