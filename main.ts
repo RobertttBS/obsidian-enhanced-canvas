@@ -162,19 +162,55 @@ export default class EnhancedCanvas extends Plugin {
 		canvas.requestSave();
 	}
 
-	// unused function, return the content without frontmatter.
-	// getContentWithoutFrontmatter = async (file: any) => {
-	// 	const content = await this.app.vault.read(file);
-	// 	if (!content) return;
+	async processEdgeUpdate(e: any) {
+        const fromNode = e?.from?.node;
+        const toNode = e?.to?.node;
 
-	// 	const fileCache = this.app.metadataCache.getFileCache(file);
-	// 	if (!fileCache?.sections?.length) return content;
+        if (!fromNode || !toNode) return;
+        if (!fromNode?.filePath && !fromNode?.file) return;
 
-	// 	const firstSection = fileCache.sections[0];
-	// 	if (firstSection.type !== "yaml") return content;
+        const fromFilePath = fromNode.filePath || fromNode.file;
+        const toFilePath = toNode.filePath || toNode.file;
 
-	// 	return content.substring(firstSection.position.end.offset + 1);
-	// }
+        const fromFile = this.app.vault.getFileByPath(fromFilePath);
+        const toFile = this.app.vault.getFileByPath(toFilePath);
+
+        if (!fromFile || !toFile) return;
+
+        const canvasName = e.canvas.view.file.basename;
+
+        let link = this.app.fileManager.generateMarkdownLink(toFile, fromFilePath).replace(/^!(\[\[.*\]\])$/, '$1');
+        await this.updateFrontmatter(fromFile, link, 'add', canvasName);
+    }
+
+	async processEdgesInCanvas(canvasData: CanvasData, canvasFile: TFile) {
+        const tempCanvas = {
+            view: {
+                file: canvasFile
+            },
+            getData: () => canvasData,
+        };
+
+        const nodeIdToNodeMap = new Map<string, any>();
+        for (const node of canvasData.nodes) {
+            nodeIdToNodeMap.set(node.id, node);
+        }
+
+        for (const edgeData of canvasData.edges) {
+            const fromNode = nodeIdToNodeMap.get(edgeData.fromNode);
+            const toNode = nodeIdToNodeMap.get(edgeData.toNode);
+
+            if (!fromNode || !toNode) continue;
+
+            const e = {
+                from: { node: fromNode },
+                to: { node: toNode },
+                canvas: tempCanvas
+            };
+
+            await this.processEdgeUpdate(e);
+        }
+    }
 
 	// update the items in the "propertyName" array in the frontmatter of the file.
 	updateFrontmatter = async (file: any, link: any, action: any, propertyName: string) => {
@@ -221,35 +257,28 @@ export default class EnhancedCanvas extends Plugin {
 		this.registerCanvasFileDeletion();
 		this.registerFocusCanvas();
 
-		try {
-			const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
-			
-			await Promise.all(canvasFiles.map(async (canvasFile) => {
-				try {
-					console.warn(`Enhanced Canvas: Updating ${canvasFile.path}`);
-					const content = await this.app.vault.read(canvasFile);
-					const canvasData = JSON.parse(content) as CanvasData;
+        try {
+            const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
+            
+            await Promise.all(canvasFiles.map(async (canvasFile) => {
+                try {
+                    const content = await this.app.vault.read(canvasFile);
+                    const canvasData = JSON.parse(content) as CanvasData;
 
-					const tempCanvas = {
-						view: {
-							file: canvasFile
-						},
-						setData: () => {},
-						requestSave: () => {}
-					};
+                    await this.processEdgesInCanvas(canvasData, canvasFile);
 
-					for (const node of canvasData.nodes) {
-						if (!node?.file) continue;
+                    for (const node of canvasData.nodes) {
+                        if (!node?.file) continue;
 
-						this.addProperty(node, canvasFile.name, canvasFile.basename);
-					}
-				} catch (error) {
-					console.error(`Enhanced Canvas: Error updating ${canvasFile.path}`, error);
-				}
-			}));
-		} catch (error) {
-			console.error('Enhanced Canvas: Error during plugin load', error);
-		}
+                        this.addProperty(node, canvasFile.name, canvasFile.basename);
+                    }
+                } catch (error) {
+                    console.error(`Enhanced Canvas: Error updating ${canvasFile.path}`, error);
+                }
+            }));
+        } catch (error) {
+            console.error('Enhanced Canvas: Error during plugin load', error);
+        }
 	}
 
 	registerCanvasFileDeletion() {
