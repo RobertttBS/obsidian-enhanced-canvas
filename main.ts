@@ -219,43 +219,37 @@ export default class EnhancedCanvas extends Plugin {
 		this.registerCustomCommands();
 		this.registerCanvasAutoLink();
 		this.registerCanvasFileDeletion();
+		this.registerFocusCanvas();
 
-		this.registerEvent( // Implement the feature to zoom to the last opened file when switching to the canvas view.
-			this.app.workspace.on('active-leaf-change', () => {
-				Promise.resolve().then(async () => {
-					// get current active leaf
-					const activeLeaf = this.app.workspace.getActiveViewOfType(ItemView);
-					if (!activeLeaf || activeLeaf.getViewType() !== 'canvas') return;
-		
-					const recentFiles = this.app.workspace.getRecentFiles();
-					let prevFile = recentFiles[0];
-					if (!prevFile) return;
-					if (prevFile.endsWith('.canvas')) {
-						prevFile = recentFiles[1];
-						if (!prevFile || !prevFile.endsWith('.md')) return;
+		try {
+			const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
+			
+			await Promise.all(canvasFiles.map(async (canvasFile) => {
+				try {
+					console.warn(`Enhanced Canvas: Updating ${canvasFile.path}`);
+					const content = await this.app.vault.read(canvasFile);
+					const canvasData = JSON.parse(content) as CanvasData;
+
+					const tempCanvas = {
+						view: {
+							file: canvasFile
+						},
+						setData: () => {},
+						requestSave: () => {}
+					};
+
+					for (const node of canvasData.nodes) {
+						if (!node?.file) continue;
+
+						this.addProperty(node, canvasFile.name, canvasFile.basename);
 					}
-					
-					// @ts-ignore
-					const canvas = await activeLeaf.canvas;
-					if (!canvas) return;
-		
-					const nodes = await canvas.nodes;
-					if (!nodes) return;
-		
-					// find the node with the same file path as the prevFile and zoom to it
-					for (const [key, value] of nodes) {
-						const nodeFilePath = await value?.filePath;
-						if (nodeFilePath === prevFile) {
-							canvas.select(value);
-							setTimeout(() => {
-								canvas.zoomToSelection();
-							}, 200);
-							break;
-						}
-					}
-				});
-			})
-		);		
+				} catch (error) {
+					console.error(`Enhanced Canvas: Error updating ${canvasFile.path}`, error);
+				}
+			}));
+		} catch (error) {
+			console.error('Enhanced Canvas: Error during plugin load', error);
+		}
 	}
 
 	registerCanvasFileDeletion() {
@@ -322,6 +316,45 @@ export default class EnhancedCanvas extends Plugin {
 				this.removeAllProperty(canvas, canvasData);
 			})
 		});
+	}
+
+	registerFocusCanvas() {
+		this.registerEvent( // Implement the feature to zoom to the last opened file when switching to the canvas view.
+			this.app.workspace.on('active-leaf-change', () => {
+				Promise.resolve().then(async () => {
+					// get current active leaf
+					const activeLeaf = this.app.workspace.getActiveViewOfType(ItemView);
+					if (!activeLeaf || activeLeaf.getViewType() !== 'canvas') return;
+		
+					const recentFiles = this.app.workspace.getRecentFiles();
+					let prevFile = recentFiles[0];
+					if (!prevFile) return;
+					if (prevFile.endsWith('.canvas')) {
+						prevFile = recentFiles[1];
+						if (!prevFile || !prevFile.endsWith('.md')) return;
+					}
+					
+					// @ts-ignore
+					const canvas = await activeLeaf.canvas;
+					if (!canvas) return;
+		
+					const nodes = await canvas.nodes;
+					if (!nodes) return;
+		
+					// find the node with the same file path as the prevFile and zoom to it
+					for (const [key, value] of nodes) {
+						const nodeFilePath = await value?.filePath;
+						if (nodeFilePath === prevFile) {
+							canvas.select(value);
+							setTimeout(() => {
+								canvas.zoomToSelection();
+							}, 200);
+							break;
+						}
+					}
+				});
+			})
+		);	
 	}
 
 	registerCanvasAutoLink() {
@@ -591,6 +624,5 @@ export default class EnhancedCanvas extends Plugin {
 		} catch (error) {
 			console.error('Enhanced Canvas: Error during plugin unload cleanup', error);
 		}
-	}
-	
+	}	
 }
