@@ -1,24 +1,28 @@
 # Enhanced Canvas
 ## Overview
 
-This Obsidian plugin enhances Canvas functionality by automatically managing node connections and synchronizing them with note properties. 
+This Obsidian plugin enhances Canvas functionality by automatically managing node connections and synchronizing them with note properties.
 
-When you edit in Canvas, the plugin automatically tracks relationships by adding properties named after the canvas file to your notes. 
+When you edit in Canvas, the plugin automatically tracks relationships by adding properties named after the canvas file to your notes.
 
 Most importantly, creating edges in Canvas establishes connections visible in the Graph View through markdown links.
+
+## Demo
 
 ![enhanced-canvas](./Attachments/demo.gif)
 
 - Based on this demo:
-  1. When a node is added to the canvas, it generates a 'canvas' property with a link to its corresponding canvas file.
-  2. Similarly, creating an edge in the Canvas generates a 'Canvas 1' property with a link to the target note, where the property name is derived from the canvas file name without its '.canvas' extension.
-  3. When remove note from the canvas, all the property related to the canvas file will be removed.
+  1. **Node addition**: When a note is added to the canvas, the plugin generates a 'canvas' property with a link to its corresponding canvas file.
+  2. **Edge addition**: Creating an edge in the Canvas generates a link to the target note within a property named after the canvas file (e.g., 'Canvas 1'), where the property name is derived from the canvas file name without its '.canvas' extension.
+  3. **Node deletion**: When a note is removed from the canvas, all properties related to that canvas file will be removed.
 
-Note 1: All properties will be added when this plugin is enabled, and all properties added by this plugin will be removed upon disabling it.
+**Note 1**: All Canvas-related properties will be added when this plugin is enabled, and all properties added by this plugin will be removed upon disabling it.
 
-Note 2: The property icon for 'canvas' is customized using the "File Property Enhancer" plugin.
+**Note 2**: This plugin tracks changes to .canvas files and can synchronize note properties when the name of a .canvas file changes.
 
-Note 3: Upon clicking the link to .canvas file from a note, the system automatically focuses and zooms to the associated node in the canvas.
+**Note 3**: Using the "File Property Enhancer" plugin to edit property icons will make the properties in "Enhanced Canvas" look better.
+
+**Note 4**: Upon clicking a link to a .canvas file from a note, the system automatically focuses and zooms to the associated node in the canvas.
 
 ![demoFocus](./Attachments/focus.gif)
 
@@ -41,31 +45,6 @@ Note 3: Upon clicking the link to .canvas file from a note, the system automatic
 - Automatically establishes connections based on existing markdown links in notes
 - Optimizes edge paths in Canvas for minimal distance
 - Supports all node types (text nodes, group nodes, images, nested Canvases, etc.)
-
-## Other Use Cases
-
-### 1. Canvas File Opening
-When opening a Canvas file:
-- Automatically updates canvas-specific properties for all file nodes
-- Property names are generated based on the canvas filename
-- Enables easy property synchronization through simple file opening
-
-![OpenCanvas](./Attachments/OpenCanvas.gif)
-
-### 2. Canvas File Deletion
-When deleting a Canvas file:
-- Automatically removes associated canvas-specific properties from all notes
-- Cleans up all properties named after the deleted canvas
-
-![DeleteCanvas](./Attachments/DeleteCanvas.gif)
-
-### 3. Canvas File Renaming
-When renaming a Canvas file:
-- Automatically updates property names in all associated notes
-- Renames properties to match the new canvas filename
-- Preserves all existing relationships under the new property name
-
-![RenameCanvas](./Attachments/RenameCanvas.gif)
 
 
 
@@ -91,20 +70,6 @@ Required files:
 - Navigate to Community plugins
 - Locate the installed plugin in the list
 - Toggle the switch to enable the plugin
-
-## Notes
-
-### Source files
-- You can obtain the plugin files through either:
-  	- Download from the plugin's GitHub Release page
-	- Build from source: Clone the repository and compile it yourself
-		- `npm i` (Node.js and npm are prerequisites)
-		- `npm run dev`
-
-### Property icons
-
-- Using the "File Property Enhancer" plugin to edit property icons will make the properties in "Enhanced Canvas" look better.
-
 
 ## Contributing
 
