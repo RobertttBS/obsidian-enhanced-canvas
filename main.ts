@@ -184,43 +184,51 @@ export default class EnhancedCanvas extends Plugin {
     }
 
 	async processEdgesInCanvas(canvasData: CanvasData, canvasFile: TFile) {
-        const tempCanvas = {
-            view: {
-                file: canvasFile
-            },
-            getData: () => canvasData,
-        };
+		if (!canvasData) return;
+	
+		const tempCanvas = {
+			view: {
+				file: canvasFile
+			},
+			getData: () => canvasData,
+		};
+	
+		const nodeIdToNodeMap = new Map<string, any>();
 
-        const nodeIdToNodeMap = new Map<string, any>();
-        for (const node of canvasData.nodes) {
-            nodeIdToNodeMap.set(node.id, node);
-        }
-
-        for (const edgeData of canvasData.edges) {
-            const fromNode = nodeIdToNodeMap.get(edgeData.fromNode);
-            const toNode = nodeIdToNodeMap.get(edgeData.toNode);
-
-            if (!fromNode || !toNode) continue;
-
-            const e = {
-                from: { node: fromNode },
-                to: { node: toNode },
-                canvas: tempCanvas
-            };
-
-            await this.processEdgeUpdate(e);
-        }
-    }
+		if (canvasData.nodes && Array.isArray(canvasData.nodes)) {
+			for (const node of canvasData.nodes) {
+				nodeIdToNodeMap.set(node.id, node);
+			}
+		}
+	
+		if (canvasData.edges && Array.isArray(canvasData.edges)) {
+			for (const edgeData of canvasData.edges) {
+				const fromNode = nodeIdToNodeMap.get(edgeData.fromNode);
+				const toNode = nodeIdToNodeMap.get(edgeData.toNode);
+	
+				if (!fromNode || !toNode) continue;
+	
+				const e = {
+					from: { node: fromNode },
+					to: { node: toNode },
+					canvas: tempCanvas
+				};
+	
+				await this.processEdgeUpdate(e);
+			}
+		}
+	}
+	
 
 	// update the items in the "propertyName" array in the frontmatter of the file.
 	updateFrontmatter = async (file: any, link: any, action: any, propertyName: string) => {
-		this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+		await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
-
+	
 			if (!frontmatter.canvas) {
 				frontmatter.canvas = [];
 			}
-
+	
 			if (!frontmatter[propertyName]) {
 				Reflect.set(frontmatter, propertyName, []);
 			} else if (!Array.isArray(frontmatter[propertyName])) {
@@ -257,28 +265,37 @@ export default class EnhancedCanvas extends Plugin {
 		this.registerCanvasFileDeletion();
 		this.registerFocusCanvas();
 
-        try {
-            const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
-            
-            await Promise.all(canvasFiles.map(async (canvasFile) => {
-                try {
-                    const content = await this.app.vault.read(canvasFile);
-                    const canvasData = JSON.parse(content) as CanvasData;
-
-                    await this.processEdgesInCanvas(canvasData, canvasFile);
-
-                    for (const node of canvasData.nodes) {
-                        if (!node?.file) continue;
-
-                        this.addProperty(node, canvasFile.name, canvasFile.basename);
-                    }
-                } catch (error) {
-                    console.error(`Enhanced Canvas: Error updating ${canvasFile.path}`, error);
-                }
-            }));
-        } catch (error) {
-            console.error('Enhanced Canvas: Error during plugin load', error);
-        }
+		try {
+			const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
+			
+			await Promise.all(canvasFiles.map(async (canvasFile) => {
+				try {
+					const content = await this.app.vault.read(canvasFile);
+					if (!content || content.trim() === '') return;
+					
+					try {
+						const canvasData = JSON.parse(content) as CanvasData;
+						if (!canvasData) return;
+						
+						await this.processEdgesInCanvas(canvasData, canvasFile);
+						
+						if (canvasData.nodes && Array.isArray(canvasData.nodes)) {
+							for (const node of canvasData.nodes) {
+								if (!node?.file) continue;
+								
+								this.addProperty(node, canvasFile.name, canvasFile.basename);
+							}
+						}
+					} catch (parseError) {
+						return;
+					}
+				} catch (fileError) {
+					return;
+				}
+			}));
+		} catch (error) {
+			return;
+		}		
 	}
 
 	registerCanvasFileDeletion() {
@@ -390,12 +407,12 @@ export default class EnhancedCanvas extends Plugin {
 			const fromFile = this.app.vault.getFileByPath(fromNode.filePath);
 			if (!fromFile) return;
 
-			const canvasName = e.canvas.view.file.basename;
+			const canvasName = await e.canvas.view.file.basename;
 			const resolvedLinks = this.app.metadataCache.resolvedLinks[fromNode.filePath] || {};
 			const fromNodeLinks = Object.keys(resolvedLinks);
 		
-			const { edges, nodes } = e.canvas.getData();
-			const fromNodeEdges = edges.filter(edge => edge.fromNode === fromNode.id);
+			const { edges, nodes } = await e.canvas.getData();
+			const fromNodeEdges = await edges.filter(edge => edge.fromNode === fromNode.id);
 			const edgeToNodesFilePathSet = new Set(
 				fromNodeEdges
 					.map(edge => nodes.find(node => node.id === edge.toNode))
@@ -432,7 +449,7 @@ export default class EnhancedCanvas extends Plugin {
 
 		const updateTargetNode = debounce(async (e: any) => {
 			await processNodeUpdate(e);
-		}, 1000);
+		}, 500, true);
 
 		const updateTargetNodeImmediate = async (e: any) => {
 			await processNodeUpdate(e);
@@ -568,10 +585,12 @@ export default class EnhancedCanvas extends Plugin {
 			if (patchCanvas()) {
 				// when canvas patched successfully, remove the layout change listener
 				plugin.app.workspace.off('active-leaf-change', layoutChangeHandler);
+				plugin.app.workspace.off('layout-change', layoutChangeHandler);
 			}
 		};
 
-		plugin.app.workspace.on('active-leaf-change', layoutChangeHandler);		
+		plugin.app.workspace.on('active-leaf-change', layoutChangeHandler);
+		plugin.app.workspace.on('layout-change', layoutChangeHandler);
 	}
 
 	createEdge(node1: any, node2: any) {
@@ -637,12 +656,12 @@ export default class EnhancedCanvas extends Plugin {
 					};
 					
 					this.removeAllProperty(tempCanvas, canvasData);
-				} catch (error) {
-					console.error(`Enhanced Canvas: Error cleaning up ${canvasFile.path}`, error);
+				} catch (error) { // Error occurred during plugin unload cleanup, possibly due to empty .canvas file
+					return;
 				}
 			}));
-		} catch (error) {
-			console.error('Enhanced Canvas: Error during plugin unload cleanup', error);
+		} catch (error) { // Error occurred during plugin unload cleanup, possibly due to empty .canvas file
+			return;
 		}
 	}	
 }
