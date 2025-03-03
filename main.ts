@@ -300,6 +300,35 @@ export default class EnhancedCanvas extends Plugin {
 
 	registerCanvasFileDeletion() {
 		const plugin = this;
+
+		const deleteFile = async (file: any) => {
+			if (file.deleted === true) return;
+			
+			const backLinks = plugin.app.metadataCache.getBacklinksForFile(file);
+			if (!backLinks || !backLinks.data) return;
+		
+			const linkRegexBasename = new RegExp(`\\[\\[${file.basename}(\\|.*)?\\]\\]`);
+			const linkRegexFullName = new RegExp(`\\[\\[${file.name}(\\|.*)?\\]\\]`);
+			
+			for (const [sourcePath, references] of backLinks.data.entries()) {
+				const sourceFile = plugin.app.vault.getFileByPath(sourcePath);
+				if (!sourceFile || sourceFile.extension !== 'md') continue;
+
+				await plugin.app.fileManager.processFrontMatter(sourceFile, (frontmatter) => {
+					if (!frontmatter) return;
+					
+					Object.keys(frontmatter).forEach(key => {
+						if (Array.isArray(frontmatter[key])) {
+							frontmatter[key] = frontmatter[key].filter(item => {
+								if (typeof item !== 'string') return true;
+
+								return !(linkRegexBasename.test(item) || linkRegexFullName.test(item));
+							});
+						}
+					});
+				});
+			}
+		}
 		
 		const deleteCanvasFile = async (file: any) => {
 			if (file.extension !== 'canvas') return;
@@ -331,6 +360,7 @@ export default class EnhancedCanvas extends Plugin {
 			trashFile(old: Function) {
 				return function(file: any) {
 					deleteCanvasFile(file);
+					deleteFile(file);
 					return old.call(this, file);
 				};
 			},
