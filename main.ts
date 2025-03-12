@@ -277,8 +277,6 @@ export default class EnhancedCanvas extends Plugin {
 						const canvasData = JSON.parse(content) as CanvasData;
 						if (!canvasData) return;
 						
-						await this.processEdgesInCanvas(canvasData, canvasFile);
-						
 						if (canvasData.nodes && Array.isArray(canvasData.nodes)) {
 							for (const node of canvasData.nodes) {
 								if (!node?.file) continue;
@@ -286,6 +284,8 @@ export default class EnhancedCanvas extends Plugin {
 								this.addProperty(node, canvasFile.name, canvasFile.basename);
 							}
 						}
+												
+						await this.processEdgesInCanvas(canvasData, canvasFile);
 					} catch (parseError) {
 						return;
 					}
@@ -405,6 +405,11 @@ export default class EnhancedCanvas extends Plugin {
 					const prevFile = this.app.workspace.getLastOpenFiles()[0];
 					if (!prevFile) return;
 					
+					// check if the file is already open in another leaf
+					if (this.isFileOpenInOtherLeaf(prevFile)) {
+						return;
+					}
+					
 					// @ts-ignore
 					const canvas = await activeLeaf.canvas;
 					if (!canvas) return;
@@ -421,7 +426,20 @@ export default class EnhancedCanvas extends Plugin {
 					}
 				});
 			})
-		);	
+		);    
+	}
+
+	isFileOpenInOtherLeaf(filePath: string): boolean {
+		const leaves = this.app.workspace.getLeavesOfType('markdown');
+		
+		return leaves.some(leaf => {
+			const view = leaf.view;
+			if (view.getViewType() === 'markdown') {
+				const file = view.file;
+				return file && file.path === filePath;
+			}
+			return false;
+		});
 	}
 
 	registerCanvasAutoLink() {
