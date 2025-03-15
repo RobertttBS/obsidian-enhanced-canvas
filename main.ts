@@ -8,6 +8,7 @@ import { around } from "monkey-around";
 
 export default class EnhancedCanvas extends Plugin {
 	public patchedEdge: boolean; // flag to check if edge is patched
+	private isMetadataClicked: boolean = false;
 
 	addLinkAndOptimizeEdge(canvas: any) {
 		const selectedNodes = Array.from(canvas.selection);
@@ -395,20 +396,27 @@ export default class EnhancedCanvas extends Plugin {
 	}
 
 	registerFocusCanvas() {
+		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
+			const target = evt.target as HTMLElement;
+			if (target.closest('.metadata-container')) {
+				this.isMetadataClicked = true;
+			
+				setTimeout(() => {
+					this.isMetadataClicked = false;
+				}, 500);
+			}
+		});
+
 		this.registerEvent( // Implement the feature to zoom to the last opened file when switching to the canvas view.
 			this.app.workspace.on('active-leaf-change', () => {
 				Promise.resolve().then(async () => {
+					if (this.isMetadataClicked == false) return;
 					// get current active leaf
 					const activeLeaf = this.app.workspace.getActiveViewOfType(ItemView);
 					if (!activeLeaf || activeLeaf.getViewType() !== 'canvas') return;
 		
 					const prevFile = this.app.workspace.getLastOpenFiles()[0];
 					if (!prevFile) return;
-					
-					// check if the file is already open in another leaf
-					if (this.isFileOpenInOtherLeaf(prevFile)) {
-						return;
-					}
 					
 					// @ts-ignore
 					const canvas = await activeLeaf.canvas;
@@ -427,19 +435,6 @@ export default class EnhancedCanvas extends Plugin {
 				});
 			})
 		);    
-	}
-
-	isFileOpenInOtherLeaf(filePath: string): boolean {
-		const leaves = this.app.workspace.getLeavesOfType('markdown');
-		
-		return leaves.some(leaf => {
-			const view = leaf.view;
-			if (view.getViewType() === 'markdown') {
-				const file = view.file;
-				return file && file.path === filePath;
-			}
-			return false;
-		});
 	}
 
 	registerCanvasAutoLink() {
