@@ -23,9 +23,7 @@ Most importantly, creating edges in Canvas establishes connections visible in th
 
 **Note 2**: This plugin tracks changes to .canvas files and can synchronize note properties when the name of a .canvas file changes.
 
-**Note 3**: Using the "File Property Enhancer" plugin to edit property icons will make the properties in "Enhanced Canvas" look better.
-
-**Note 4**: Upon clicking a link to a .canvas file from a note, the system automatically focuses and zooms to the associated node in the canvas.
+**Note 3**: Upon clicking a link to a .canvas file from a note, the system automatically focuses and zooms to the associated node in the canvas.
 
 ![demoFocus](./Attachments/focus.gif)
 
