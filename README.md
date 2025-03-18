@@ -17,15 +17,12 @@ Most importantly, creating edges in Canvas establishes connections visible in th
 - Based on this demo:
   1. **Node addition**: When a note is added to the canvas, the plugin generates a 'canvas' property with a link to its corresponding canvas file.
   2. **Edge addition**: Creating an edge in the Canvas generates a link to the target note within a property named after the canvas file (e.g., 'Canvas 1'), where the property name is derived from the canvas file name without its '.canvas' extension.
-  3. **Node deletion**: When a note is removed from the canvas, all properties related to that canvas file will be removed.
+  3. **Node Focusing**: Upon clicking a link to a .canvas file from a note, the system automatically focuses and zooms to the associated node in the canvas.
 
 **Note 1**: All Canvas-related properties will be added when this plugin is enabled, and all properties added by this plugin will be removed upon disabling it.
 
-**Note 2**: This plugin tracks changes to .canvas files and can synchronize note properties when the name of a .canvas file changes.
+**Note 2**: If you delete or rename a .canvas or Markdown file, all associated properties will also be updated.
 
-**Note 3**: Upon clicking a link to a .canvas file from a note, the system automatically focuses and zooms to the associated node in the canvas.
-
-![demoFocus](./Attachments/focus.gif)
 
 ## Key Features
 
@@ -49,28 +46,9 @@ Most importantly, creating edges in Canvas establishes connections visible in th
 
 
 
-## Manual Installation Steps
+## Installation Steps
 
-### 1. Create Plugin Directory
-- Create a new folder in your plugins directory: `<vault>/.obsidian/plugins/`
-  (where `<vault>` is your Obsidian vault root directory)
-- Complete path example: `<vault>/.obsidian/plugins/obsidian-enhanced-canvas/`
-
-### 2. Download Required Files
-Download the following files from the plugin's GitHub Release page and place them in the newly created folder:
-
-Required files:
-- `main.js` - Main plugin code
-- `manifest.json` - Plugin configuration file
-
-### 3. Restart Obsidian
-- Close and reopen Obsidian
-
-### 4. Enable the Plugin
-- Open Settings
-- Navigate to Community plugins
-- Locate the installed plugin in the list
-- Toggle the switch to enable the plugin
+Search for "Enhanced Canvas" in the community plugins and install it. Once enabled, it automatically adds all properties to existing .canvas files.
 
 ## Contributing
 
