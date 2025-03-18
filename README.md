@@ -12,7 +12,7 @@ Most importantly, creating edges in Canvas establishes connections visible in th
 
 ## Demo
 
-![enhanced-canvas](./Attachments/demo.gif)
+![enhanced-canvas](./Attachments/demo_with_focus.gif)
 
 - Based on this demo:
   1. **Node addition**: When a note is added to the canvas, the plugin generates a 'canvas' property with a link to its corresponding canvas file.
