@@ -10,7 +10,7 @@ export default class EnhancedCanvas extends Plugin {
 	public patchedEdge: boolean; // flag to check if edge is patched
 	private isMetadataClicked: boolean = false;
 
-	addLinkAndOptimizeEdge(canvas: any) {
+	addLinkAndOptimizeEdge(canvas: any, addNewEdges: boolean = true) {
 		const selectedNodes = Array.from(canvas.selection);
 		const fileNodes = selectedNodes.filter(node => node?.filePath);
 		const resolvedLinks = this.app.metadataCache.resolvedLinks;
@@ -49,7 +49,7 @@ export default class EnhancedCanvas extends Plugin {
 			});
 		});
 	
-		if (newEdges.length > 0) {
+		if (newEdges.length > 0 && addNewEdges) {
 			currentData.edges.push(...newEdges);
 		}
 
@@ -74,6 +74,21 @@ export default class EnhancedCanvas extends Plugin {
 		canvas.requestSave();
 	}
 
+	deleteEdges(canvas: any) {
+		const selectedNodes = Array.from(canvas.selection);
+		const selectedNodeIds = new Set(selectedNodes.map(node => node.id));
+		const currentData = canvas.getData();
+	
+		// Filter out edges that connect selected nodes
+		currentData.edges = currentData.edges.filter(edge => {
+			// Keep the edge if either endpoint is not in the selection
+			return !(selectedNodeIds.has(edge.fromNode) && selectedNodeIds.has(edge.toNode));
+		});
+	
+		canvas.setData(currentData);
+		canvas.requestSave();
+	}
+	
 	// add 'canvas' and canvas basename properties to the node frontmatter.
 	addProperty(node: any, propertyName: string, basename: string) {
 		const file = this.app.vault.getFileByPath(node.file); // node is JSON node, not canvas node
@@ -220,7 +235,6 @@ export default class EnhancedCanvas extends Plugin {
 		}
 	}
 	
-
 	// update the items in the "propertyName" array in the frontmatter of the file.
 	updateFrontmatter = async (file: any, link: any, action: any, propertyName: string) => {
 		await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
@@ -378,8 +392,24 @@ export default class EnhancedCanvas extends Plugin {
 
 	registerCustomCommands() {
 		this.addCommand({
+			id: 'optimize-edges',
+			name: 'Adjust edges with shortest path',
+			checkCallback: this.ifActiveViewIsCanvas((canvas, canvasData) => {
+				this.addLinkAndOptimizeEdge(canvas, false);
+			})
+		});
+
+		this.addCommand({
+			id: 'delete-edges',
+			name: 'Delete edges between selected nodes',
+			checkCallback: this.ifActiveViewIsCanvas((canvas, canvasData) => {
+				this.deleteEdges(canvas);
+			})
+		});
+
+		this.addCommand({
 			id: 'add-link-and-optimize-edge',
-			name: 'Auto connect nodes and adjust edges with shortest path',
+			name: 'Add edges according the links in notes',
 			checkCallback: this.ifActiveViewIsCanvas((canvas, canvasData) => {
 				this.addLinkAndOptimizeEdge(canvas);
 			})

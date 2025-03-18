@@ -27,23 +27,31 @@ Most importantly, creating edges in Canvas establishes connections visible in th
 ## Key Features
 
 - **Automated Property Synchronization**
-  - Automatically creates properties in source notes when connecting nodes in Canvas
+  - Automatically creates properties in source notes when editing in Canvas
   - Properties are named after the canvas file to track relationships
-  - Supports file nodes, nested Canvas files (.canvas), images, PDFs, and any content that can be represented as markdown links
-  - Note: Text nodes (cards) are not supported as they cannot be represented as markdown links
+  - Supports file nodes, nested Canvas files (.canvas), images, PDFs, and **any content that can be represented as markdown links**
+    - Text nodes (cards) are not supported as they cannot be represented as markdown links
 - **Shortest Path Optimization** for node connections
 - **Bidirectional Link Management** between Canvas and note content
 
 ## Command Features
 
+- **Adjust edges with shortest path**
+  - Adjusts edges between selected nodes using shortest path
+- **Delete edges between selected nodes**
+  - Removes all edges between selected nodes
+- **Add edges according the links in notes**
+  - Automatically creates edges between selected nodes based on links within notes
+- **Remove the property of all nodes in current Canvas**
+  - Removes properties from all nodes in the current Canvas
 
+### Demo
+- **Add edges according the links in notes**
 ![demoCommand](./Attachments/demoCommand.gif)
-
-**"Auto Connect Nodes and Adjust Edge with Shortest Path"**
-- Automatically establishes connections based on existing markdown links in notes
-- Optimizes edge paths in Canvas for minimal distance
-- Supports all node types (text nodes, group nodes, images, nested Canvases, etc.)
-
+  - Automatically establishes connections based on existing markdown links in notes
+  - It integrates **Adjust edges with shortest path**
+    - Optimizes edge paths in Canvas for minimal distance
+  - Supports all node types (text nodes, group nodes, images, nested Canvases, etc.)
 
 
 ## Installation Steps
