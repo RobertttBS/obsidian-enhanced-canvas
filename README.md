@@ -34,7 +34,7 @@ Most importantly, creating edges in Canvas establishes connections visible in th
 - **Shortest Path Optimization** for node connections
 - **Bidirectional Link Management** between Canvas and note content
 
-## Command Features
+## Commands
 
 - **Adjust edges with shortest path**
   - Adjusts edges between selected nodes using shortest path
