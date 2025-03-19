@@ -456,12 +456,11 @@ export default class EnhancedCanvas extends Plugin {
 					for (const [key, value] of canvas.nodes) {
 						if (value?.filePath === prevFile) {
 							canvas.select(value);
-							setTimeout(() => {
-								canvas.zoomToSelection();
-							}, 100);
-							break;
 						}
 					}
+					setTimeout(() => {
+						canvas.zoomToSelection();
+					}, 100);
 				});
 			})
 		);    
