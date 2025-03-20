@@ -2,6 +2,7 @@ import {
 	debounce,
 	ItemView,
 	Plugin,
+	TFile
 } from 'obsidian';
 import { CanvasEdgeData, NodeSide, CanvasData } from "obsidian/canvas";
 import { around } from "monkey-around";
@@ -350,7 +351,9 @@ export default class EnhancedCanvas extends Plugin {
 			if (file.deleted === true) return;
 			
 			const content = await plugin.app.vault.read(file);
+			if (!content) return;
 			const canvasData = JSON.parse(content);
+			if (!canvasData) return;
 			
 			canvasData.nodes.forEach((node: any) => {
 				if (node.type !== 'file') return;
@@ -363,7 +366,9 @@ export default class EnhancedCanvas extends Plugin {
 			if (file.deleted === true) return;
 			
 			const content = await plugin.app.vault.read(file);
+			if (!content) return;
 			const canvasData = JSON.parse(content);
+			if (!canvasData) return;
 			
 			canvasData.nodes.forEach((node: any) => {
 				if (node.type !== 'file') return;
@@ -442,7 +447,7 @@ export default class EnhancedCanvas extends Plugin {
 				Promise.resolve().then(async () => {
 					if (this.isMetadataClicked == false) return;
 					// get current active leaf
-					const activeLeaf = this.app.workspace.getActiveViewOfType(ItemView);
+					const activeLeaf = this.app.workspace.getActiveViewOfType(ItemView) as any;
 					if (!activeLeaf || activeLeaf.getViewType() !== 'canvas') return;
 		
 					const prevFile = this.app.workspace.getLastOpenFiles()[0];
@@ -463,7 +468,7 @@ export default class EnhancedCanvas extends Plugin {
 					}, 100);
 				});
 			})
-		);    
+		);
 	}
 
 	registerCanvasAutoLink() {
@@ -484,9 +489,16 @@ export default class EnhancedCanvas extends Plugin {
 			const fromNodeLinks = Object.keys(resolvedLinks);
 		
 			const { edges, nodes } = await e.canvas.getData();
-			const fromNodeEdges = await edges.filter(edge => edge.fromNode === fromNode.id);
+
+			// find all nodes of the same source file
+			const sameFileNodes = nodes.filter(node => node.file === fromNode.filePath);
+			// find all edges that are connected to the same source file nodes
+			const allRelevantEdges = edges.filter(edge => 
+				sameFileNodes.some(node => edge.fromNode === node.id)
+			);
+
 			const edgeToNodesFilePathSet = new Set(
-				fromNodeEdges
+				allRelevantEdges
 					.map(edge => nodes.find(node => node.id === edge.toNode))
 					.filter(node => node && node.file)
 					.map(node => node.file)
@@ -545,25 +557,47 @@ export default class EnhancedCanvas extends Plugin {
 				const fromFile = this.app.vault.getFileByPath(fromNode.filePath);
 				if (!fromFile) return;
 
-				this.updateFrontmatter(fromFile, link, 'remove', canvasName);
+				const { edges, nodes } = await edge.canvas.getData();
+				const sameFileNodes = nodes.filter(node => node.file === fromNode.filePath);
+
+				const stillHasConnection = edges.some(e => 
+					sameFileNodes.some(node => e.fromNode === node.id) && 
+					e.toNode === toNode.id &&
+					!(e.fromNode === fromNode.id && e.toNode === toNode.id)
+				);
+
+				if (!stillHasConnection) {
+					this.updateFrontmatter(fromFile, link, 'remove', canvasName);
+				}
 			}
 		};
 
 		// remove the node frontmatter when the node is removed
 		const removeNodeUpdate = async (node: any) => {
-			const resolvedNode = await node;
-			if (resolvedNode?.file?.extension !== 'md') return;
+            const resolvedNode = await node;
+            if (resolvedNode?.file?.extension !== 'md') return;
 
-			const canvasFile = resolvedNode?.canvas?.view?.file;
-			if (!canvasFile || !canvasFile.name) return;
+            const canvasFile = resolvedNode?.canvas?.view?.file;
+            if (!canvasFile || !canvasFile.name) return;
 
-			if (resolvedNode?.filePath) {
-				// use the method for JSON node to remove the property named after the canvas file name.
-				let tmpNode: { file?: string } = {};
-				tmpNode.file = resolvedNode.filePath;
-				this.removeProperty(tmpNode, canvasFile.name, canvasFile.basename);
-			}
-		};
+            if (resolvedNode?.filePath) {
+                // Check if other nodes in the canvas are using the same source file
+                const canvasData = await resolvedNode.canvas.getData();
+                const otherNodes = canvasData.nodes.filter(
+                    (n: any) => {
+						return n.file === resolvedNode.filePath
+					}
+                );
+
+                // Only remove the property if no other nodes are using the same source file
+                if (otherNodes.length === 0) {
+                    // use the method for JSON node to remove the property named after the canvas file name.
+                    let tmpNode: { file?: string } = {};
+                    tmpNode.file = resolvedNode.filePath;
+                    this.removeProperty(tmpNode, canvasFile.name, canvasFile.basename);
+                }
+            }
+        };
 
 		// aims to add the canvas file link to the property named after the canvas file name.
 		const addNodeUpdate = async (node: any) => {
