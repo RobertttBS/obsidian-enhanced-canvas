@@ -13,3 +13,9 @@ If your plugin does not need CSS, delete this file.
     color: var(--icon-color);
     background-color: var(--icon-color);
 }
+
+/* Hide metadata container in embeds (reading view) */
+.markdown-embed .metadata-container, 
+.markdown-embed-content .metadata-container { 
+    display: none !important; 
+}
