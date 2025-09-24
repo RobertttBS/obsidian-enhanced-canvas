@@ -19,3 +19,7 @@ If your plugin does not need CSS, delete this file.
 .markdown-embed-content .metadata-container { 
     display: none !important; 
 }
+
+.mod-inside-iframe.is-live-preview .metadata-container {
+    display: none !important;
+}
