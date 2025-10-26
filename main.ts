@@ -8,22 +8,20 @@ import { CanvasEdgeData, NodeSide, CanvasData } from "obsidian/canvas";
 import { around } from "monkey-around";
 
 export default class EnhancedCanvas extends Plugin {
-	public patchedEdge: boolean; // flag to check if edge is patched
+	public patchedEdge: boolean;
 	private isMetadataClicked: boolean = false;
 
-	addLinkAndOptimizeEdge(canvas: any, addNewEdges: boolean = true) {
+	createMissingEdgesFromLinks(canvas: any) {
 		const selectedNodes = Array.from(canvas.selection);
 		const fileNodes = selectedNodes.filter(node => node?.filePath);
 		const resolvedLinks = this.app.metadataCache.resolvedLinks;
 		const currentData = canvas.getData();
 
-		// create a map of existing edges for quick lookup
 		const existingEdgesMap = new Map();
 		currentData.edges.forEach(edge => {
 			existingEdgesMap.set(`${edge.fromNode}->${edge.toNode}`, edge);
 		});
 
-		// map from file path to node
 		const filePathToNodeMap = new Map();
 		fileNodes.forEach(node => {
 			if (node.filePath) {
@@ -50,13 +48,22 @@ export default class EnhancedCanvas extends Plugin {
 			});
 		});
 	
-		if (newEdges.length > 0 && addNewEdges) {
+		if (newEdges.length > 0) {
 			currentData.edges.push(...newEdges);
+			canvas.setData(currentData);
+			canvas.requestSave();
 		}
+	}
+	
+	optimizeEdgesBetweenSelectedNodes(canvas: any) {
+		const selectedNodes = Array.from(canvas.selection);
+		if (selectedNodes.length < 2) return;
+
+		const currentData = canvas.getData();
 
 		const selectedNodeIds = new Set(selectedNodes.map(node => node.id));
-	
-		// adjust the edge sides
+
+		let didUpdateEdges = false;
 		currentData.edges.forEach(edge => {
 			if (selectedNodeIds.has(edge.fromNode) && selectedNodeIds.has(edge.toNode)) {
 				const fromNode = currentData.nodes.find(node => node.id === edge.fromNode);
@@ -66,23 +73,24 @@ export default class EnhancedCanvas extends Plugin {
 					if (edge.fromSide !== updatedEdge.fromSide || edge.toSide !== updatedEdge.toSide) {
 						edge.fromSide = updatedEdge.fromSide;
 						edge.toSide = updatedEdge.toSide;
+						didUpdateEdges = true;
 					}
 				}
 			}
 		});
 
-		canvas.setData(currentData);
-		canvas.requestSave();
+		if (didUpdateEdges) {
+			canvas.setData(currentData);
+			canvas.requestSave();
+		}
 	}
 
 	deleteEdges(canvas: any) {
 		const selectedNodes = Array.from(canvas.selection);
 		const selectedNodeIds = new Set(selectedNodes.map(node => node.id));
 		const currentData = canvas.getData();
-	
-		// Filter out edges that connect selected nodes
+
 		currentData.edges = currentData.edges.filter(edge => {
-			// Keep the edge if either endpoint is not in the selection
 			return !(selectedNodeIds.has(edge.fromNode) && selectedNodeIds.has(edge.toNode));
 		});
 	
@@ -167,7 +175,6 @@ export default class EnhancedCanvas extends Plugin {
 		});
 	}
 
-	// For the command to remove all properties named after the current canvas file.
 	removeAllProperty(canvas: any, canvasData: CanvasData) {
 		const nodes = canvasData.nodes;
 		nodes.forEach(node => {
@@ -235,8 +242,7 @@ export default class EnhancedCanvas extends Plugin {
 			}
 		}
 	}
-	
-	// update the items in the "propertyName" array in the frontmatter of the file.
+
 	updateFrontmatter = async (file: any, link: any, action: any, propertyName: string) => {
 		await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
@@ -275,10 +281,15 @@ export default class EnhancedCanvas extends Plugin {
 		return commandFn(canvas, canvasData);
 	}
 
+	/**
+	 * Registers all core plugin features and performs an initial scan
+	 * of the vault to process and initialize data from all
+	 * existing canvas files upon loading.
+	 */
 	async onload() {
-		this.registerCustomCommands();
+		this.registerPluginCommands();
 		this.registerCanvasAutoLink();
-		this.registerCanvasFileDeletion();
+		this.registerFileManagerPatches();
 		this.registerFocusCanvas();
 
 		try {
@@ -311,10 +322,16 @@ export default class EnhancedCanvas extends Plugin {
 			}));
 		} catch (error) {
 			return;
-		}		
+		}
 	}
 
-	registerCanvasFileDeletion() {
+	/**
+	 * Registers patches for the application's FileManager to intercept file deletion
+	 * and rename operations. This function ensures data integrity by automatically
+	 * cleaning up references to the modified files throughout the vault before the
+	 * original operation proceeds.
+	 */
+	registerFileManagerPatches() {
 		const plugin = this;
 
 		const deleteFile = async (file: any) => {
@@ -393,14 +410,21 @@ export default class EnhancedCanvas extends Plugin {
 		});
 
 		this.register(uninstaller);
-	}	
+	}
 
-	registerCustomCommands() {
+	/**
+	 * Registers all plugin commands, making them available in the
+	 * Obsidian command palette.
+	 *
+	 * All commands registered here are context-aware and will only be enabled
+	 * when the active view is a Canvas.
+	 */
+	registerPluginCommands() {
 		this.addCommand({
 			id: 'optimize-edges',
 			name: 'Adjust edges with shortest path',
 			checkCallback: this.ifActiveViewIsCanvas((canvas, canvasData) => {
-				this.addLinkAndOptimizeEdge(canvas, false);
+				this.optimizeEdgesBetweenSelectedNodes(canvas);
 			})
 		});
 
@@ -416,11 +440,11 @@ export default class EnhancedCanvas extends Plugin {
 			id: 'add-link-and-optimize-edge',
 			name: 'Add edges according the links in notes',
 			checkCallback: this.ifActiveViewIsCanvas((canvas, canvasData) => {
-				this.addLinkAndOptimizeEdge(canvas);
+				this.createMissingEdgesFromLinks(canvas);
+				this.optimizeEdgesBetweenSelectedNodes(canvas);
 			})
 		});
 
-		// With automatic property updates for dateFile and renameFile, this command is unnecessary.
 		this.addCommand({
 			id: 'remove-canvas-property',
 			name: 'Remove the property of all nodes in current Canvas',
@@ -430,6 +454,13 @@ export default class EnhancedCanvas extends Plugin {
 		});
 	}
 
+	/**
+	 * Registers event listeners to implement a "zoom to node" feature.
+	 *
+	 * This function's goal is to automatically focus the canvas on the relevant
+	 * node when a user navigates to the canvas by clicking a link from another
+	 * file's metadata/properties panel (e.g., a backlink).
+	 */
 	registerFocusCanvas() {
 		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
 			const target = evt.target as HTMLElement;
@@ -442,7 +473,7 @@ export default class EnhancedCanvas extends Plugin {
 			}
 		});
 
-		this.registerEvent( // Implement the feature to zoom to the last opened file when switching to the canvas view.
+		this.registerEvent(
 			this.app.workspace.on('active-leaf-change', () => {
 				Promise.resolve().then(async () => {
 					if (this.isMetadataClicked == false) return;
@@ -456,8 +487,7 @@ export default class EnhancedCanvas extends Plugin {
 					// @ts-ignore
 					const canvas = await activeLeaf.canvas;
 					if (!canvas) return;
-		
-					// find the node with the same file path as the prevFile and zoom to it
+
 					for (const [key, value] of canvas.nodes) {
 						if (value?.filePath === prevFile) {
 							canvas.select(value);
@@ -471,6 +501,12 @@ export default class EnhancedCanvas extends Plugin {
 		);
 	}
 
+	/**
+	 * Establishes real-time synchronization to manage frontmatter properties
+	 * in source files based on their connections within a canvas.
+	 * This ensures file metadata automatically reflects the
+	 * visual graph structure as nodes and edges are added, removed, or updated.
+	 */
 	registerCanvasAutoLink() {
 		const plugin = this;
 
@@ -490,9 +526,7 @@ export default class EnhancedCanvas extends Plugin {
 		
 			const { edges, nodes } = await e.canvas.getData();
 
-			// find all nodes of the same source file
 			const sameFileNodes = nodes.filter(node => node.file === fromNode.filePath);
-			// find all edges that are connected to the same source file nodes
 			const allRelevantEdges = edges.filter(edge => 
 				sameFileNodes.some(node => edge.fromNode === node.id)
 			);
@@ -507,7 +541,6 @@ export default class EnhancedCanvas extends Plugin {
 			const updatePromises: Promise<void>[] = [];
 			const getFilePath = (path: string) => this.app.vault.getFileByPath(path);
 		
-			// remove unrelated link
 			fromNodeLinks.forEach(filePath => {
 				if (!edgeToNodesFilePathSet.has(filePath)) {
 					if (filePath === e.canvas.view.file.path) return;
@@ -519,7 +552,6 @@ export default class EnhancedCanvas extends Plugin {
 				}
 			});
 		
-			// add related link in current canvas
 			if (toNode?.filePath) {
 				const targetFile = getFilePath(toNode.filePath);
 				if (!targetFile) return;
@@ -744,6 +776,11 @@ export default class EnhancedCanvas extends Plugin {
 		return edgeData;
 	}
 
+	/**
+	 * Performs a comprehensive cleanup on all canvas files when the plugin is
+	 * unloaded, ensuring any custom properties or data managed by this plugin
+	 * are removed from the vault.
+	 */
 	async onunload() {
 		try {
 			const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
@@ -762,12 +799,12 @@ export default class EnhancedCanvas extends Plugin {
 					};
 					
 					this.removeAllProperty(tempCanvas, canvasData);
-				} catch (error) { // Error occurred during plugin unload cleanup, possibly due to empty .canvas file
+				} catch (error) {
 					return;
 				}
 			}));
-		} catch (error) { // Error occurred during plugin unload cleanup, possibly due to empty .canvas file
+		} catch (error) {
 			return;
 		}
-	}	
+	}
 }
