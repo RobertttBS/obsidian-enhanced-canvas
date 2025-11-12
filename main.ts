@@ -471,7 +471,7 @@ export default class EnhancedCanvas extends Plugin {
 					this.isMetadataClicked = false;
 				}, 200);
 			}
-		});
+		}, true);
 
 		this.registerEvent(
 			this.app.workspace.on('active-leaf-change', () => {
