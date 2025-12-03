@@ -199,6 +199,7 @@ export default class EnhancedCanvas extends Plugin {
         const fromFile = this.app.vault.getFileByPath(fromFilePath);
         const toFile = this.app.vault.getFileByPath(toFilePath);
 
+		if (fromFilePath === toFilePath) return;
         if (!fromFile || !toFile) return;
 
         const canvasName = e.canvas.view.file.basename;
@@ -553,11 +554,15 @@ export default class EnhancedCanvas extends Plugin {
 			});
 		
 			if (toNode?.filePath) {
-				const targetFile = getFilePath(toNode.filePath);
-				if (!targetFile) return;
-		
-				let link = this.app.fileManager.generateMarkdownLink(targetFile, toNode.filePath).replace(/^!(\[\[.*\]\])$/, '$1');
-				updatePromises.push(this.updateFrontmatter(fromFile, link, 'add', canvasName));
+				if (fromNode.filePath !== toNode.filePath) {
+					const targetFile = getFilePath(toNode.filePath);
+					
+					if (targetFile) {
+						let link = this.app.fileManager.generateMarkdownLink(targetFile, toNode.filePath).replace(/^!(\[\[.*\]\])$/, '$1');
+						// 將此操作加入 Promise 佇列
+						updatePromises.push(this.updateFrontmatter(fromFile, link, 'add', canvasName));
+					}
+				}
 			}
 
 			await Promise.all(updatePromises);
