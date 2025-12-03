@@ -244,24 +244,42 @@ export default class EnhancedCanvas extends Plugin {
 		}
 	}
 
-	updateFrontmatter = async (file: any, link: any, action: any, propertyName: string) => {
-		await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
-			if (!frontmatter) return;
-	
-			if (!frontmatter.canvas) {
-				frontmatter.canvas = [];
+	updateFrontmatter = async (file: TFile, link: string, action: 'add' | 'remove', propertyName: string) => {
+		const cache = this.app.metadataCache.getFileCache(file);
+		const frontmatter = cache?.frontmatter;
+		
+		const currentValues = frontmatter?.[propertyName];
+		
+		let exists = false;
+		if (Array.isArray(currentValues)) {
+			exists = currentValues.includes(link);
+		} else if (typeof currentValues === 'string') {
+			exists = currentValues === link;
+		}
+
+		if (action === 'add' && exists) return;
+		if (action === 'remove' && !currentValues) return;
+		if (action === 'remove' && !exists) return;
+
+		await this.app.fileManager.processFrontMatter(file, (fm) => {
+			if (!fm) return;
+
+			if (!fm.canvas) {
+				fm.canvas = [];
 			}
-	
-			if (!frontmatter[propertyName]) {
-				Reflect.set(frontmatter, propertyName, []);
-			} else if (!Array.isArray(frontmatter[propertyName])) {
-				Reflect.set(frontmatter, propertyName, [frontmatter[propertyName]]);
+
+			if (!fm[propertyName]) {
+				Reflect.set(fm, propertyName, []);
+			} else if (!Array.isArray(fm[propertyName])) {
+				Reflect.set(fm, propertyName, [fm[propertyName]]);
 			}
-	
-			if (action === 'add' && !frontmatter[propertyName].includes(link)) {
-				frontmatter[propertyName].push(link);
+
+			if (action === 'add') {
+				if (!fm[propertyName].includes(link)) {
+					fm[propertyName].push(link);
+				}
 			} else if (action === 'remove') {
-				frontmatter[propertyName] = frontmatter[propertyName].filter(l => l !== link);
+				fm[propertyName] = fm[propertyName].filter((l: string) => l !== link);
 			}
 		});
 	};
