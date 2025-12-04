@@ -1,5 +1,14 @@
 # Enhanced Canvas
 
+### New Feature: Split Node by Headings
+
+Instantly decomposes a single file node into multiple separate nodes corresponding to every H1-H6 heading within the document.
+
+![SplitNode](./Attachments/SplitNode.gif)
+
+
+### Hide The Frontmatter by Default
+
 > In version 1.0.12, the frontmatter (properties) in Canvas nodes is hidden by default.  
 > To view or edit properties in a Canvas node, comment out or remove the code below in  
 > `.obsidian/plugins/obsidian-enhanced-canvas/style.css`.
