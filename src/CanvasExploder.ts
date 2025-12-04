@@ -62,6 +62,14 @@ export class CanvasExploder {
 		).join('').substring(0, length);
 	}
 
+    sanitizeHeading(rawHeading: string): string {
+        let text = rawHeading.replace(/\[\[|\]\]/g, "");
+
+        text = text.replace(/[|#:]/g, " ");
+        text = text.replace(/\s+/g, " ");
+        return text.trim();
+    }
+
     async explodeFileNode(canvas: any, originalNode: any) {
 		const targetFile: TFile = originalNode.file;
 
@@ -94,7 +102,8 @@ export class CanvasExploder {
 			
 			const currentX = baseX + (levelOffset * (width + GAP_X));
 			
-			const subpath = `#${heading.heading}`;
+            const cleanText = this.sanitizeHeading(heading.heading);
+			const subpath = `#${cleanText}`;
 			
 			let newNode;
 			try {
