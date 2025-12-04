@@ -1,4 +1,5 @@
 import {
+	Menu,
 	debounce,
 	ItemView,
 	Plugin,
@@ -6,8 +7,10 @@ import {
 } from 'obsidian';
 import { CanvasEdgeData, NodeSide, CanvasData } from "obsidian/canvas";
 import { around } from "monkey-around";
+import { CanvasExploder } from './src/CanvasExploder';
 
 export default class EnhancedCanvas extends Plugin {
+	public exploder: CanvasExploder;
 	public patchedEdge: boolean;
 	private isMetadataClicked: boolean = false;
 
@@ -306,10 +309,13 @@ export default class EnhancedCanvas extends Plugin {
 	 * existing canvas files upon loading.
 	 */
 	async onload() {
+		this.exploder = new CanvasExploder(this);
+
 		this.registerPluginCommands();
 		this.registerCanvasAutoLink();
 		this.registerFileManagerPatches();
 		this.registerFocusCanvas();
+		this.registerCanvasExploder();
 
 		try {
 			const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
@@ -752,6 +758,20 @@ export default class EnhancedCanvas extends Plugin {
 
 		plugin.app.workspace.on('active-leaf-change', layoutChangeHandler);
 		plugin.app.workspace.on('layout-change', layoutChangeHandler);
+	}
+
+	registerCanvasExploder() {
+        this.registerEvent(
+            this.app.workspace.on("file-menu", (menu: Menu) => {
+                this.exploder.checkAndAddMenu(menu, "Split by Headings");
+            })
+        );
+
+        this.registerEvent(
+            this.app.workspace.on("editor-menu", (menu: Menu) => {
+                this.exploder.checkAndAddMenu(menu, "Split by Headings");
+            })
+        );
 	}
 
 	createEdge(node1: any, node2: any) {
