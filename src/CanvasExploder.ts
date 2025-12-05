@@ -26,6 +26,11 @@ const MAX_HEIGHT = 600;
 const GAP_Y = 20;
 const GAP_X = 20;
 
+/**
+ * Manages the interactive decomposition of file nodes, enabling the visualization of 
+ * a document's internal outline as a connected, hierarchical tree structure directly
+ * on the canvas.
+ */
 export class CanvasExploder {
     private plugin: EnhancedCanvas;
 
