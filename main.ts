@@ -8,9 +8,11 @@ import {
 import { CanvasEdgeData, NodeSide, CanvasData } from "obsidian/canvas";
 import { around } from "monkey-around";
 import { CanvasExploder } from './src/CanvasExploder';
+import { SendToCanvas } from './src/SendToCanvas';
 
 export default class EnhancedCanvas extends Plugin {
 	public exploder: CanvasExploder;
+	public sendToCanvas: SendToCanvas;
 	public patchedEdge: boolean;
 	private isMetadataClicked: boolean = false;
 
@@ -247,45 +249,52 @@ export default class EnhancedCanvas extends Plugin {
 		}
 	}
 
-	updateFrontmatter = async (file: TFile, link: string, action: 'add' | 'remove', propertyName: string) => {
-		const cache = this.app.metadataCache.getFileCache(file);
-		const frontmatter = cache?.frontmatter;
-		
-		const currentValues = frontmatter?.[propertyName];
-		
-		let exists = false;
-		if (Array.isArray(currentValues)) {
-			exists = currentValues.includes(link);
-		} else if (typeof currentValues === 'string') {
-			exists = currentValues === link;
-		}
+	/**
+     * @description 原子性地更新文件 Frontmatter 中的屬性，確保值是唯一的連結陣列。
+     * @param file - 要修改的 TFile 物件。
+     * @param link - 要新增或移除的標準化內部連結字串 (例如 "My Note")。
+     * @param action - 'add' (新增) 或 'remove' (移除)。
+     * @param propertyName - 要修改的 Frontmatter 屬性名稱 (例如 "My Canvas")。
+     */
+    updateFrontmatter = async (file: TFile, link: string, action: 'add' | 'remove', propertyName: string) => {
+        // 使用 Set 進行去重是最高效且可靠的方式。
+        // processFrontMatter 提供了原子操作的上下文。
+        await this.app.fileManager.processFrontMatter(file, (fm) => {
+            
+            // 1. 在原子操作範圍內，讀取當前 Frontmatter 值並標準化為 Set
+            const existingValue = Reflect.get(fm, propertyName);
+            let currentSet = new Set<string>();
 
-		if (action === 'add' && exists) return;
-		if (action === 'remove' && !currentValues) return;
-		if (action === 'remove' && !exists) return;
+            // 標準化：無論是單一字串或陣列，都將其轉換為 Set
+            if (Array.isArray(existingValue)) {
+                // 將陣列中的所有非空字串元素加入 Set
+                existingValue.filter((item): item is string => typeof item === 'string' && item.trim() !== '')
+                             .forEach(item => currentSet.add(item));
+            } else if (typeof existingValue === 'string' && existingValue.trim() !== '') {
+                currentSet.add(existingValue);
+            }
+            
+            // 2. 執行去重檢查和修改
+            if (action === 'add') {
+                // Set 的特性保證了新增操作的自動去重。
+                currentSet.add(link);
+            } else if (action === 'remove') {
+                currentSet.delete(link);
+            }
 
-		await this.app.fileManager.processFrontMatter(file, (fm) => {
-			if (!fm) return;
+            // 3. 將最終結果轉換為陣列並設置回 Frontmatter
+            const finalArray = Array.from(currentSet);
 
-			if (!fm.canvas) {
-				fm.canvas = [];
-			}
-
-			if (!fm[propertyName]) {
-				Reflect.set(fm, propertyName, []);
-			} else if (!Array.isArray(fm[propertyName])) {
-				Reflect.set(fm, propertyName, [fm[propertyName]]);
-			}
-
-			if (action === 'add') {
-				if (!fm[propertyName].includes(link)) {
-					fm[propertyName].push(link);
-				}
-			} else if (action === 'remove') {
-				fm[propertyName] = fm[propertyName].filter((l: string) => l !== link);
-			}
-		});
-	};
+            if (finalArray.length > 0) {
+                // 為了保持 Frontmatter 的一致性，我們應寫回一個陣列。
+                // 即使只有一個元素，寫入陣列也比單一字串更易於處理。
+                Reflect.set(fm, propertyName, finalArray);
+            } else {
+                // 如果陣列為空，則移除該屬性，保持 Frontmatter 清潔。
+                Reflect.deleteProperty(fm, propertyName);
+            }
+        }); 
+    };
 
 	private ifActiveViewIsCanvas = (commandFn: (canvas: any, canvasData: CanvasData) => void) => (checking: boolean) => {
 		const activeView = this.app.workspace.getActiveViewOfType(ItemView);
@@ -310,12 +319,37 @@ export default class EnhancedCanvas extends Plugin {
 	 */
 	async onload() {
 		this.exploder = new CanvasExploder(this);
+		this.sendToCanvas = new SendToCanvas(this);
 
 		this.registerPluginCommands();
 		this.registerCanvasAutoLink();
 		this.registerFileManagerPatches();
 		this.registerFocusCanvas();
 		this.registerCanvasExploder();
+
+        this.addCommand({
+            id: "send-to-canvas",
+            name: "Send to Canvas",
+            callback: () => {
+                this.sendToCanvas.handleSendToCanvas(); 
+            },
+        });
+
+		this.addCommand({
+			id: "send-to-selected-canvas",
+            name: "Send to Selected Canvas",
+            callback: () => {
+                this.sendToCanvas.handleSendToSelectedCanvas();
+            },
+        });
+
+        this.addCommand({
+            id: "clear-selected-canvas-file",
+            name: "Clear selected Canvas file",
+            callback: () => {
+                this.sendToCanvas.clearSelectedCanvas();
+            },
+        });
 
 		try {
 			const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
@@ -825,6 +859,7 @@ export default class EnhancedCanvas extends Plugin {
 	 * are removed from the vault.
 	 */
 	async onunload() {
+		this.sendToCanvas.clearSelectedCanvas(false);
 		try {
 			const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
 			
