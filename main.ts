@@ -13,8 +13,8 @@ import { SendToCanvas } from './src/SendToCanvas';
 
 interface CanvasNodeWithFlag extends CanvasNode {
     autoHeightEnabled?: boolean;
-    _autoHeightTimer?: number | null;      // 用於偵測 Bottom 雙擊的 timer
-    _delayedResizeTimer?: number | null;   // 用於 Right 拖曳後延遲觸發的 timer
+    _autoHeightTimer?: number | null;
+    _delayedResizeTimer?: number | null;
     [key: string]: any; 
 }
 
@@ -27,6 +27,11 @@ export default class EnhancedCanvas extends Plugin {
 	private autoHeightCheckReference: (() => void) | null = null;
 	private autoLinkCheckReference: (() => void) | null = null;
 
+	/**
+	 * Scans the selected nodes to identify underlying file references and automatically
+	 * generates visual connections where valid links exist between files but edges are
+	 * currently missing on the canvas.
+	 */
 	createMissingEdgesFromLinks(canvas: any) {
 		const selectedNodes = Array.from(canvas.selection);
 		const fileNodes = selectedNodes.filter(node => node?.filePath);
@@ -71,6 +76,10 @@ export default class EnhancedCanvas extends Plugin {
 		}
 	}
 	
+	/**
+	 * Recomputes the connection anchor points for all edges contained within the
+	 * current selection to ensure optimal visual alignment and routing.
+	 */
 	optimizeEdgesBetweenSelectedNodes(canvas: any) {
 		const selectedNodes = Array.from(canvas.selection);
 		if (selectedNodes.length < 2) return;
@@ -114,7 +123,9 @@ export default class EnhancedCanvas extends Plugin {
 		canvas.requestSave();
 	}
 	
-	// add 'canvas' and canvas basename properties to the node frontmatter.
+	/**
+	 * add 'canvas' and canvas basename properties to the node frontmatter.
+	 */
 	addProperty(node: any, propertyName: string, basename: string) {
 		const file = this.app.vault.getFileByPath(node.file); // node is JSON node, not canvas node
 		if (!file) return;
@@ -136,7 +147,9 @@ export default class EnhancedCanvas extends Plugin {
 		});
 	}
 
-	// For JSON nodes only, which are stored in the canvas file, not the canvas node in Obsidian.
+	/**
+	 * For JSON nodes only, which are stored in the canvas file, not the canvas node in Obsidian.
+	 */
 	removeProperty(node: any, propertyName: string, basename: string) {
 		const file = this.app.vault.getFileByPath(node.file); // node is JSON node, not canvas node
 		if (!file) return;
@@ -161,7 +174,9 @@ export default class EnhancedCanvas extends Plugin {
 		});
 	}
 
-	// For JSON nodes only, which are stored in the canvas file, not the canvas node in Obsidian.
+	/**
+	 * For JSON nodes only, which are stored in the canvas file, not the canvas node in Obsidian.
+	 */
 	renameProperty(node: any, oldName: string, newName: string) {
 		const file = this.app.vault.getFileByPath(node.file);
 		if (!file) return;
@@ -224,6 +239,11 @@ export default class EnhancedCanvas extends Plugin {
         await this.updateFrontmatter(fromFile, link, 'add', canvasName);
     }
 
+	/**
+	 * Orchestrates a batch update for all connections within the provided canvas data
+	 * to ensure every edge is validated and processed according to the plugin's
+	 * current update logic.
+	 */
 	async processEdgesInCanvas(canvasData: CanvasData, canvasFile: TFile) {
 		if (!canvasData) return;
 	
