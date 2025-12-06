@@ -7,8 +7,16 @@ import {
 } from 'obsidian';
 import { CanvasEdgeData, NodeSide, CanvasData } from "obsidian/canvas";
 import { around } from "monkey-around";
+import { CanvasNode } from 'Canvas';
 import { CanvasExploder } from './src/CanvasExploder';
 import { SendToCanvas } from './src/SendToCanvas';
+
+interface CanvasNodeWithFlag extends CanvasNode {
+    autoHeightEnabled?: boolean;
+    _autoHeightTimer?: number | null;      // 用於偵測 Bottom 雙擊的 timer
+    _delayedResizeTimer?: number | null;   // 用於 Right 拖曳後延遲觸發的 timer
+    [key: string]: any; 
+}
 
 export default class EnhancedCanvas extends Plugin {
 	public exploder: CanvasExploder;
@@ -311,6 +319,7 @@ export default class EnhancedCanvas extends Plugin {
 		this.registerFileManagerPatches();
 		this.registerFocusCanvas();
 		this.registerCanvasExploder();
+		this.registerCanvasNodeAutoHeightPatcher();
 
 		try {
 			const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
@@ -619,7 +628,10 @@ export default class EnhancedCanvas extends Plugin {
 			await processNodeUpdate(e);
 		};
 
-		//  update original node when edge is removed
+		/**
+		 * Synchronizes file metadata with the canvas state by removing the frontmatter reference in the source file
+		 * when the corresponding visual connection to the target file is no longer present.
+		 */
 		const updateOriginalNode = async (edge: any) => {
 			if (!edge.to.node?.filePath || !edge.from.node?.filePath) return;
 
@@ -791,6 +803,116 @@ export default class EnhancedCanvas extends Plugin {
                 this.exploder.checkAndAddMenu(menu, "Split by Headings");
             })
         );
+	}
+	
+	/**
+	 * Installs hooks into the native Canvas prototype to enable automatic height adjustment behavior,
+	 * allowing nodes to dynamically resize to fit their content in response to specific user gestures
+	 * on resize handles.
+	 */
+	patchCanvasNodeAutoHeight(): boolean {
+        const canvasView = this.app.workspace.getLeavesOfType("canvas")?.first()?.view;
+        if (!canvasView) return false;
+
+        const canvas = (canvasView as any).canvas;
+        if (!canvas) return false;
+
+        const anyNode = canvas.nodes.values().next().value;
+        if (!anyNode) return false;
+
+        const anyNodeConstructor = anyNode.constructor;
+        const baseNodePrototype = Object.getPrototypeOf(anyNodeConstructor.prototype);
+        
+        const methodsToPatch: Record<string, (originalMethod: Function) => Function> = {};
+
+        if (baseNodePrototype.onResizeDblclick) {
+            methodsToPatch.onResizeDblclick = (originalMethod) => {
+                return function(this: CanvasNodeWithFlag, ...args: any[]) {
+                    const [, direction] = args;
+                    
+                    if (direction === "bottom") {
+                        if (this._autoHeightTimer) {
+                            window.clearTimeout(this._autoHeightTimer);
+                            this._autoHeightTimer = null;
+                        }
+                        this.autoHeightEnabled = true;
+                    }
+                    return originalMethod.apply(this, args);
+                };
+            };
+        }
+        
+        if (baseNodePrototype.onResizePointerdown) {
+            methodsToPatch.onResizePointerdown = (originalMethod) => {
+                return function(this: CanvasNodeWithFlag, ...args: any[]) {
+                    const [event, direction] = args;
+                    
+                    const result = originalMethod.apply(this, args);
+
+                    if (direction === "bottom") {
+                        if (this._autoHeightTimer) {
+                            window.clearTimeout(this._autoHeightTimer);
+                            this._autoHeightTimer = null;
+                        } else {
+                            this._autoHeightTimer = window.setTimeout(() => {
+                                this.autoHeightEnabled = false; 
+                                this._autoHeightTimer = null;
+                            }, 250);
+                        }
+                    } 
+                    else if (direction === "right") {
+                        if (this.autoHeightEnabled === true) {
+                            const handlePointerUp = () => {
+                                window.setTimeout(() => {
+                                    if (!this.canvas || !this.canvas.nodes.has(this.id)) return;
+                                    
+                                    if (this.nodeEl && this.nodeEl.classList.contains('is-resizing')) {
+                                        return;
+                                    }
+
+                                    this.onResizeDblclick(event, "bottom");
+
+                                }, 0); 
+                            };
+
+                            window.addEventListener("pointerup", handlePointerUp, { once: true });
+                        }
+                    }
+
+                    return result;
+                };
+            };
+        }
+
+        if (baseNodePrototype.resize) {
+            methodsToPatch.resize = (originalMethod: Function) => {
+                return function(this: CanvasNodeWithFlag, ...args: any[]) {
+                    return originalMethod.apply(this, args);
+                };
+            };
+        }
+
+        if (Object.keys(methodsToPatch).length === 0) return false;
+
+        this.uninstaller = around(baseNodePrototype, methodsToPatch);
+        this.register(this.uninstaller);
+
+        return true;
+    }
+
+	registerCanvasNodeAutoHeightPatcher() {
+		const plugin = this;
+
+		const patchAutoHeight = () => {
+			if (plugin.patchCanvasNodeAutoHeight()) {
+				plugin.app.workspace.off('active-leaf-change', patchAutoHeight);
+				plugin.app.workspace.off('layout-change', patchAutoHeight);
+			}
+		}
+		plugin.app.workspace.on('active-leaf-change', patchAutoHeight);
+		plugin.app.workspace.on('layout-change', patchAutoHeight);
+
+		patchAutoHeight();
 	}
 
 	createEdge(node1: any, node2: any) {
