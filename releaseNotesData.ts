@@ -2,13 +2,13 @@ export const firstInstallContent = `
 Building upon the original "Property Link" and "Auto Focus" features, I am excited to share three key additions in recent updates.
 ### ✨ Split Node by Headings
 
-**Split Node by Headings** instantly deconstructs a single file node into a hierarchical tree based on its headings. This feature transforms a linear document into a visual outline, generating connected nodes for each section to help you map out the structure of your notes effortlessly.
+**Split Node by Headings** instantly deconstructs a single file node into a hierarchical tree based on its headings. You can try this by right-clicking on a file node and selecting "Split Node by Headings" in Canvas.
 
 ### ✨ Send Note to Canvas
 
-With the **"Send to Canvas"** command, you can push your current markdown note directly to a specific Canvas. It automatically appends a "canvas" property to your note, allowing you to navigate back to the board instantly in the future.
+With the **"Send to Canvas"** plugin command, you can push your current markdown note directly to a specific Canvas. It automatically appends a "canvas" property to your note, allowing you to navigate back to the board instantly in the future.
 
-Once you have sent a note, that Canvas becomes the "Selected." You can then use the **"Send to Selected Canvas"** command on other notes to instantly add them to the same board—bypassing the file selection step entirely.
+Once you have sent a note, that Canvas becomes the "Selected." You can then use the **"Send to Selected Canvas"** plugin command on other notes to instantly add them to the same board—bypassing the file selection step entirely.
 
 ### ✨ Auto-Resize Node
 
