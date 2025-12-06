@@ -10,6 +10,9 @@ import { around } from "monkey-around";
 import { CanvasNode } from 'Canvas';
 import { CanvasExploder } from './src/CanvasExploder';
 import { SendToCanvas } from './src/SendToCanvas';
+import { EnhancedCanvasSettings, DEFAULT_SETTINGS } from "./settings";
+import { isVersionNewer } from "./utils";
+import { ReleaseNotesModal } from "./ReleaseNotesModal";
 
 interface CanvasNodeWithFlag extends CanvasNode {
     autoHeightEnabled?: boolean;
@@ -23,6 +26,7 @@ export default class EnhancedCanvas extends Plugin {
 	public sendToCanvas: SendToCanvas;
 	public patchedEdge: boolean;
 	private isMetadataClicked: boolean = false;
+	settings: EnhancedCanvasSettings;
 
 	private autoHeightCheckReference: (() => void) | null = null;
 	private autoLinkCheckReference: (() => void) | null = null;
@@ -334,6 +338,9 @@ export default class EnhancedCanvas extends Plugin {
 	 * existing canvas files upon loading.
 	 */
 	async onload() {
+		await this.loadSettings();
+		this.checkReleaseNotes();
+
 		this.exploder = new CanvasExploder(this);
 		this.sendToCanvas = new SendToCanvas(this);
 
@@ -376,6 +383,36 @@ export default class EnhancedCanvas extends Plugin {
 			return;
 		}
 	}
+
+    checkReleaseNotes() {
+        try {
+            const currentVersion = this.manifest.version;
+            const previousVersion = this.settings.previousRelease;
+
+            const isNewInstall = previousVersion === "0.0.0" || !previousVersion;
+
+            if (this.settings.showReleaseNotes) {
+                if (isNewInstall || isVersionNewer(currentVersion, previousVersion)) {
+                    new ReleaseNotesModal(
+                        this.app,
+                        this,
+                        currentVersion,
+                        isNewInstall
+                    ).open();
+                }
+            }
+        } catch (e) {
+            console.error("Failed to show release notes:", e);
+        }
+    }
+
+    async loadSettings() {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
+
+    async saveSettings() {
+        await this.saveData(this.settings);
+    }
 
 	/**
 	 * Registers patches for the application's FileManager to intercept file deletion
