@@ -24,6 +24,9 @@ export default class EnhancedCanvas extends Plugin {
 	public patchedEdge: boolean;
 	private isMetadataClicked: boolean = false;
 
+	private autoHeightCheckReference: (() => void) | null = null;
+	private autoLinkCheckReference: (() => void) | null = null;
+
 	createMissingEdgesFromLinks(canvas: any) {
 		const selectedNodes = Array.from(canvas.selection);
 		const fileNodes = selectedNodes.filter(node => node?.filePath);
@@ -779,16 +782,17 @@ export default class EnhancedCanvas extends Plugin {
 			return true;	
 		};
 		
-		const layoutChangeHandler = () => {
+		const tryToPatch = () => {
 			if (patchCanvas()) {
-				// when canvas patched successfully, remove the layout change listener
-				plugin.app.workspace.off('active-leaf-change', layoutChangeHandler);
-				plugin.app.workspace.off('layout-change', layoutChangeHandler);
+				plugin.detachAutoLinkListeners();
 			}
 		};
+		plugin.autoLinkCheckReference = tryToPatch;
 
-		plugin.app.workspace.on('active-leaf-change', layoutChangeHandler);
-		plugin.app.workspace.on('layout-change', layoutChangeHandler);
+		plugin.app.workspace.on('active-leaf-change', tryToPatch);
+		plugin.app.workspace.on('layout-change', tryToPatch);
+
+		tryToPatch();
 	}
 
 	registerCanvasExploder() {
@@ -901,18 +905,35 @@ export default class EnhancedCanvas extends Plugin {
     }
 
 	registerCanvasNodeAutoHeightPatcher() {
-		const plugin = this;
+		const tryToPatch = () => {
+			const success = this.patchCanvasNodeAutoHeight();
 
-		const patchAutoHeight = () => {
-			if (plugin.patchCanvasNodeAutoHeight()) {
-				plugin.app.workspace.off('active-leaf-change', patchAutoHeight);
-				plugin.app.workspace.off('layout-change', patchAutoHeight);
+			if (success) {
+				this.detachAutoHeightPatcherListeners();
 			}
-		}
-		plugin.app.workspace.on('active-leaf-change', patchAutoHeight);
-		plugin.app.workspace.on('layout-change', patchAutoHeight);
+		};
+		this.autoHeightCheckReference = tryToPatch;
 
-		patchAutoHeight();
+		this.app.workspace.on('active-leaf-change', tryToPatch);
+		this.app.workspace.on('layout-change', tryToPatch);
+
+		tryToPatch();
+	}
+
+	private detachAutoHeightPatcherListeners() {
+		if (this.autoHeightCheckReference) {
+			this.app.workspace.off('active-leaf-change', this.autoHeightCheckReference);
+			this.app.workspace.off('layout-change', this.autoHeightCheckReference);
+			this.autoHeightCheckReference = null;
+		}
+	}
+
+	private detachAutoLinkListeners() {
+		if (this.autoLinkCheckReference) {
+			this.app.workspace.off('active-leaf-change', this.autoLinkCheckReference);
+			this.app.workspace.off('layout-change', this.autoLinkCheckReference);
+			this.autoLinkCheckReference = null;
+		}
 	}
 
 	createEdge(node1: any, node2: any) {
@@ -966,6 +987,9 @@ export default class EnhancedCanvas extends Plugin {
 	 * are removed from the vault.
 	 */
 	async onunload() {
+		this.detachAutoHeightPatcherListeners();
+		this.detachAutoLinkListeners();
+
 		this.sendToCanvas.clearSelectedCanvas(false);
 		try {
 			const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
