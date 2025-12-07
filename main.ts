@@ -10,12 +10,11 @@ import { around } from "monkey-around";
 import { CanvasNode } from 'Canvas';
 import { CanvasExploder } from './src/CanvasExploder';
 import { SendToCanvas } from './src/SendToCanvas';
-import { EnhancedCanvasSettings, DEFAULT_SETTINGS } from "./settings";
-import { isVersionNewer } from "./utils";
-import { ReleaseNotesModal } from "./ReleaseNotesModal";
+import { EnhancedCanvasSettings, DEFAULT_SETTINGS } from "./src/settings";
+import { isVersionNewer } from "./src/utils";
+import { ReleaseNotesModal } from "./src/ReleaseNotesModal";
 
 interface CanvasNodeWithFlag extends CanvasNode {
-    autoHeightEnabled?: boolean;
     _autoHeightTimer?: number | null;
     _delayedResizeTimer?: number | null;
     [key: string]: any; 

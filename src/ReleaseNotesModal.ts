@@ -1,5 +1,5 @@
 import { App, Modal, MarkdownRenderer, ButtonComponent } from "obsidian";
-import EnhancedCanvas from "./main";
+import EnhancedCanvas from "../main";
 import { releaseNotesContent, firstInstallContent } from "./releaseNotesData";
 
 export class ReleaseNotesModal extends Modal {

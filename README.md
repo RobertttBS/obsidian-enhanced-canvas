@@ -1,80 +1,101 @@
 # Enhanced Canvas
 
-### New Feature: Split Node by Headings
+> This Obsidian plugin enhances Obsidian Canvas with features I find essential.
 
-Instantly decomposes a single file node into multiple separate nodes corresponding to every H1-H6 heading within the document.
+## ✨New Feature✨
 
-![SplitNode](./Attachments/SplitNode.gif)
+### Split Node by Headings
 
+**Split Node by Headings** instantly deconstructs a single file node into a hierarchical tree based on its headings. You can try this by right-clicking on a file node and selecting "Split Node by Headings" in Canvas.
 
-### Hide The Frontmatter by Default
+![SplitNode](./Attachments/split.gif)
 
-> In version 1.0.12, the frontmatter (properties) in Canvas nodes is hidden by default.  
-> To view or edit properties in a Canvas node, comment out or remove the code below in  
-> `.obsidian/plugins/obsidian-enhanced-canvas/style.css`.
+### Send Note to Canvas
 
-```
-.markdown-embed .metadata-container, 
-.markdown-embed-content .metadata-container { 
-    display: none !important; 
-}
+With the **"Send to Canvas"** command, you can push your current markdown note directly to a specific Canvas. It automatically appends a "canvas" property to your note, allowing you to navigate back to the board instantly in the future.
 
-.mod-inside-iframe.is-live-preview .metadata-container {
-    display: none !important;
-}
-```
+Once you have sent a note, that Canvas becomes the "Selected." You can then use the **"Send to Selected Canvas"** command on other notes to instantly add them to the same board—bypassing the file selection step entirely.
 
-## Overview
+![SendNote](./Attachments/send.gif)
 
-This Obsidian plugin enhances Canvas functionality by automatically managing node connections and synchronizing them with note properties.
+### Auto-Resize Node
 
-When you edit in Canvas, the plugin automatically tracks relationships by adding properties named after the canvas file to your notes.
+With this update, double-clicking the bottom edge engages **"Auto-Resize."** Now, when you drag the right edge to adjust the width, the height dynamically adjusts to fit your text. No need for repeated double-clicking!
 
-Most importantly, creating edges in Canvas establishes connections visible in the Graph View through markdown links.
+![AutoResize](./Attachments/autoresize.gif)
 
-## Demo
+## Main Feature
 
 ![enhanced-canvas](./Attachments/demo_with_focus.gif)
 
-- Based on this demo:
-  1. **Node addition**: When a note is added to the canvas, the plugin generates a 'canvas' property with a link to its corresponding canvas file.
-  2. **Edge addition**: Creating an edge in the Canvas generates a link to the target note within a property named after the canvas file (e.g., 'Canvas 1'), where the property name is derived from the canvas file name without its '.canvas' extension.
-  3. **Node Focusing**: Upon clicking a link to a .canvas file from a note, the system automatically focuses and zooms to the associated node in the canvas.
+Based on this demo:
+
+1. **Node addition**: When a note is added to the canvas, the plugin generates a 'canvas' property with a link to its corresponding canvas file.
+
+2. **Edge addition**: Creating an edge in the Canvas generates a link to the target note within a property named after the canvas file (e.g., 'Canvas 1'), where the property name is derived from the canvas file name without its '.canvas' extension.
+
+3. **Node Focusing**: Upon clicking a link to a .canvas file from a note, the system automatically focuses and zooms to the associated node in the canvas.
 
 **Note 1**: All Canvas-related properties will be added when this plugin is enabled, and all properties added by this plugin will be removed upon disabling it.
 
 **Note 2**: If you delete or rename a .canvas or Markdown file, all associated properties will also be updated.
 
+### Hide The Frontmatter by Default
 
-## Key Features
+> In version after 1.0.12, the frontmatter (properties) in Canvas nodes is hidden by default.
 
-- **Automated Property Synchronization**
-  - Automatically creates properties in source notes when editing in Canvas
-  - Properties are named after the canvas file to track relationships
-  - Supports file nodes, nested Canvas files (.canvas), images, PDFs, and **any content that can be represented as markdown links**
-    - Text nodes (cards) are not supported as they cannot be represented as markdown links
-- **Shortest Path Optimization** for node connections
-- **Bidirectional Link Management** between Canvas and note content
+> To view or edit properties in a Canvas node, comment out or remove the code below in `.obsidian/plugins/obsidian-enhanced-canvas/style.css`.
+
+```
+
+.markdown-embed .metadata-container,
+
+.markdown-embed-content .metadata-container {
+
+display: none !important;
+
+}
+
+
+
+.mod-inside-iframe.is-live-preview .metadata-container {
+
+display: none !important;
+
+}
+
+```
 
 ## Commands
 
-- **Adjust edges with shortest path**
-  - Adjusts edges between selected nodes using shortest path
-- **Delete edges between selected nodes**
-  - Removes all edges between selected nodes
-- **Add edges according the links in notes**
-  - Automatically creates edges between selected nodes based on links within notes
-- **Remove the property of all nodes in current Canvas**
-  - Removes properties from all nodes in the current Canvas
+-   **Adjust edges with shortest path**
+
+    -   Adjusts edges between selected nodes using shortest path
+
+-   **Delete edges between selected nodes**
+
+    -   Removes all edges between selected nodes
+
+-   **Add edges according the links in notes**
+
+    -   Automatically creates edges between selected nodes based on links within notes
+
+-   **Remove the property of all nodes in current Canvas**
+    -   Removes properties from all nodes in the current Canvas
 
 ### Demo
-- **Add edges according the links in notes**
-![demoCommand](./Attachments/demoCommand.gif)
-  - Automatically establishes connections based on existing markdown links in notes
-  - It integrates **Adjust edges with shortest path**
-    - Optimizes edge paths in Canvas for minimal distance
-  - Supports all node types (text nodes, group nodes, images, nested Canvases, etc.)
 
+-   **Add edges according the links in notes**
+
+![demoCommand](./Attachments/demoCommand.gif)
+
+-   Automatically establishes connections based on existing markdown links in notes
+
+-   It integrates **Adjust edges with shortest path**
+
+-   Optimizes edge paths in Canvas for minimal distance
+
+-   Supports all node types (text nodes, group nodes, images, nested Canvases, etc.)
 
 ## Installation Steps
 
@@ -82,7 +103,8 @@ Search for "Enhanced Canvas" in the community plugins and install it. Once enabl
 
 ## Contributing
 
-All contributions are welcome! 
+All contributions are welcome!
 
 ## Say Thank You
+
 If you are enjoying Enhanced Canvas, then please support my work and enthusiasm by buying me a coffee on https://buymeacoffee.com/robertttbs.
