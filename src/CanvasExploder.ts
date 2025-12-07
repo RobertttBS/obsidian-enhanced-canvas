@@ -44,7 +44,7 @@ export class CanvasExploder {
                 const selection = canvas.selection;
                 if (selection.size === 1) {
                     const node = selection.values().next().value;
-                    // 確保選中的是 File Node 且有檔案
+
                     if (node && node.file) { 
                         menu.addItem((item) => {
                             item

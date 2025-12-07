@@ -944,13 +944,28 @@ export default class EnhancedCanvas extends Plugin {
             };
         }
 
-        if (baseNodePrototype.resize) {
-            methodsToPatch.resize = (originalMethod: Function) => {
-                return function(this: CanvasNodeWithFlag, ...args: any[]) {
-                    return originalMethod.apply(this, args);
-                };
-            };
-        }
+		if (baseNodePrototype.blur) {
+			methodsToPatch.blur = (originalMethod: Function) => {
+				return function(this: CanvasNodeWithFlag, ...args: any[]) {
+					const result = originalMethod.apply(this, args);
+
+					if (this.autoHeightEnabled) {
+						setTimeout(() => {
+							if (typeof this.onResizeDblclick === 'function') {
+								const mockEvent = {
+									preventDefault: () => {},
+									stopPropagation: () => {},
+								} as any;
+
+								this.onResizeDblclick(mockEvent, "bottom");
+							}
+						}, 300);
+					}
+
+					return result;
+				};
+			};
+		}
 
         if (Object.keys(methodsToPatch).length === 0) return false;
 

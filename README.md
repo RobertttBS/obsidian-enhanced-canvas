@@ -47,23 +47,14 @@ Based on this demo:
 > To view or edit properties in a Canvas node, comment out or remove the code below in `.obsidian/plugins/obsidian-enhanced-canvas/style.css`.
 
 ```
-
 .markdown-embed .metadata-container,
-
 .markdown-embed-content .metadata-container {
-
 display: none !important;
-
 }
-
-
 
 .mod-inside-iframe.is-live-preview .metadata-container {
-
 display: none !important;
-
 }
-
 ```
 
 ## Commands
