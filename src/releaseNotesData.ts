@@ -12,11 +12,9 @@ Once you have sent a note, that Canvas becomes the "Selected." You can then use 
 
 ### ✨ Auto-Resize Node
 
-This is a feature I have wanted for a long time. Previously, while double-clicking the bottom edge would fit a node to its content, changing the width would break this fit, forcing you to double-click again.
+This is a feature I’ve wanted for a long time. Previously, double-clicking the bottom edge would fit a node to its content, but changing the width would break this fit, forcing you to double-click again.
 
-With this update, double-clicking the bottom edge engages **"Auto-Resize."** Now, when you drag the right edge to adjust the width, the height dynamically adjusts to fit your text. No need for repeated double-clicking!
-
-_(Coming soon: A feature that auto-resizes the node immediately after editing text within the Canvas.)_
+With this update, double-clicking the bottom edge activates "Auto-Resize." Now, the node's height dynamically adapts to fit your content—whether you are **adjusting the width** or **updating the text**. No need for repeated double-clicking!
 
 [View detailed demo at github](https://github.com/RobertttBS/obsidian-enhanced-canvas)
 `;

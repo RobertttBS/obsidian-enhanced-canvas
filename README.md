@@ -20,7 +20,9 @@ Once you have sent a note, that Canvas becomes the "Selected." You can then use 
 
 ### Auto-Resize Node
 
-With this update, double-clicking the bottom edge engages **"Auto-Resize."** Now, when you drag the right edge to adjust the width, the height dynamically adjusts to fit your text. No need for repeated double-clicking!
+With this update, double-clicking the bottom edge engages **"Auto-Resize."** Now, when you drag the right edge to adjust the width or update the text, the height dynamically adjusts to fit your text. No need for repeated double-clicking!
+
+Dragging the bottom edge to manually adjust the height disables the node's auto-resize feature.
 
 ![AutoResize](./Attachments/autoresize.gif)
 
