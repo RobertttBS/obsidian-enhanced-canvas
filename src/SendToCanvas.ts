@@ -13,7 +13,8 @@ import {
     Workspace,
 } from "obsidian";
 
-import EnhancedCanvas from '../main'; 
+import EnhancedCanvas from '../main';
+import { CanvasData, CanvasNodeData } from '../Canvas'; 
 
 type ObsidianApp = App & {
     metadataCache: MetadataCache;
@@ -97,61 +98,83 @@ export class SendToCanvas {
     }
     
     /**
-     * Integrates a target file into a specified canvas workspace and updates the file's metadata to establish a persistent link to the canvas.
+     * Incorporates a file into a Canvas board as a visual node and establishes a bidirectional reference between the document and the workspace.
+     *
+     * @param targetFile - The file to be added to the visualization.
+     * @param canvasFile - The target Canvas file.
      */
     async addFileNodeToCanvas(targetFile: TFile, canvasFile: TFile): Promise<void> {
-        if(!canvasFile||!canvasFile.name) return;
+        if (!canvasFile || !canvasFile.name) return;
+
         const canvasContent = await this.plugin.app.vault.read(canvasFile);
-        
-        let canvasData: { nodes: any[], edges: any[] };
+        let canvasData: CanvasData;
+
         try {
-            canvasData = JSON.parse(canvasContent || "{}"); 
+            canvasData = JSON.parse(canvasContent || '{"nodes":[], "edges":[]}');
         } catch (e) {
             new Notice(`Error reading Canvas JSON for ${canvasFile.name}.`);
             console.error("Canvas JSON Parse Error:", e);
             return;
         }
 
-        if (!Array.isArray(canvasData.nodes)) {
-            canvasData.nodes = [];
+        if (!Array.isArray(canvasData.nodes)) canvasData.nodes = [];
+        if (!Array.isArray(canvasData.edges)) canvasData.edges = [];
+
+        const existingNode = canvasData.nodes.find(node => node.type === 'file' && node.file === targetFile.path);
+        if (existingNode) {
+            new Notice(`${targetFile.basename} already exists in Canvas.`);
+            return;
         }
-        if (!Array.isArray(canvasData.edges)) {
-            canvasData.edges = [];
-        }
-        
-        const newNode = this.createCanvasFileNode(targetFile, canvasData.nodes.length);
+
+        const newNode = this.createNodeAtBottom(targetFile, canvasData.nodes);
         canvasData.nodes.push(newNode);
-        
-        const updatedContent = JSON.stringify(canvasData, null, 2); 
+
+        const updatedContent = JSON.stringify(canvasData, null, 2);
 
         try {
             await this.plugin.app.vault.modify(canvasFile, updatedContent);
-            
+
             const internalLink = `[[${canvasFile.name}]]`;
             await this.plugin.updateFrontmatter(targetFile, internalLink, 'add', 'canvas');
-            
-            new Notice(`Successfully sent ${targetFile.name} to Canvas: ${canvasFile.name}`);            
-            
+
+            new Notice(`Added ${targetFile.basename} to Canvas: ${canvasFile.basename}`);
         } catch (e) {
-            new Notice(`Failed to send ${targetFile.name} to Canvas: ${canvasFile.name}`);            
+            new Notice(`Failed to add to Canvas: ${canvasFile.name}`);
             console.error("Canvas Modify Error:", e);
         }
     }
-    
-    createCanvasFileNode(file: TFile, index: number): any {
+
+    /**
+     * Creates a new node for a file at the bottom of the canvas.
+     *
+     * @param file - The file to create a node for.
+     * @param existingNodes - The existing nodes in the canvas.
+     * @returns The new node.
+     */
+    createNodeAtBottom(file: TFile, existingNodes: CanvasNodeData[]): CanvasNodeData {
         const id = this.randomId();
-        
-        const PADDING = 50;
-        const WIDTH = 600;
-        const HEIGHT = 500;
-        
-        const xPos = PADDING + (index % 5) * (WIDTH + PADDING);
-        const yPos = PADDING + Math.floor(index / 5) * (HEIGHT + PADDING);
-        
+        const WIDTH = 400;
+        const HEIGHT = 400;
+        const GAP = 100;
+        const DEFAULT_X = -200;
+
+        let startY = -200;
+
+        if (existingNodes.length > 0) {
+            const maxY = existingNodes.reduce((max, node) => {
+                const bottomEdge = node.y + node.height;
+                return bottomEdge > max ? bottomEdge : max;
+            }, -Infinity);
+            
+            if (maxY !== -Infinity) {
+                startY = maxY + GAP;
+            }
+        }
+
         return {
             id: id,
-            x: xPos,
-            y: yPos,
+            x: DEFAULT_X,
+            y: startY,
             width: WIDTH,
             height: HEIGHT,
             type: "file",
@@ -159,15 +182,8 @@ export class SendToCanvas {
         };
     }
 
-    randomId(length: number = 16): string {
-        const byteLength = Math.ceil(length / 2);
-        const array = new Uint8Array(byteLength);
-        
-        window.crypto.getRandomValues(array);
-        
-        return Array.from(array, (byte) => 
-            byte.toString(16).padStart(2, '0')
-        ).join('').substring(0, length);
+    randomId(): string {
+        return Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
     }
     
     getCanvasFiles(): TFile[] {
@@ -180,14 +196,14 @@ export class SendToCanvas {
         if (file) {
             if (!this.statusBarItemEl) {
                 this.statusBarItemEl = this.plugin.addStatusBarItem();
-                this.statusBarItemEl.addClass("scs-status-canvas"); // 確保有一個基礎類
+                this.statusBarItemEl.addClass("scs-status-canvas");
                 
                 this.plugin.registerDomEvent(this.statusBarItemEl, 'click', this.handleStatusBarClick.bind(this));
             }
             
             this.statusBarItemEl.empty();
             this.statusBarItemEl.setText(`Selected Canvas: ${file.name}`);
-            this.statusBarItemEl.title = `Click to clear selection: ${file.name}`; // 增加 tooltip
+            this.statusBarItemEl.title = `Click to clear selection: ${file.name}`;
             this.statusBarItemEl.addClass("is-active"); 
             
         } else {

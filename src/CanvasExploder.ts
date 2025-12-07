@@ -1,12 +1,8 @@
 import {
-    Plugin,
     Menu,
     ItemView,
-    FileView,
     TFile,
     TAbstractFile,
-    Editor,
-    MarkdownView,
     Notice
 } from 'obsidian';
 
