@@ -920,7 +920,7 @@ export default class EnhancedCanvas extends Plugin {
                             }, 250);
                         }
                     } 
-                    else if (direction === "right") {
+                    else if (direction === "right" || direction === "left") {
                         if (this.autoHeightEnabled === true) {
                             const handlePointerUp = () => {
                                 window.setTimeout(() => {
