@@ -581,7 +581,7 @@ export default class EnhancedCanvas extends Plugin {
 			
 				setTimeout(() => {
 					this.isMetadataClicked = false;
-				}, 200);
+				}, 500);
 			}
 		}, true);
 
