@@ -402,6 +402,14 @@ export default class EnhancedCanvas extends Plugin {
 				const view = leaf.view;
 				if (view.getViewType() !== 'canvas') return;
 
+				if (typeof view.onResize === 'function') {
+					view.onResize();
+				}
+				
+				setTimeout(() => {
+					if (typeof view.onResize === 'function') view.onResize();
+				}, 200);
+
 				let lastLeft = view.containerEl.getBoundingClientRect().left;
 
 				this.canvasStackInterval = setInterval(() => {
@@ -416,7 +424,7 @@ export default class EnhancedCanvas extends Plugin {
 						if (typeof view.onResize === 'function') {
 							view.onResize();
 						}
-						
+
 						lastLeft = rect.left;
 					}
 				}, 200);
