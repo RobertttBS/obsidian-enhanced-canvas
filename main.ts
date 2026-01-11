@@ -381,6 +381,47 @@ export default class EnhancedCanvas extends Plugin {
 		} catch (error) {
 			return;
 		}
+
+		/**
+		 * Configures a monitoring routine to force Canvas views to recalculate their layout
+		 * during "Stacked Tabs" sliding transitions, ensuring proper rendering when
+		 * standard resize triggers are insufficient.
+		 */
+		this.registerEvent(
+			this.app.workspace.on('active-leaf-change', (leaf) => {
+				if (this.canvasStackInterval) {
+					clearInterval(this.canvasStackInterval);
+					this.canvasStackInterval = null;
+				}
+
+				if (!leaf) return;
+
+				const isStacked = !!document.querySelector('.workspace-tabs.mod-stacked');
+				if (!isStacked) return;
+
+				const view = leaf.view;
+				if (view.getViewType() !== 'canvas') return;
+
+				let lastLeft = view.containerEl.getBoundingClientRect().left;
+
+				this.canvasStackInterval = setInterval(() => {
+					if (!view || !view.containerEl) {
+						clearInterval(this.canvasStackInterval);
+						return;
+					}
+
+					const rect = view.containerEl.getBoundingClientRect();
+					
+					if (Math.abs(rect.left - lastLeft) > 2) {
+						if (typeof view.onResize === 'function') {
+							view.onResize();
+						}
+						
+						lastLeft = rect.left;
+					}
+				}, 200);
+			})
+		);
 	}
 
     checkReleaseNotes() {
