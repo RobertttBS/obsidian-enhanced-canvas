@@ -19,6 +19,12 @@ With this update, double-clicking the bottom edge activates "Auto-Resize." Now, 
 [View detailed demo at github](https://github.com/RobertttBS/obsidian-enhanced-canvas)
 `;
 
+export const fixCursorShiftIssueInStackTabsCanvas = `
+> [!bug] Fix
+> You can now use Canvas with "stacked tabs" enabled without being affected by the cursor position shift issue.
+`;
+
 export const releaseNotesContent: Record<string, string> = {
+    "1.0.18": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.17": firstInstallContent
 };
