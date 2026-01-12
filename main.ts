@@ -75,7 +75,7 @@ export default class EnhancedCanvas extends Plugin {
 		if (newEdges.length > 0) {
 			currentData.edges.push(...newEdges);
 			canvas.setData(currentData);
-			canvas.requestSave();
+			canvas.requestSave(false);
 		}
 	}
 	
@@ -109,7 +109,7 @@ export default class EnhancedCanvas extends Plugin {
 
 		if (didUpdateEdges) {
 			canvas.setData(currentData);
-			canvas.requestSave();
+			canvas.requestSave(false);
 		}
 	}
 
@@ -123,7 +123,7 @@ export default class EnhancedCanvas extends Plugin {
 		});
 	
 		canvas.setData(currentData);
-		canvas.requestSave();
+		canvas.requestSave(false);
 	}
 	
 	/**
@@ -217,7 +217,7 @@ export default class EnhancedCanvas extends Plugin {
 			this.removeProperty(node, canvas.view.file.name,canvas.view.file.basename);
 		});
 		canvas.setData(canvasData);
-		canvas.requestSave();
+		canvas.requestSave(false);
 	}
 
 	async processEdgeUpdate(e: any) {
@@ -901,6 +901,7 @@ export default class EnhancedCanvas extends Plugin {
 	}
 
 	registerCanvasExploder() {
+        // For File Nodes - use file-menu event
         this.registerEvent(
             this.app.workspace.on("file-menu", (menu: Menu) => {
                 this.exploder.checkAndAddMenu(menu, "Split by Headings");
@@ -912,7 +913,52 @@ export default class EnhancedCanvas extends Plugin {
                 this.exploder.checkAndAddMenu(menu, "Split by Headings");
             })
         );
+
+        // For Text Nodes - patch canvas node menu
+        this.patchCanvasNodeMenu();
 	}
+
+    /**
+     * Patches Canvas to add context menu for text nodes (which don't trigger file-menu).
+     */
+    patchCanvasNodeMenu() {
+        const plugin = this;
+        let patched = false;
+        
+        const tryPatch = () => {
+            if (patched) return;
+            
+            const canvasView = this.app.workspace.getLeavesOfType("canvas")?.[0]?.view as any;
+            const anyNode = canvasView?.canvas?.nodes?.values()?.next()?.value;
+            if (!anyNode) return;
+
+            const basePrototype = Object.getPrototypeOf(Object.getPrototypeOf(anyNode));
+            if (!basePrototype?.showMenu) return;
+
+            const uninstall = around(basePrototype, {
+                showMenu: (next) => {
+                    return function(menu: Menu, ...args: any[]) {
+                        const result = next.call(this, menu, ...args);
+                        
+                        // Add menu for text nodes
+                        if (this.text !== undefined && !this.file) {
+                            plugin.exploder.addTextNodeMenu(menu, this);
+                        }
+                        
+                        return result;
+                    };
+                }
+            });
+
+            this.register(uninstall);
+            patched = true;
+            plugin.app.workspace.offref(leafEvent);
+        };
+
+        this.app.workspace.onLayoutReady(tryPatch);
+        const leafEvent = this.app.workspace.on('active-leaf-change', tryPatch);
+        this.registerEvent(leafEvent);
+    }
 	
 	/**
 	 * Installs hooks into the native Canvas prototype to enable automatic height adjustment behavior,
