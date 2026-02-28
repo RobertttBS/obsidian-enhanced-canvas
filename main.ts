@@ -625,7 +625,7 @@ export default class EnhancedCanvas extends Plugin {
 	registerFocusCanvas() {
 		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
 			const target = evt.target as HTMLElement;
-			if (target.closest('.metadata-container')) {
+			if (target.closest('.metadata-container') || target.closest('.search-result-container')) {
 				this.isMetadataClicked = true;
 			
 				setTimeout(() => {

@@ -20,15 +20,19 @@ With this update, double-clicking the bottom edge activates "Auto-Resize." Now, 
 `;
 
 export const fixCursorShiftIssueInStackTabsCanvas = `
-> [!bug] Fixed in 1.0.18
-> You can now use Canvas with "stacked tabs" enabled without experiencing the cursor position shift issue.
-> This fix applies to the Obsidian Canvas core plugin rather than this specific plugin.
+> [!tip] Feature in 1.0.20
+> Added "Focus" functionality for Linked Mentions.
 
 > [!NOTE] Feature in 1.0.19
 > Added "Split by Headings" functionality for Card Nodes.
+
+> [!bug] Fixed in 1.0.18
+> You can now use Canvas with "stacked tabs" enabled without experiencing the cursor position shift issue.
+> This fix applies to the Obsidian Canvas core plugin rather than this specific plugin.
 `;
 
 export const releaseNotesContent: Record<string, string> = {
+    "1.0.20": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.19": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.18": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.17": firstInstallContent
