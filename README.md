@@ -6,7 +6,7 @@
 
 ### Split Node by Headings
 
-**Split Node by Headings** instantly deconstructs a single file node into a hierarchical tree based on its headings. You can try this by right-clicking on a file node and selecting "Split Node by Headings" in Canvas.
+**Split Node by Headings** instantly deconstructs a single node into a hierarchical tree based on its headings. You can try this by right-clicking on a file (text) node and selecting "Split by Headings" in Canvas.
 
 ![SplitNode](./Attachments/split.gif)
 
