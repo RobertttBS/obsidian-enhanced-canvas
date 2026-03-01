@@ -21,10 +21,7 @@ With this update, double-clicking the bottom edge activates "Auto-Resize." Now, 
 
 export const fixCursorShiftIssueInStackTabsCanvas = `
 > [!note] Feature in 1.0.21
-> Because the Obsidian Canvas core plugin adds backlinks right now.
-> I add a settings view for Enhanced Canvas to toggle the "Sync Frontmatter" feature (as well as the plugin CSS).
-> If you don't want the property to be added, you can disable the "Sync Frontmatter" feature.
-> You need to execute the "Remove All Properties" command to remove the existing properties.
+> Since the Obsidian Canvas core plugin now supports backlinks, I have added a settings view to Enhanced Canvas that allows you to toggle the "Sync Frontmatter" feature (as well as the plugin's CSS). If you prefer not to have this property added, you can simply disable the "Sync Frontmatter" feature.
 
 > [!tip] Feature in 1.0.20
 > Added "Focus" functionality for Linked Mentions.
