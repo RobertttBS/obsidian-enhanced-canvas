@@ -3,6 +3,8 @@ import {
 	debounce,
 	ItemView,
 	Plugin,
+	PluginSettingTab,
+	Setting,
 	TFile
 } from 'obsidian';
 import { CanvasEdgeData, NodeSide, CanvasData } from "obsidian/canvas";
@@ -130,6 +132,7 @@ export default class EnhancedCanvas extends Plugin {
 	 * add 'canvas' and canvas basename properties to the node frontmatter.
 	 */
 	addProperty(node: any, propertyName: string, basename: string) {
+		if (!this.settings.enableFrontmatter) return;
 		const file = this.app.vault.getFileByPath(node.file); // node is JSON node, not canvas node
 		if (!file) return;
 
@@ -154,6 +157,7 @@ export default class EnhancedCanvas extends Plugin {
 	 * For JSON nodes only, which are stored in the canvas file, not the canvas node in Obsidian.
 	 */
 	removeProperty(node: any, propertyName: string, basename: string) {
+		if (!this.settings.enableFrontmatter) return;
 		const file = this.app.vault.getFileByPath(node.file); // node is JSON node, not canvas node
 		if (!file) return;
 
@@ -181,6 +185,7 @@ export default class EnhancedCanvas extends Plugin {
 	 * For JSON nodes only, which are stored in the canvas file, not the canvas node in Obsidian.
 	 */
 	renameProperty(node: any, oldName: string, newName: string) {
+		if (!this.settings.enableFrontmatter) return;
 		const file = this.app.vault.getFileByPath(node.file);
 		if (!file) return;
 	
@@ -221,6 +226,7 @@ export default class EnhancedCanvas extends Plugin {
 	}
 
 	async processEdgeUpdate(e: any) {
+		if (!this.settings.enableFrontmatter) return;
         const fromNode = e?.from?.node;
         const toNode = e?.to?.node;
 
@@ -288,6 +294,7 @@ export default class EnhancedCanvas extends Plugin {
 	 * included or excluded while maintaining list integrity.
 	 */
     updateFrontmatter = async (file: TFile, link: string, action: 'add' | 'remove', propertyName: string) => {
+		if (!this.settings.enableFrontmatter) return;
         await this.app.fileManager.processFrontMatter(file, (fm) => {
             const existingValue = Reflect.get(fm, propertyName);
             let currentSet = new Set<string>();
@@ -331,6 +338,15 @@ export default class EnhancedCanvas extends Plugin {
 		return commandFn(canvas, canvasData);
 	}
 
+	/** Applies or removes the body CSS class that gates the optional visual styles. */
+	toggleCSSClass(enabled: boolean) {
+		if (enabled) {
+			document.body.classList.add('enhanced-canvas-enabled');
+		} else {
+			document.body.classList.remove('enhanced-canvas-enabled');
+		}
+	}
+
 	/**
 	 * Registers all core plugin features and performs an initial scan
 	 * of the vault to process and initialize data from all
@@ -342,6 +358,9 @@ export default class EnhancedCanvas extends Plugin {
 
 		this.exploder = new CanvasExploder(this);
 		this.sendToCanvas = new SendToCanvas(this);
+
+		this.addSettingTab(new EnhancedCanvasSettingTab(this.app, this));
+		this.toggleCSSClass(this.settings.enableCustomCSS);
 
 		this.registerPluginCommands();
 		this.registerCanvasAutoLink();
@@ -1153,6 +1172,7 @@ export default class EnhancedCanvas extends Plugin {
 	 * are removed from the vault.
 	 */
 	async onunload() {
+		document.body.classList.remove('enhanced-canvas-enabled');
 		this.detachAutoHeightPatcherListeners();
 		this.detachAutoLinkListeners();
 
@@ -1181,5 +1201,49 @@ export default class EnhancedCanvas extends Plugin {
 		} catch (error) {
 			return;
 		}
+	}
+}
+
+/** Settings tab UI for Enhanced Canvas. */
+class EnhancedCanvasSettingTab extends PluginSettingTab {
+	plugin: EnhancedCanvas;
+
+	constructor(app: any, plugin: EnhancedCanvas) {
+		super(app, plugin);
+		this.plugin = plugin;
+	}
+
+	display(): void {
+		const { containerEl } = this;
+		containerEl.empty();
+
+		new Setting(containerEl)
+			.setName('Enable Frontmatter Synchronization')
+			.setDesc(
+				'When enabled, canvas nodes and edges are mapped to file metadata (properties). '
+			)
+			.addToggle(toggle =>
+				toggle
+					.setValue(this.plugin.settings.enableFrontmatter)
+					.onChange(async (value) => {
+						this.plugin.settings.enableFrontmatter = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Enable Custom Visuals & CSS')
+			.setDesc(
+				'When enabled, hide the metadata panel (properties) inside Canvas Node (and embedded notes and iframe previews).'
+			)
+			.addToggle(toggle =>
+				toggle
+					.setValue(this.plugin.settings.enableCustomCSS)
+					.onChange(async (value) => {
+						this.plugin.settings.enableCustomCSS = value;
+						await this.plugin.saveSettings();
+						this.plugin.toggleCSSClass(value);
+					})
+			);
 	}
 }

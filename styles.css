@@ -15,11 +15,11 @@ If your plugin does not need CSS, delete this file.
 }
 
 /* Hide metadata container in embeds (reading view) */
-.markdown-embed .metadata-container, 
-.markdown-embed-content .metadata-container { 
+.enhanced-canvas-enabled .markdown-embed .metadata-container, 
+.enhanced-canvas-enabled .markdown-embed-content .metadata-container { 
     display: none !important; 
 }
 
-.mod-inside-iframe.is-live-preview .metadata-container {
+.enhanced-canvas-enabled .mod-inside-iframe.is-live-preview .metadata-container {
     display: none !important;
 }
