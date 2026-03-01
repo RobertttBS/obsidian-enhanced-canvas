@@ -1226,6 +1226,35 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 				toggle
 					.setValue(this.plugin.settings.enableFrontmatter)
 					.onChange(async (value) => {
+						if (!value) {
+							// Run cleanup BEFORE disabling the flag, because removeProperty()
+							// has an early-return guard that checks enableFrontmatter.
+							try {
+								const canvasFiles = this.plugin.app.vault.getFiles().filter(file => file.extension === 'canvas');
+
+								await Promise.all(canvasFiles.map(async (canvasFile) => {
+									try {
+										const content = await this.plugin.app.vault.read(canvasFile);
+										const canvasData = JSON.parse(content) as CanvasData;
+
+										const tempCanvas = {
+											view: {
+												file: canvasFile
+											},
+											setData: () => {},
+											requestSave: () => {}
+										};
+
+										this.plugin.removeAllProperty(tempCanvas, canvasData);
+									} catch (error) {
+										return;
+									}
+								}));
+							} catch (error) {
+								// continue even if cleanup fails
+							}
+						}
+
 						this.plugin.settings.enableFrontmatter = value;
 						await this.plugin.saveSettings();
 					})
