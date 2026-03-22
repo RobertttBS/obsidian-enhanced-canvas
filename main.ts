@@ -850,7 +850,11 @@ export default class EnhancedCanvas extends Plugin {
 			plugin.register(uninstaller);
 		};
 
+		let canvasPatched = false;
+
 		const patchCanvas = () => {
+			if (canvasPatched) return false;
+
 			const canvasView = plugin.app.workspace.getLeavesOfType('canvas')[0]?.view;
 			if (!canvasView?.canvas) return false;
 
@@ -902,8 +906,8 @@ export default class EnhancedCanvas extends Plugin {
 			});
 
 			plugin.register(uninstaller);
-			
-			return true;	
+			canvasPatched = true;
+			return true;
 		};
 		
 		const tryToPatch = () => {
@@ -915,6 +919,7 @@ export default class EnhancedCanvas extends Plugin {
 
 		plugin.app.workspace.on('active-leaf-change', tryToPatch);
 		plugin.app.workspace.on('layout-change', tryToPatch);
+		plugin.app.workspace.onLayoutReady(tryToPatch);
 
 		tryToPatch();
 	}
@@ -985,6 +990,8 @@ export default class EnhancedCanvas extends Plugin {
 	 * on resize handles.
 	 */
 	patchCanvasNodeAutoHeight(): boolean {
+        if (this.uninstaller) return false;
+
         const canvasView = this.app.workspace.getLeavesOfType("canvas")?.first()?.view;
         if (!canvasView) return false;
 
@@ -1101,6 +1108,7 @@ export default class EnhancedCanvas extends Plugin {
 
 		this.app.workspace.on('active-leaf-change', tryToPatch);
 		this.app.workspace.on('layout-change', tryToPatch);
+		this.app.workspace.onLayoutReady(tryToPatch);
 
 		tryToPatch();
 	}
