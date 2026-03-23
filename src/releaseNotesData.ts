@@ -20,6 +20,9 @@ With this update, double-clicking the bottom edge activates "Auto-Resize." Now, 
 `;
 
 export const fixCursorShiftIssueInStackTabsCanvas = `
+> [!bug] Fixed in 1.0.22
+> Fixed an issue where properties failed to sync for pinned Canvas tabs on Windows 11. (I hope the bug is gone.)
+
 > [!note] Feature in 1.0.21
 > Since the Obsidian Canvas core plugin now supports backlinks, I have added a settings view to Enhanced Canvas that allows you to toggle the "Sync Frontmatter" feature (as well as the plugin's CSS). If you prefer not to have this property added, you can simply disable the "Sync Frontmatter" feature.
 
@@ -35,6 +38,7 @@ export const fixCursorShiftIssueInStackTabsCanvas = `
 `;
 
 export const releaseNotesContent: Record<string, string> = {
+    "1.0.22": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.21": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.20": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.19": fixCursorShiftIssueInStackTabsCanvas,
