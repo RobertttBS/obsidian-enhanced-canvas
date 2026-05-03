@@ -7,6 +7,7 @@ import {
 } from 'obsidian';
 
 import EnhancedCanvas from '../main'; 
+import { randomId } from './utils';
 
 declare module "obsidian" {
     interface Workspace {
@@ -91,17 +92,6 @@ export class CanvasExploder {
                 });
         });
     }
-
-	randomId(length: number = 16): string {
-		const byteLength = Math.ceil(length / 2);
-		const array = new Uint8Array(byteLength);
-		
-		window.crypto.getRandomValues(array);
-		
-		return Array.from(array, (byte) => 
-			byte.toString(16).padStart(2, '0')
-		).join('').substring(0, length);
-	}
 
     sanitizeHeading(rawHeading: string): string {
         let text = rawHeading.replace(/\[\[|\]\]/g, "");
@@ -245,7 +235,7 @@ export class CanvasExploder {
 			if (nodeStack.length > 0) {
 				const parentEntry = nodeStack[nodeStack.length - 1];
 				edgesToAdd.push({
-					id: this.randomId(),
+					id: randomId(),
 					fromNode: parentEntry.nodeId,
 					fromSide: 'bottom',
 					toNode: newNode.id,
@@ -339,7 +329,7 @@ export class CanvasExploder {
 			const currentX = baseX + (levelOffset * (width + GAP_X));
 
 			// Create node data (not the actual node yet)
-			const newNodeId = this.randomId();
+			const newNodeId = randomId();
 			newNodesData.push({
 				id: newNodeId,
 				type: 'text',
@@ -364,7 +354,7 @@ export class CanvasExploder {
 			if (nodeStack.length > 0) {
 				const parentEntry = nodeStack[nodeStack.length - 1];
 				newEdgesData.push({
-					id: this.randomId(),
+					id: randomId(),
 					fromNode: parentEntry.nodeId,
 					fromSide: 'bottom',
 					toNode: newNodeId,

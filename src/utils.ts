@@ -21,3 +21,17 @@ export function isVersionNewer(currentVersion: string, oldVersion: string): bool
     
     return false; // Versions are the same
 }
+
+/**
+ * Generates a cryptographically secure random ID.
+ */
+export function randomId(length: number = 16): string {
+    const byteLength = Math.ceil(length / 2);
+    const array = new Uint8Array(byteLength);
+    
+    window.crypto.getRandomValues(array);
+    
+    return Array.from(array, (byte) => 
+        byte.toString(16).padStart(2, '0')
+    ).join('').substring(0, length);
+}

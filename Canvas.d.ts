@@ -234,6 +234,8 @@ export interface CanvasNodeData {
 }
 
 export interface CanvasNode extends CanvasElement {
+  id: string
+
   isEditing: boolean
 
   nodeEl: HTMLElement
@@ -241,6 +243,8 @@ export interface CanvasNode extends CanvasElement {
 
   labelEl?: HTMLElement
   file?: TFile
+  /** Path string for file-backed nodes; mirrors CanvasNodeData.file. */
+  filePath?: string
 
   x: number
   y: number

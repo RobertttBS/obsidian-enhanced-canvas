@@ -7,7 +7,7 @@ import {
 	Setting,
 	TFile
 } from 'obsidian';
-import { CanvasEdgeData, NodeSide, CanvasData } from "obsidian/canvas";
+import { CanvasEdgeData, CanvasNodeData, NodeSide, CanvasData } from "obsidian/canvas";
 import { around } from "monkey-around";
 import { CanvasNode } from 'Canvas';
 import { CanvasExploder } from './src/CanvasExploder';
@@ -31,6 +31,8 @@ export default class EnhancedCanvas extends Plugin {
 
 	private autoHeightCheckReference: (() => void) | null = null;
 	private autoLinkCheckReference: (() => void) | null = null;
+	public canvasStackInterval: number | null = null;
+	public autoHeightUninstaller: (() => void) | null = null;
 
 	/**
 	 * Scans the selected nodes to identify underlying file references and automatically
@@ -38,30 +40,31 @@ export default class EnhancedCanvas extends Plugin {
 	 * currently missing on the canvas.
 	 */
 	createMissingEdgesFromLinks(canvas: any) {
-		const selectedNodes = Array.from(canvas.selection);
-		const fileNodes = selectedNodes.filter(node => node?.filePath);
+		const selectedNodes = Array.from(canvas.selection) as CanvasNode[];
+		const fileNodes = selectedNodes.filter((node: CanvasNode) => !!node?.filePath);
 		const resolvedLinks = this.app.metadataCache.resolvedLinks;
 		const currentData = canvas.getData();
 
-		const existingEdgesMap = new Map();
-		currentData.edges.forEach(edge => {
+		const existingEdgesMap = new Map<string, CanvasEdgeData>();
+		currentData.edges.forEach((edge: CanvasEdgeData) => {
 			existingEdgesMap.set(`${edge.fromNode}->${edge.toNode}`, edge);
 		});
 
-		const filePathToNodeMap = new Map();
-		fileNodes.forEach(node => {
+		const filePathToNodeMap = new Map<string, CanvasNode>();
+		fileNodes.forEach((node: CanvasNode) => {
 			if (node.filePath) {
 				filePathToNodeMap.set(node.filePath, node);
 			}
 		});
 
-		const newEdges = [];
+		const newEdges: CanvasEdgeData[] = [];
 
-		fileNodes.forEach(sourceNode => {
+		fileNodes.forEach((sourceNode: CanvasNode) => {
+			if (!sourceNode.filePath) return;
 			const links = resolvedLinks[sourceNode.filePath];
 			if (!links) return;
-	
-			Object.keys(links).forEach(targetPath => {
+
+			Object.keys(links).forEach((targetPath: string) => {
 				const targetNode = filePathToNodeMap.get(targetPath);
 				if (targetNode && targetNode !== sourceNode) {
 					const edgeKey = `${sourceNode.id}->${targetNode.id}`;
@@ -86,18 +89,18 @@ export default class EnhancedCanvas extends Plugin {
 	 * current selection to ensure optimal visual alignment and routing.
 	 */
 	optimizeEdgesBetweenSelectedNodes(canvas: any) {
-		const selectedNodes = Array.from(canvas.selection);
+		const selectedNodes = Array.from(canvas.selection) as CanvasNode[];
 		if (selectedNodes.length < 2) return;
 
 		const currentData = canvas.getData();
 
-		const selectedNodeIds = new Set(selectedNodes.map(node => node.id));
+		const selectedNodeIds = new Set(selectedNodes.map((node: CanvasNode) => node.id));
 
 		let didUpdateEdges = false;
-		currentData.edges.forEach(edge => {
+		currentData.edges.forEach((edge: CanvasEdgeData) => {
 			if (selectedNodeIds.has(edge.fromNode) && selectedNodeIds.has(edge.toNode)) {
-				const fromNode = currentData.nodes.find(node => node.id === edge.fromNode);
-				const toNode = currentData.nodes.find(node => node.id === edge.toNode);
+				const fromNode = currentData.nodes.find((node: CanvasNodeData) => node.id === edge.fromNode);
+				const toNode = currentData.nodes.find((node: CanvasNodeData) => node.id === edge.toNode);
 				if (fromNode && toNode) {
 					const updatedEdge = this.createEdge(fromNode, toNode);
 					if (edge.fromSide !== updatedEdge.fromSide || edge.toSide !== updatedEdge.toSide) {
@@ -116,11 +119,11 @@ export default class EnhancedCanvas extends Plugin {
 	}
 
 	deleteEdges(canvas: any) {
-		const selectedNodes = Array.from(canvas.selection);
-		const selectedNodeIds = new Set(selectedNodes.map(node => node.id));
+		const selectedNodes = Array.from(canvas.selection) as CanvasNode[];
+		const selectedNodeIds = new Set(selectedNodes.map((node: CanvasNode) => node.id));
 		const currentData = canvas.getData();
 
-		currentData.edges = currentData.edges.filter(edge => {
+		currentData.edges = currentData.edges.filter((edge: CanvasEdgeData) => {
 			return !(selectedNodeIds.has(edge.fromNode) && selectedNodeIds.has(edge.toNode));
 		});
 	
@@ -390,13 +393,16 @@ export default class EnhancedCanvas extends Plugin {
 												
 						await this.processEdgesInCanvas(canvasData, canvasFile);
 					} catch (parseError) {
+						console.error("Enhanced Canvas: Failed to parse canvas data", parseError);
 						return;
 					}
 				} catch (fileError) {
+					console.error("Enhanced Canvas: Failed to read canvas file", fileError);
 					return;
 				}
 			}));
 		} catch (error) {
+			console.error("Enhanced Canvas: Error in metadata update loop", error);
 			return;
 		}
 
@@ -430,14 +436,17 @@ export default class EnhancedCanvas extends Plugin {
 
 				let lastLeft = view.containerEl.getBoundingClientRect().left;
 
-				this.canvasStackInterval = setInterval(() => {
+				this.canvasStackInterval = window.setInterval(() => {
 					if (!view || !view.containerEl) {
-						clearInterval(this.canvasStackInterval);
+						if (this.canvasStackInterval !== null) {
+							clearInterval(this.canvasStackInterval);
+							this.canvasStackInterval = null;
+						}
 						return;
 					}
 
 					const rect = view.containerEl.getBoundingClientRect();
-					
+
 					if (Math.abs(rect.left - lastLeft) > 2) {
 						if (typeof view.onResize === 'function') {
 							view.onResize();
@@ -446,6 +455,7 @@ export default class EnhancedCanvas extends Plugin {
 						lastLeft = rect.left;
 					}
 				}, 200);
+				this.registerInterval(this.canvasStackInterval);
 			})
 		);
 	}
@@ -492,7 +502,8 @@ export default class EnhancedCanvas extends Plugin {
 		const deleteFile = async (file: any) => {
 			if (file.deleted === true) return;
 			
-			const backLinks = plugin.app.metadataCache.getBacklinksForFile(file);
+			// getBacklinksForFile is missing from MetadataCache typings in this obsidian version.
+			const backLinks = (plugin.app.metadataCache as any).getBacklinksForFile(file);
 			if (!backLinks || !backLinks.data) return;
 		
 			const linkRegexBasename = new RegExp(`\\[\\[${file.basename}(\\|.*)?\\]\\]`);
@@ -507,7 +518,7 @@ export default class EnhancedCanvas extends Plugin {
 					
 					Object.keys(frontmatter).forEach(key => {
 						if (Array.isArray(frontmatter[key])) {
-							frontmatter[key] = frontmatter[key].filter(item => {
+							frontmatter[key] = frontmatter[key].filter((item: any) => {
 								if (typeof item !== 'string') return true;
 
 								return !(linkRegexBasename.test(item) || linkRegexFullName.test(item));
@@ -705,16 +716,16 @@ export default class EnhancedCanvas extends Plugin {
 		
 			const { edges, nodes } = await e.canvas.getData();
 
-			const sameFileNodes = nodes.filter(node => node.file === fromNode.filePath);
-			const allRelevantEdges = edges.filter(edge => 
-				sameFileNodes.some(node => edge.fromNode === node.id)
+			const sameFileNodes = nodes.filter((node: any) => node.file === fromNode.filePath);
+			const allRelevantEdges = edges.filter((edge: any) => 
+				sameFileNodes.some((node: any) => edge.fromNode === node.id)
 			);
 
 			const edgeToNodesFilePathSet = new Set(
 				allRelevantEdges
-					.map(edge => nodes.find(node => node.id === edge.toNode))
-					.filter(node => node && node.file)
-					.map(node => node.file)
+					.map((edge: any) => nodes.find((node: any) => node.id === edge.toNode))
+					.filter((node: any) => node && node.file)
+					.map((node: any) => node.file)
 			);
 
 			const updatePromises: Promise<void>[] = [];
@@ -776,10 +787,10 @@ export default class EnhancedCanvas extends Plugin {
 				if (!fromFile) return;
 
 				const { edges, nodes } = await edge.canvas.getData();
-				const sameFileNodes = nodes.filter(node => node.file === fromNode.filePath);
+				const sameFileNodes = nodes.filter((node: any) => node.file === fromNode.filePath);
 
-				const stillHasConnection = edges.some(e => 
-					sameFileNodes.some(node => e.fromNode === node.id) && 
+				const stillHasConnection = edges.some((e: any) => 
+					sameFileNodes.some((node: any) => e.fromNode === node.id) && 
 					e.toNode === toNode.id &&
 					!(e.fromNode === fromNode.id && e.toNode === toNode.id)
 				);
@@ -854,7 +865,7 @@ export default class EnhancedCanvas extends Plugin {
 		const patchCanvas = () => {
 			if (canvasPatched) return false;
 
-			const canvasView = plugin.app.workspace.getLeavesOfType('canvas')[0]?.view;
+			const canvasView = plugin.app.workspace.getLeavesOfType('canvas')[0]?.view as any;
 			if (!canvasView?.canvas) return false;
 
 			const uninstaller = around(canvasView.canvas.constructor.prototype, {
@@ -989,7 +1000,7 @@ export default class EnhancedCanvas extends Plugin {
 	 * on resize handles.
 	 */
 	patchCanvasNodeAutoHeight(): boolean {
-        if (this.uninstaller) return false;
+        if (this.autoHeightUninstaller) return false;
 
         const canvasView = this.app.workspace.getLeavesOfType("canvas")?.first()?.view;
         if (!canvasView) return false;
@@ -1089,8 +1100,8 @@ export default class EnhancedCanvas extends Plugin {
 
         if (Object.keys(methodsToPatch).length === 0) return false;
 
-        this.uninstaller = around(baseNodePrototype, methodsToPatch);
-        this.register(this.uninstaller);
+        this.autoHeightUninstaller = around(baseNodePrototype, methodsToPatch);
+        this.register(this.autoHeightUninstaller);
 
         return true;
     }
@@ -1179,6 +1190,11 @@ export default class EnhancedCanvas extends Plugin {
 	 * are removed from the vault.
 	 */
 	async onunload() {
+		if (this.canvasStackInterval !== null) {
+			clearInterval(this.canvasStackInterval);
+			this.canvasStackInterval = null;
+		}
+
 		document.body.classList.remove('enhanced-canvas-enabled');
 		this.detachAutoHeightPatcherListeners();
 		this.detachAutoLinkListeners();
@@ -1202,10 +1218,12 @@ export default class EnhancedCanvas extends Plugin {
 					
 					await this.removeAllProperty(tempCanvas, canvasData);
 				} catch (error) {
+					console.error("Enhanced Canvas: Failed to remove property from canvas", error);
 					return;
 				}
 			}));
 		} catch (error) {
+			console.error("Enhanced Canvas: Error during bulk property removal", error);
 			return;
 		}
 	}
@@ -1254,10 +1272,12 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 
 										await this.plugin.removeAllProperty(tempCanvas, canvasData);
 									} catch (error) {
+										console.error("Enhanced Canvas: Settings cleanup failed for file", canvasFile.path, error);
 										return;
 									}
 								}));
 							} catch (error) {
+								console.error("Enhanced Canvas: Settings cleanup loop failed", error);
 								// continue even if cleanup fails
 							}
 						}

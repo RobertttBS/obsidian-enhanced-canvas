@@ -1,12 +1,11 @@
 // src/SendToCanvas.ts
 
 import {
-    Plugin,
     TFile,
     App,
     FuzzySuggestModal,
+    MarkdownView,
     Notice,
-    WorkspaceLeaf,
     MetadataCache,
     FileManager,
     Vault,
@@ -15,6 +14,7 @@ import {
 
 import EnhancedCanvas from '../main';
 import { CanvasData, CanvasNodeData } from '../Canvas'; 
+import { randomId } from './utils';
 
 type ObsidianApp = App & {
     metadataCache: MetadataCache;
@@ -67,13 +67,9 @@ export class SendToCanvas {
     }
 
     getCurrentMarkdownFile(): TFile | null {
-        const leaf: WorkspaceLeaf | null = this.plugin.app.workspace.activeLeaf;
-
-        if (!leaf || !(leaf.view.file instanceof TFile) || leaf.view.file.extension !== 'md') {
-            return null;
-        }
-        
-        return leaf.view.file;
+        const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view?.file || view.file.extension !== 'md') return null;
+        return view.file;
     }
 
     promptCanvasSelectionAndInsert(targetFile: TFile) {
@@ -152,7 +148,7 @@ export class SendToCanvas {
      * @returns The new node.
      */
     createNodeAtBottom(file: TFile, existingNodes: CanvasNodeData[]): CanvasNodeData {
-        const id = this.randomId();
+        const id = randomId();
         const WIDTH = 400;
         const HEIGHT = 400;
         const GAP = 100;
@@ -180,10 +176,6 @@ export class SendToCanvas {
             type: "file",
             file: file.path,
         };
-    }
-
-    randomId(): string {
-        return Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
     }
     
     getCanvasFiles(): TFile[] {
