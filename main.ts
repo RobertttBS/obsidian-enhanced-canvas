@@ -161,7 +161,7 @@ export default class EnhancedCanvas extends Plugin {
 		const file = this.app.vault.getFileByPath(node.file); // node is JSON node, not canvas node
 		if (!file) return;
 
-		this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+		return this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
 	
 			// remove the property
@@ -214,13 +214,12 @@ export default class EnhancedCanvas extends Plugin {
 		});
 	}
 
-	removeAllProperty(canvas: any, canvasData: CanvasData) {
+	async removeAllProperty(canvas: any, canvasData: CanvasData) {
 		const nodes = canvasData.nodes;
-		nodes.forEach(node => {
+		await Promise.all(nodes.map(node => {
 			if (!node?.file) return;
-
-			this.removeProperty(node, canvas.view.file.name,canvas.view.file.basename);
-		});
+			return this.removeProperty(node, canvas.view.file.name, canvas.view.file.basename);
+		}));
 		canvas.setData(canvasData);
 		canvas.requestSave(false);
 	}
@@ -1201,7 +1200,7 @@ export default class EnhancedCanvas extends Plugin {
 						requestSave: () => {}
 					};
 					
-					this.removeAllProperty(tempCanvas, canvasData);
+					await this.removeAllProperty(tempCanvas, canvasData);
 				} catch (error) {
 					return;
 				}
@@ -1253,7 +1252,7 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 											requestSave: () => {}
 										};
 
-										this.plugin.removeAllProperty(tempCanvas, canvasData);
+										await this.plugin.removeAllProperty(tempCanvas, canvasData);
 									} catch (error) {
 										return;
 									}
