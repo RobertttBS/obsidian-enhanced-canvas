@@ -1,35 +1,32 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code working in this repo.
 
 ## Commands
 
-- `npm run dev` — esbuild in watch mode, writes inline-sourcemap `main.js`. **This is what the maintainer actually uses** — Obsidian only needs `main.js`, so reload the plugin in Obsidian to pick up changes. Default to this for any local work.
-- `npm run build` and `npm run version` exist in `package.json` but are not part of the maintainer's workflow. Don't run them unless explicitly asked.
-
-There is **no test runner, no lint script, and no CI**. esbuild does the actual compile, so type errors won't fail the watch build — sanity-check by reading the file or running `tsc -noEmit` ad hoc if needed.
+- `npm run dev` — esbuild watch mode, writes inline-sourcemap `main.js`. **Default to this.** Reload the plugin in Obsidian to pick up changes.
+- `npm run build` / `npm run version` exist but aren't part of the maintainer's workflow — don't run unless asked.
+- No tests, lint, or CI. esbuild won't fail on type errors; run `tsc -noEmit` ad hoc if needed.
 
 ## Architecture
 
-This is an Obsidian plugin (`isDesktopOnly: false`). Entry is `main.ts`, bundled to `main.js` by `esbuild.config.mjs`. Obsidian and CodeMirror are externals — do not bundle them.
+Obsidian plugin (`isDesktopOnly: false`). Entry `main.ts` → `main.js` via `esbuild.config.mjs`. Obsidian and CodeMirror are externals — do not bundle.
 
-### Core entry: `main.ts` (the `EnhancedCanvas` class)
+### `main.ts` — the `EnhancedCanvas` class
 
-Almost every feature is a `register*` method called from `onload()`:
-- `registerPluginCommands` — command palette commands (only enabled when active view is a Canvas; gated through `ifActiveViewIsCanvas`).
-- `registerCanvasAutoLink` — patches the Canvas prototype's `addNode`/`removeNode`/`addEdge`/`removeEdge`/`clear` to keep file frontmatter in sync with canvas structure.
-- `registerFileManagerPatches` — patches `FileManager.trashFile`/`renameFile` to clean or migrate plugin-managed properties when files are deleted or renamed.
-- `registerFocusCanvas` — when navigating to a canvas via a metadata-panel link click, selects + zooms the matching node.
-- `registerCanvasExploder` — wires the "Split by Headings" menu items (file-menu, editor-menu, plus a patched node `showMenu` for text nodes).
-- `registerCanvasNodeAutoHeightPatcher` — patches `onResizeDblclick` / `onResizePointerdown` / `blur` on the canvas node prototype to implement auto-resize-to-content.
+Features are `register*` methods called from `onload()`:
+- `registerPluginCommands` — palette commands, gated by `ifActiveViewIsCanvas`.
+- `registerCanvasAutoLink` — patches Canvas `addNode`/`removeNode`/`addEdge`/`removeEdge`/`clear` to sync frontmatter.
+- `registerFileManagerPatches` — patches `FileManager.trashFile`/`renameFile` to clean/migrate plugin properties.
+- `registerFocusCanvas` — selects+zooms a node when navigating via metadata-panel link.
+- `registerCanvasExploder` — "Split by Headings" menu wiring (file-menu, editor-menu, patched node `showMenu`).
+- `registerCanvasNodeAutoHeightPatcher` — patches `onResizeDblclick`/`onResizePointerdown`/`blur` for auto-resize-to-content.
 
-`onload` also walks every `.canvas` file in the vault to bulk-add properties; `onunload` does the inverse and strips them.
+`onload` walks every `.canvas` to bulk-add properties; `onunload` strips them.
 
-### Prototype patching (the load-bearing pattern)
+### Prototype patching (load-bearing)
 
-The plugin extends Obsidian Canvas heavily via `monkey-around`'s `around()`. Canvas internals aren't part of Obsidian's public API — see `Canvas.d.ts` for the reverse-engineered surface this plugin relies on.
-
-Patching can only happen once a Canvas leaf exists in the workspace, so each patcher uses the same idiom:
+Uses `monkey-around`'s `around()`. Canvas internals are reverse-engineered in `Canvas.d.ts`. Patching needs a Canvas leaf, so every patcher uses:
 
 ```ts
 const tryToPatch = () => { if (patch()) detachListeners(); };
@@ -39,38 +36,36 @@ plugin.app.workspace.onLayoutReady(tryToPatch);
 tryToPatch();
 ```
 
-Touching this pattern broke pinned-tab handling on Windows in the past (commit `742eb70`). Detach listeners after a successful patch — leaving them attached causes re-patching and breaks things.
+Touching this broke Windows pinned tabs before (commit `742eb70`). **Detach listeners after a successful patch** — leaving them attached re-patches and breaks things. Register every uninstaller with `this.register(...)`.
 
-Every `around()` uninstaller is registered with `this.register(uninstaller)` so prototype patches are reverted on plugin unload.
+### Two node concepts — don't mix
 
-### Two node concepts — do not mix them
+- **JSON node** (in `.canvas` file): `node.file` is a **path string**. Used by `addProperty`/`removeProperty`/`renameProperty` and anything walking `canvasData.nodes`.
+- **Live `CanvasNode`** (in `canvas.nodes`): `node.filePath` is the path string, `node.file` is the `TFile`. Used by `addNodeUpdate`/`removeNodeUpdate`.
 
-- **JSON node**: the plain object stored in the `.canvas` file. `node.file` is a **path string**. Used by `addProperty` / `removeProperty` / `renameProperty` and any code that walks `canvasData.nodes`.
-- **Live `CanvasNode`**: the runtime object in `canvas.nodes`. `node.filePath` is the path string, `node.file` is the `TFile`. Used by event handlers like `addNodeUpdate` / `removeNodeUpdate`.
+Same names mean different things. Functions are commented with which they expect (see `main.ts:158-160`).
 
-Functions are commented with which they expect (see `main.ts:158-160`). Pay attention — the same property names mean different things on each side.
+### Frontmatter sync
 
-### Frontmatter synchronization
+When `settings.enableFrontmatter` is on, plugin writes:
+1. `canvas: [[<canvas-name>]]` on every referenced note.
+2. A property named after each canvas's basename, holding links to edge-connected nodes.
 
-When `settings.enableFrontmatter` is on, the plugin writes two kinds of frontmatter properties on notes referenced by canvas nodes:
-1. `canvas: [[<canvas-name>]]` — every canvas the note appears in.
-2. A property named after each canvas's basename, holding markdown links to other nodes that note has edges to.
+Mutation functions early-return if disabled. **Invariant: cleanup must run *before* flipping the setting off**, else `removeProperty` no-ops. Settings tab handler enforces this — preserve it.
 
-Every mutation function early-returns if `enableFrontmatter` is false. **Important invariant**: cleanup must run *before* flipping the setting off, otherwise `removeProperty` no-ops and nothing gets cleaned. The settings tab handler in `main.ts` enforces this — preserve it if you refactor.
+### `src/` modules
 
-### Modules under `src/`
-
-- `CanvasExploder.ts` — splits a file or text node into a heading-tree of connected nodes; constants at the top of the file (`HEADING_LIMIT`, `COMPACT_HEIGHT`, etc.) tune layout.
-- `SendToCanvas.ts` — "Send to Canvas" / "Send to Selected Canvas" commands; uses `FuzzySuggestModal` for selection and persists `selectedCanvas` only in memory (cleared on unload).
-- `settings.ts` — `EnhancedCanvasSettings` + `DEFAULT_SETTINGS`. The settings tab UI lives in `main.ts`.
-- `utils.ts` — `isVersionNewer` (semver compare for release-notes gating) and `randomId` (uses `crypto.getRandomValues`; prefer this over `Math.random()` for IDs).
-- `ReleaseNotesModal.ts` + `releaseNotesData.ts` — modal shown on first run / version bump, gated by `settings.showReleaseNotes` and `settings.previousRelease`.
+- `CanvasExploder.ts` — file/text node → heading-tree of connected nodes. Layout constants at top (`HEADING_LIMIT`, `COMPACT_HEIGHT`, …).
+- `SendToCanvas.ts` — "Send to Canvas" commands via `FuzzySuggestModal`. `selectedCanvas` is in-memory only.
+- `settings.ts` — `EnhancedCanvasSettings` + `DEFAULT_SETTINGS`. Settings UI lives in `main.ts`.
+- `utils.ts` — `isVersionNewer` (semver) and `randomId` (uses `crypto.getRandomValues` — prefer over `Math.random()`).
+- `ReleaseNotesModal.ts` + `releaseNotesData.ts` — first-run/version-bump modal, gated by `showReleaseNotes`/`previousRelease`.
 
 ### CSS
 
-`styles.css` ships with the plugin. Visual rules live behind a body class `enhanced-canvas-enabled`, toggled by `toggleCSSClass` based on `settings.enableCustomCSS`. The class hides the metadata container in markdown embeds inside Canvas nodes.
+`styles.css` ships with the plugin. Rules live behind body class `enhanced-canvas-enabled`, toggled by `toggleCSSClass` based on `settings.enableCustomCSS`. Hides metadata container in markdown embeds inside Canvas nodes.
 
-## Codebase conventions worth knowing
+## Conventions
 
-- `any` and `@ts-ignore` are used extensively against Canvas internals. ESLint is configured to allow this (`@typescript-eslint/ban-ts-comment: off`, `no-prototype-builtins: off`). When extending the typed surface, prefer adding to `Canvas.d.ts` over leaving `any` in new code.
-- `SECURITY_ROBUSTNESS_PLAN.md` is a *proposal* (Gemini-authored), not the current state — none of phases 1–3 are implemented. Don't treat it as documentation of what exists.
+- `any` and `@ts-ignore` used heavily against Canvas internals; ESLint allows it. When typing, prefer extending `Canvas.d.ts` over `any` in new code.
+- `SECURITY_ROBUSTNESS_PLAN.md` is a Gemini-authored *proposal*, not current state. Don't treat as docs.
