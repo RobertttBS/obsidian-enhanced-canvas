@@ -9,12 +9,6 @@ import {
 import EnhancedCanvas from '../main'; 
 import { randomId } from './utils';
 
-declare module "obsidian" {
-    interface Workspace {
-        on(name: "canvas-menu", callback: (menu: Menu, canvas: any) => any, ctx?: any): EventRef;
-    }
-}
-
 const HEADING_LIMIT = 10;
 const COMPACT_HEIGHT = 50;
 const LEAF_HEIGHT = 170;

@@ -12,6 +12,7 @@ import { around } from "monkey-around";
 import { CanvasNode } from 'Canvas';
 import { CanvasExploder } from './src/CanvasExploder';
 import { SendToCanvas } from './src/SendToCanvas';
+import { CanvasTagImport } from './src/CanvasTagImport';
 import { EnhancedCanvasSettings, DEFAULT_SETTINGS } from "./src/settings";
 import { isVersionNewer } from "./src/utils";
 import { ReleaseNotesModal } from "./src/ReleaseNotesModal";
@@ -25,6 +26,7 @@ interface CanvasNodeWithFlag extends CanvasNode {
 export default class EnhancedCanvas extends Plugin {
 	public exploder: CanvasExploder;
 	public sendToCanvas: SendToCanvas;
+	public canvasTagImport: CanvasTagImport;
 	public patchedEdge: boolean;
 	private isMetadataClicked: boolean = false;
 	settings: EnhancedCanvasSettings;
@@ -360,6 +362,7 @@ export default class EnhancedCanvas extends Plugin {
 
 		this.exploder = new CanvasExploder(this);
 		this.sendToCanvas = new SendToCanvas(this);
+		this.canvasTagImport = new CanvasTagImport(this);
 
 		this.addSettingTab(new EnhancedCanvasSettingTab(this.app, this));
 		this.toggleCSSClass(this.settings.enableCustomCSS);
@@ -369,6 +372,7 @@ export default class EnhancedCanvas extends Plugin {
 		this.registerFileManagerPatches();
 		this.registerFocusCanvas();
 		this.registerCanvasExploder();
+		this.registerCanvasTagImport();
 		this.registerCanvasNodeAutoHeightPatcher();
 
 		try {
@@ -950,6 +954,10 @@ export default class EnhancedCanvas extends Plugin {
 
         // For Text Nodes - patch canvas node menu
         this.patchCanvasNodeMenu();
+	}
+
+	registerCanvasTagImport() {
+		this.canvasTagImport.register();
 	}
 
     /**

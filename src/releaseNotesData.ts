@@ -20,6 +20,9 @@ With this update, double-clicking the bottom edge activates "Auto-Resize." Now, 
 `;
 
 export const fixCursorShiftIssueInStackTabsCanvas = `
+> [!note] Feature in 1.0.23
+> Added "Add notes by tag..." right-click menu option to bulk import notes by tag.
+
 > [!bug] Fixed in 1.0.22
 > Fixed an issue where properties failed to sync for pinned Canvas tabs on Windows 11. (I hope the bug is gone.)
 
@@ -38,6 +41,7 @@ export const fixCursorShiftIssueInStackTabsCanvas = `
 `;
 
 export const releaseNotesContent: Record<string, string> = {
+    "1.0.23": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.22": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.21": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.20": fixCursorShiftIssueInStackTabsCanvas,
