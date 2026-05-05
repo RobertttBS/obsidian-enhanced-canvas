@@ -161,7 +161,7 @@ class TagSuggestModal extends FuzzySuggestModal<string> {
         const matchingFiles = this.getMatchingFiles(tag);
 
         if (matchingFiles.length === 0) {
-            new Notice(`No new files found with tag ${tag}.`);
+            new Notice(`No files found with tag ${tag}.`);
             return;
         }
 
@@ -201,23 +201,9 @@ class TagSuggestModal extends FuzzySuggestModal<string> {
     }
 
     private getMatchingFiles(tag: string): TFile[] {
-        const existingPaths = this.getExistingFileNodePaths();
-
         return this.plugin.app.vault.getMarkdownFiles()
-            .filter((file) => !existingPaths.has(file.path))
             .filter((file) => this.fileMatchesTag(file, tag))
             .sort((a, b) => a.path.localeCompare(b.path));
-    }
-
-    private getExistingFileNodePaths(): Set<string> {
-        const canvasData = this.canvas.getData?.();
-        const nodes = Array.isArray(canvasData?.nodes) ? canvasData.nodes : [];
-
-        return new Set(
-            nodes
-                .filter((node: any) => node?.type === "file" && typeof node.file === "string")
-                .map((node: any) => node.file)
-        );
     }
 
     private fileMatchesTag(file: TFile, selectedTag: string): boolean {
