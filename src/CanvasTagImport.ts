@@ -16,8 +16,6 @@ type Position = {
     y: number;
 };
 
-const NODE_WIDTH = 400;
-const NODE_HEIGHT = 400;
 const NODE_GAP = 20;
 
 /**
@@ -165,18 +163,21 @@ class TagSuggestModal extends FuzzySuggestModal<string> {
             return;
         }
 
+        const width  = this.plugin.settings.defaultFileNodeWidth;
+        const height = this.plugin.settings.defaultFileNodeHeight;
+
         const columns = Math.ceil(Math.sqrt(matchingFiles.length));
         const createdNodes: any[] = [];
 
         matchingFiles.forEach((file, index) => {
-            const x = this.position.x + (index % columns) * (NODE_WIDTH + NODE_GAP);
-            const y = this.position.y + Math.floor(index / columns) * (NODE_HEIGHT + NODE_GAP);
+            const x = this.position.x + (index % columns) * (width + NODE_GAP);
+            const y = this.position.y + Math.floor(index / columns) * (height + NODE_GAP);
 
             try {
                 const node = this.canvas.createFileNode({
                     file,
                     pos: { x, y },
-                    size: { width: NODE_WIDTH, height: NODE_HEIGHT },
+                    size: { width, height },
                     save: false,
                     focus: false
                 });

@@ -20,6 +20,9 @@ With this update, double-clicking the bottom edge activates "Auto-Resize." Now, 
 `;
 
 export const fixCursorShiftIssueInStackTabsCanvas = `
+> [!tip] Feature in 1.0.24
+> Implement configurable default dimensions for new canvas nodes. Check the Enhanced Canvas settings to configure your preferred width and height.
+
 > [!note] Feature in 1.0.23
 > Added "Add notes by tag..." right-click menu option to bulk import notes by tag.
 
@@ -41,6 +44,7 @@ export const fixCursorShiftIssueInStackTabsCanvas = `
 `;
 
 export const releaseNotesContent: Record<string, string> = {
+    "1.0.24": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.23": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.22": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.21": fixCursorShiftIssueInStackTabsCanvas,

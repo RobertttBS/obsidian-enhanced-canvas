@@ -9,7 +9,7 @@ import {
 } from 'obsidian';
 import { CanvasEdgeData, CanvasNodeData, NodeSide, CanvasData } from "obsidian/canvas";
 import { around } from "monkey-around";
-import { CanvasNode } from 'Canvas';
+import { CanvasNode, Size } from 'Canvas';
 import { CanvasExploder } from './src/CanvasExploder';
 import { SendToCanvas } from './src/SendToCanvas';
 import { CanvasTagImport } from './src/CanvasTagImport';
@@ -33,8 +33,10 @@ export default class EnhancedCanvas extends Plugin {
 
 	private autoHeightCheckReference: (() => void) | null = null;
 	private autoLinkCheckReference: (() => void) | null = null;
+	private dragTempNodeCheckReference: (() => void) | null = null;
 	public canvasStackInterval: number | null = null;
 	public autoHeightUninstaller: (() => void) | null = null;
+	public dragTempNodeUninstaller: (() => void) | null = null;
 
 	/**
 	 * Scans the selected nodes to identify underlying file references and automatically
@@ -374,6 +376,8 @@ export default class EnhancedCanvas extends Plugin {
 		this.registerCanvasExploder();
 		this.registerCanvasTagImport();
 		this.registerCanvasNodeAutoHeightPatcher();
+		this.registerCanvasDefaultNodeSize();
+		this.registerCanvasDragTempNodePatcher();
 
 		try {
 			const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
@@ -1147,6 +1151,91 @@ export default class EnhancedCanvas extends Plugin {
 		}
 	}
 
+	/**
+	 * Writes the user's configured default sizes into a Canvas instance's config so that
+	 * every native creation path (double-click, paste, programmatic createTextNode/createFileNode)
+	 * picks them up. Touches in-memory state only.
+	 */
+	applyDefaultNodeSizeToCanvas(canvas: any) {
+		if (!canvas?.config) return;
+		canvas.config.defaultTextNodeDimensions = {
+			width:  this.settings.defaultTextNodeWidth,
+			height: this.settings.defaultTextNodeHeight,
+		};
+		canvas.config.defaultFileNodeDimensions = {
+			width:  this.settings.defaultFileNodeWidth,
+			height: this.settings.defaultFileNodeHeight,
+		};
+	}
+
+	applyDefaultNodeSizeToAllOpenCanvases() {
+		for (const leaf of this.app.workspace.getLeavesOfType('canvas')) {
+			const canvas = (leaf.view as any)?.canvas;
+			if (canvas) this.applyDefaultNodeSizeToCanvas(canvas);
+		}
+	}
+
+	registerCanvasDefaultNodeSize() {
+		const apply = () => this.applyDefaultNodeSizeToAllOpenCanvases();
+
+		this.registerEvent(this.app.workspace.on('active-leaf-change', apply));
+		this.registerEvent(this.app.workspace.on('layout-change',     apply));
+		this.app.workspace.onLayoutReady(apply);
+		apply();
+	}
+
+	/**
+	 * Patches Canvas.prototype.dragTempNode so dragging a note in from the file explorer
+	 * uses the user's configured file-node size instead of whatever Obsidian's drag handler
+	 * computed upstream of canvas.config.
+	 */
+	patchCanvasDragTempNode(): boolean {
+		if (this.dragTempNodeUninstaller) return false;
+
+		const canvasView = this.app.workspace.getLeavesOfType('canvas')?.first()?.view as any;
+		const canvas = canvasView?.canvas;
+		if (!canvas?.constructor?.prototype?.dragTempNode) return false;
+
+		const plugin = this;
+		const uninstall = around(canvas.constructor.prototype, {
+			dragTempNode(orig: Function) {
+				return function (dragEvent: any, _nodeSize: Size, onDropped: any) {
+					const overridden: Size = {
+						width:  plugin.settings.defaultFileNodeWidth,
+						height: plugin.settings.defaultFileNodeHeight,
+					};
+					return orig.call(this, dragEvent, overridden, onDropped);
+				};
+			},
+		});
+
+		this.dragTempNodeUninstaller = uninstall;
+		this.register(uninstall);
+		return true;
+	}
+
+	registerCanvasDragTempNodePatcher() {
+		const tryToPatch = () => {
+			if (this.patchCanvasDragTempNode()) {
+				this.detachDragTempNodeListeners();
+			}
+		};
+		this.dragTempNodeCheckReference = tryToPatch;
+
+		this.app.workspace.on('active-leaf-change', tryToPatch);
+		this.app.workspace.on('layout-change',     tryToPatch);
+		this.app.workspace.onLayoutReady(tryToPatch);
+		tryToPatch();
+	}
+
+	private detachDragTempNodeListeners() {
+		if (this.dragTempNodeCheckReference) {
+			this.app.workspace.off('active-leaf-change', this.dragTempNodeCheckReference);
+			this.app.workspace.off('layout-change', this.dragTempNodeCheckReference);
+			this.dragTempNodeCheckReference = null;
+		}
+	}
+
 	createEdge(node1: any, node2: any) {
 		const random = (e: number) => {
 			let t = [];
@@ -1206,6 +1295,7 @@ export default class EnhancedCanvas extends Plugin {
 		document.body.classList.remove('enhanced-canvas-enabled');
 		this.detachAutoHeightPatcherListeners();
 		this.detachAutoLinkListeners();
+		this.detachDragTempNodeListeners();
 
 		this.sendToCanvas.clearSelectedCanvas(false);
 		try {
@@ -1309,5 +1399,38 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 						this.plugin.toggleCSSClass(value);
 					})
 			);
+
+		const MIN_NODE_DIMENSION = 50;
+		const MAX_NODE_DIMENSION = 5000;
+
+		containerEl.createEl('h3', { text: 'Default node size' });
+
+		const sizeRow = (
+			name: string,
+			desc: string,
+			key: 'defaultTextNodeWidth' | 'defaultTextNodeHeight'
+			   | 'defaultFileNodeWidth' | 'defaultFileNodeHeight',
+		) => {
+			new Setting(containerEl)
+				.setName(name)
+				.setDesc(desc)
+				.addText((text) =>
+					text
+						.setValue(String(this.plugin.settings[key]))
+						.onChange(async (raw) => {
+							const n = Number.parseInt(raw, 10);
+							if (!Number.isFinite(n)) return;
+							if (n < MIN_NODE_DIMENSION || n > MAX_NODE_DIMENSION) return;
+							this.plugin.settings[key] = n;
+							await this.plugin.saveSettings();
+							this.plugin.applyDefaultNodeSizeToAllOpenCanvases();
+						})
+				);
+		};
+
+		sizeRow('Text node width',  'Initial width (px) for new text cards. 50–5000.',  'defaultTextNodeWidth');
+		sizeRow('Text node height', 'Initial height (px) for new text cards. 50–5000.', 'defaultTextNodeHeight');
+		sizeRow('File node width',  'Initial width (px) for new file nodes. 50–5000.',  'defaultFileNodeWidth');
+		sizeRow('File node height', 'Initial height (px) for new file nodes. 50–5000.', 'defaultFileNodeHeight');
 	}
 }

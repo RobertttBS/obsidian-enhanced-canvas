@@ -149,8 +149,8 @@ export class SendToCanvas {
      */
     createNodeAtBottom(file: TFile, existingNodes: CanvasNodeData[]): CanvasNodeData {
         const id = randomId();
-        const WIDTH = 400;
-        const HEIGHT = 400;
+        const WIDTH  = this.plugin.settings.defaultFileNodeWidth;
+        const HEIGHT = this.plugin.settings.defaultFileNodeHeight;
         const GAP = 100;
         const DEFAULT_X = -200;
 
