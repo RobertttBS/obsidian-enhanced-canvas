@@ -90,7 +90,7 @@ export class CanvasExploder {
     sanitizeHeading(rawHeading: string): string {
         let text = rawHeading.replace(/\[\[|\]\]/g, "");
 
-        text = text.replace(/[|#:]/g, " ");
+        text = text.replace(/[\[\](){}<>|#:]/g, " ");
         text = text.replace(/\s+/g, " ");
         return text.trim();
     }
@@ -168,10 +168,11 @@ export class CanvasExploder {
 		const minLevel = Math.min(...headings.map((h: any) => h.level));
 
 		const nodeStack: { level: number, nodeId: string }[] = [];
-		const edgesToAdd: any[] = [];
-		const newNodesSet = new Set<any>();
+		const newNodesData: any[] = [];
+		const newEdgesData: any[] = [];
 
 		let createdCount = 0;
+		const originalData = canvas.getData().nodes.find((n: any) => n.id === originalNode.id) || {};
 
 		for (let i = 0; i < headings.length; i++) {
 			const heading = headings[i];
@@ -198,24 +199,20 @@ export class CanvasExploder {
 			const cleanText = this.sanitizeHeading(heading.heading);
 			const subpath = `#${cleanText}`;
 
-			let newNode;
-			try {
-				newNode = canvas.createFileNode({
-					file: targetFile,
-					subpath: subpath,
-					pos: { x: currentX, y: currentY },
-					size: { width: width, height: nodeHeight },
-					save: false,
-					focus: false
-				});
-			} catch (e) {
-				console.error(`Failed to create node for heading: ${subpath}`, e);
-				continue;
-			}
+			const newNodeId = randomId();
+			newNodesData.push({
+				...originalData,
+				id: newNodeId,
+				type: 'file',
+				file: targetFile.path,
+				subpath: subpath,
+				x: currentX,
+				y: currentY,
+				width: width,
+				height: nodeHeight
+			});
 
-			if (!newNode) continue;
 			createdCount++;
-			newNodesSet.add(newNode);
 
 			while (nodeStack.length > 0) {
 				const lastEntry = nodeStack[nodeStack.length - 1];
@@ -228,42 +225,46 @@ export class CanvasExploder {
 
 			if (nodeStack.length > 0) {
 				const parentEntry = nodeStack[nodeStack.length - 1];
-				edgesToAdd.push({
+				newEdgesData.push({
 					id: randomId(),
 					fromNode: parentEntry.nodeId,
 					fromSide: 'bottom',
-					toNode: newNode.id,
+					toNode: newNodeId,
 					toSide: 'left'
 				});
 			}
 
 			nodeStack.push({
 				level: heading.level,
-				nodeId: newNode.id
+				nodeId: newNodeId
 			});
 
 			currentY += nodeHeight + GAP_Y;
 		}
 
-		if (edgesToAdd.length > 0) {
-			const currentData = canvas.getData(); 
-			currentData.edges.push(...edgesToAdd);
-			canvas.setData(currentData);
-		}
-
 		if (createdCount > 0) {
-			canvas.removeNode(originalNode);
-		}
+			const currentData = canvas.getData();
+			currentData.nodes = currentData.nodes.filter((n: any) => n.id !== originalNode.id);
+			currentData.edges = currentData.edges.filter((e: any) => 
+				e.fromNode !== originalNode.id && e.toNode !== originalNode.id
+			);
 
-		if (newNodesSet.size > 0) {
+			currentData.nodes.push(...newNodesData);
+			currentData.edges.push(...newEdgesData);
+			
+			canvas.setData(currentData);
+			canvas.requestSave(false);
+
+			const newNodeIds = new Set(newNodesData.map(n => n.id));
 			canvas.deselectAll();
-			for (const node of newNodesSet) {
-				canvas.select(node);
+			for (const [id, node] of canvas.nodes) {
+				if (newNodeIds.has(id)) {
+					canvas.select(node);
+				}
 			}
 			canvas.zoomToSelection();
 		}
 
-		canvas.requestSave(false);
 		new Notice(`Explosion complete, created ${createdCount} nodes.`);
 	}
 
@@ -289,6 +290,8 @@ export class CanvasExploder {
 		
 		const width = Math.max(originalWidth, DEFAULT_WIDTH);
 		const minLevel = Math.min(...sections.map(s => s.level));
+
+		const originalData = canvas.getData().nodes.find((n: any) => n.id === originalNodeId) || {};
 
 		// --- 2. Build new nodes and edges data ---
 		let currentY = baseY;
@@ -325,6 +328,7 @@ export class CanvasExploder {
 			// Create node data (not the actual node yet)
 			const newNodeId = randomId();
 			newNodesData.push({
+				...originalData,
 				id: newNodeId,
 				type: 'text',
 				text: section.content,

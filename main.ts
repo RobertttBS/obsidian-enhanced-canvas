@@ -5,7 +5,8 @@ import {
 	Plugin,
 	PluginSettingTab,
 	Setting,
-	TFile
+	TFile,
+	Notice
 } from 'obsidian';
 import { CanvasEdgeData, CanvasNodeData, NodeSide, CanvasData } from "obsidian/canvas";
 import { around } from "monkey-around";
@@ -14,7 +15,7 @@ import { CanvasExploder } from './src/CanvasExploder';
 import { SendToCanvas } from './src/SendToCanvas';
 import { CanvasTagImport } from './src/CanvasTagImport';
 import { EnhancedCanvasSettings, DEFAULT_SETTINGS } from "./src/settings";
-import { isVersionNewer } from "./src/utils";
+import { isVersionNewer, randomId } from "./src/utils";
 import { ReleaseNotesModal } from "./src/ReleaseNotesModal";
 
 interface CanvasNodeWithFlag extends CanvasNode {
@@ -199,8 +200,8 @@ export default class EnhancedCanvas extends Plugin {
 		const getBaseName = (name: string) => name.substring(name.lastIndexOf('/') + 1);
 
 		newName = getBaseName(newName);
-		const oldBaseName = oldName.replace('.canvas', '');
-		const newBaseName = newName.replace('.canvas', '');
+		const oldBaseName = oldName.endsWith('.canvas') ? oldName.slice(0, -7) : oldName;
+		const newBaseName = newName.endsWith('.canvas') ? newName.slice(0, -7) : newName;
 	
 		this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
@@ -222,6 +223,7 @@ export default class EnhancedCanvas extends Plugin {
 	}
 
 	async removeAllProperty(canvas: any, canvasData: CanvasData) {
+		if (!this.settings.enableFrontmatter) return;
 		const nodes = canvasData.nodes;
 		await Promise.all(nodes.map(node => {
 			if (!node?.file) return;
@@ -260,14 +262,7 @@ export default class EnhancedCanvas extends Plugin {
 	 * current update logic.
 	 */
 	async processEdgesInCanvas(canvasData: CanvasData, canvasFile: TFile) {
-		if (!canvasData) return;
-	
-		const tempCanvas = {
-			view: {
-				file: canvasFile
-			},
-			getData: () => canvasData,
-		};
+		if (!canvasData || !this.settings.enableFrontmatter) return;
 	
 		const nodeIdToNodeMap = new Map<string, any>();
 
@@ -277,6 +272,8 @@ export default class EnhancedCanvas extends Plugin {
 			}
 		}
 	
+		const fileLinksToAdd = new Map<string, Set<string>>();
+
 		if (canvasData.edges && Array.isArray(canvasData.edges)) {
 			for (const edgeData of canvasData.edges) {
 				const fromNode = nodeIdToNodeMap.get(edgeData.fromNode);
@@ -284,13 +281,59 @@ export default class EnhancedCanvas extends Plugin {
 	
 				if (!fromNode || !toNode) continue;
 	
-				const e = {
-					from: { node: fromNode },
-					to: { node: toNode },
-					canvas: tempCanvas
-				};
-	
-				await this.processEdgeUpdate(e);
+				let fromFilePath = fromNode?.filePath ? fromNode.filePath : fromNode.file;
+				let toFilePath = toNode?.filePath ? toNode.filePath : toNode.file;
+		
+				if (!fromFilePath || !toFilePath) continue;
+		
+				const fromFile = this.app.vault.getFileByPath(fromFilePath);
+				const toFile = this.app.vault.getFileByPath(toFilePath);
+		
+				if (fromFilePath === toFilePath) continue;
+				if (!fromFile || !toFile) continue;
+		
+				let link = this.app.fileManager.generateMarkdownLink(toFile, fromFilePath).replace(/^!(\[\[.*\]\])$/, '$1');
+				
+				if (!fileLinksToAdd.has(fromFilePath)) {
+					fileLinksToAdd.set(fromFilePath, new Set());
+				}
+				fileLinksToAdd.get(fromFilePath)!.add(link);
+			}
+		}
+
+		const canvasName = canvasFile.basename;
+		for (const [fromFilePath, links] of fileLinksToAdd.entries()) {
+			const fromFile = this.app.vault.getFileByPath(fromFilePath);
+			if (fromFile) {
+				await this.app.fileManager.processFrontMatter(fromFile, (fm) => {
+					const existingValue = Reflect.get(fm, canvasName);
+					let currentSet = new Set<string>();
+					let wasString = false;
+
+					if (Array.isArray(existingValue)) {
+						existingValue.filter((item): item is string => typeof item === 'string' && item.trim() !== '')
+									 .forEach(item => currentSet.add(item));
+					} else if (typeof existingValue === 'string' && existingValue.trim() !== '') {
+						currentSet.add(existingValue);
+						wasString = true;
+					}
+					
+					for (const link of links) {
+						currentSet.add(link);
+					}
+
+					const finalArray = Array.from(currentSet);
+
+					if (finalArray.length > 0) {
+						if (finalArray.length === 1 && wasString) {
+							Reflect.set(fm, canvasName, finalArray[0]);
+						} else {
+							Reflect.set(fm, canvasName, finalArray);
+						}
+					} else {
+						Reflect.deleteProperty(fm, canvasName);
+					}
+				});
 			}
 		}
 	}
@@ -304,12 +347,14 @@ export default class EnhancedCanvas extends Plugin {
         await this.app.fileManager.processFrontMatter(file, (fm) => {
             const existingValue = Reflect.get(fm, propertyName);
             let currentSet = new Set<string>();
+            let wasString = false;
 
             if (Array.isArray(existingValue)) {
                 existingValue.filter((item): item is string => typeof item === 'string' && item.trim() !== '')
                              .forEach(item => currentSet.add(item));
             } else if (typeof existingValue === 'string' && existingValue.trim() !== '') {
                 currentSet.add(existingValue);
+                wasString = true;
             }
             
             if (action === 'add') {
@@ -321,7 +366,11 @@ export default class EnhancedCanvas extends Plugin {
             const finalArray = Array.from(currentSet);
 
             if (finalArray.length > 0) {
-                Reflect.set(fm, propertyName, finalArray);
+                if (finalArray.length === 1 && wasString) {
+                    Reflect.set(fm, propertyName, finalArray[0]);
+                } else {
+                    Reflect.set(fm, propertyName, finalArray);
+                }
             } else {
                 Reflect.deleteProperty(fm, propertyName);
             }
@@ -481,7 +530,8 @@ export default class EnhancedCanvas extends Plugin {
                         this.app,
                         this,
                         currentVersion,
-                        isNewInstall
+                        isNewInstall,
+                        previousVersion
                     ).open();
                 }
             }
@@ -660,13 +710,23 @@ export default class EnhancedCanvas extends Plugin {
 	 * file's metadata/properties panel (e.g., a backlink).
 	 */
 	registerFocusCanvas() {
+		let clickedSourceFile: string | null = null;
+
 		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
 			const target = evt.target as HTMLElement;
 			if (target.closest('.metadata-container') || target.closest('.search-result-container')) {
 				this.isMetadataClicked = true;
+
+				const activeView = this.app.workspace.getActiveViewOfType(ItemView) as any;
+				if (activeView && activeView.file) {
+					clickedSourceFile = activeView.file.path;
+				} else {
+					clickedSourceFile = null;
+				}
 			
 				setTimeout(() => {
 					this.isMetadataClicked = false;
+					clickedSourceFile = null;
 				}, 500);
 			}
 		}, true);
@@ -674,16 +734,16 @@ export default class EnhancedCanvas extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on('active-leaf-change', () => {
 				Promise.resolve().then(async () => {
-					if (this.isMetadataClicked == false) return;
+					if (this.isMetadataClicked == false || !clickedSourceFile) return;
 					// get current active leaf
 					const activeLeaf = this.app.workspace.getActiveViewOfType(ItemView) as any;
 					if (!activeLeaf || activeLeaf.getViewType() !== 'canvas') return;
 		
-					const prevFile = this.app.workspace.getLastOpenFiles()[0];
+					const prevFile = clickedSourceFile;
 					if (!prevFile) return;
 					
 					// @ts-ignore
-					const canvas = await activeLeaf.canvas;
+					const canvas = activeLeaf.canvas;
 					if (!canvas) return;
 
 					for (const [key, value] of canvas.nodes) {
@@ -718,16 +778,14 @@ export default class EnhancedCanvas extends Plugin {
 			const fromFile = this.app.vault.getFileByPath(fromNode.filePath);
 			if (!fromFile) return;
 
-			const canvasName = await e.canvas.view.file.basename;
+			const canvasName = e.canvas.view.file.basename;
 			const resolvedLinks = this.app.metadataCache.resolvedLinks[fromNode.filePath] || {};
 			const fromNodeLinks = Object.keys(resolvedLinks);
 		
-			const { edges, nodes } = await e.canvas.getData();
+			const { edges, nodes } = e.canvas.getData();
 
-			const sameFileNodes = nodes.filter((node: any) => node.file === fromNode.filePath);
-			const allRelevantEdges = edges.filter((edge: any) => 
-				sameFileNodes.some((node: any) => edge.fromNode === node.id)
-			);
+			const sameFileNodeIds = new Set(nodes.filter((node: any) => node.file === fromNode.filePath).map((node: any) => node.id));
+			const allRelevantEdges = edges.filter((edge: any) => sameFileNodeIds.has(edge.fromNode));
 
 			const edgeToNodesFilePathSet = new Set(
 				allRelevantEdges
@@ -852,8 +910,11 @@ export default class EnhancedCanvas extends Plugin {
 			}
 		};
 
+		const patchedEdgeConstructors = new WeakSet<Function>();
+
 		const selfPatched = (edge: any) => {
-			this.patchedEdge = true;
+			if (patchedEdgeConstructors.has(edge.constructor)) return;
+			patchedEdgeConstructors.add(edge.constructor);
 
 			const uninstaller = around(edge.constructor.prototype, {
 				update: (next: any) => {
@@ -905,10 +966,7 @@ export default class EnhancedCanvas extends Plugin {
 				addEdge(old: Function) {
 					return function(edge: any) {
 						const result = old.call(this, edge);
-						if (!plugin.patchedEdge) {
-							plugin.patchedEdge = true;
-							selfPatched(edge);
-						}
+						selfPatched(edge);
 						updateTargetNodeImmediate(edge);
 						return result;
 					};
@@ -917,7 +975,9 @@ export default class EnhancedCanvas extends Plugin {
 					return function() {
 						this.isClearing = true;
 						const result = old.call(this);
-						this.isClearing = false;
+						queueMicrotask(() => {
+							this.isClearing = false;
+						});
 						return result;
 					};
 				}
@@ -1001,8 +1061,8 @@ export default class EnhancedCanvas extends Plugin {
             plugin.app.workspace.offref(leafEvent);
         };
 
-        this.app.workspace.onLayoutReady(tryPatch);
         const leafEvent = this.app.workspace.on('active-leaf-change', tryPatch);
+        this.app.workspace.onLayoutReady(tryPatch);
         this.registerEvent(leafEvent);
     }
 	
@@ -1055,14 +1115,12 @@ export default class EnhancedCanvas extends Plugin {
                     if (direction === "bottom") {
                         if (this._autoHeightTimer) {
                             window.clearTimeout(this._autoHeightTimer);
-                            this._autoHeightTimer = null;
-                        } else {
-                            this._autoHeightTimer = window.setTimeout(() => {
-                                this.autoHeightEnabled = false; 
-                                this._autoHeightTimer = null;
-                            }, 250);
                         }
-                    } 
+                        this._autoHeightTimer = window.setTimeout(() => {
+                            this.autoHeightEnabled = false; 
+                            this._autoHeightTimer = null;
+                        }, 300);
+                    }
                     else if (direction === "right" || direction === "left") {
                         if (this.autoHeightEnabled === true) {
                             const handlePointerUp = () => {
@@ -1237,14 +1295,6 @@ export default class EnhancedCanvas extends Plugin {
 	}
 
 	createEdge(node1: any, node2: any) {
-		const random = (e: number) => {
-			let t = [];
-			for (let n = 0; n < e; n++) {
-				t.push((16 * Math.random() | 0).toString(16));
-			}
-			return t.join("");
-		};
-
 		const node1CenterX = node1.x + node1.width / 2;
 		const node1CenterY = node1.y + node1.height / 2;
 		const node2CenterX = node2.x + node2.width / 2;
@@ -1271,7 +1321,7 @@ export default class EnhancedCanvas extends Plugin {
 		}
 	
 		const edgeData: CanvasEdgeData = {
-			id: random(16),
+			id: randomId(16),
 			fromSide: fromSide,
 			fromNode: node1.id,
 			toSide: toSide,
@@ -1354,6 +1404,7 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 							// has an early-return guard that checks enableFrontmatter.
 							try {
 								const canvasFiles = this.plugin.app.vault.getFiles().filter(file => file.extension === 'canvas');
+								const failedFiles: string[] = [];
 
 								await Promise.all(canvasFiles.map(async (canvasFile) => {
 									try {
@@ -1371,12 +1422,20 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 										await this.plugin.removeAllProperty(tempCanvas, canvasData);
 									} catch (error) {
 										console.error("Enhanced Canvas: Settings cleanup failed for file", canvasFile.path, error);
-										return;
+										failedFiles.push(canvasFile.path);
 									}
 								}));
+
+								if (failedFiles.length > 0) {
+									new Notice(`Failed to clean up properties for ${failedFiles.length} canvases. Check console.`);
+									toggle.setValue(true);
+									return;
+								}
 							} catch (error) {
 								console.error("Enhanced Canvas: Settings cleanup loop failed", error);
-								// continue even if cleanup fails
+								new Notice("Failed to initiate properties cleanup. Aborting disable.");
+								toggle.setValue(true);
+								return;
 							}
 						}
 

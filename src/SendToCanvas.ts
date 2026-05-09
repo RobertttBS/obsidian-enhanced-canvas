@@ -102,15 +102,22 @@ export class SendToCanvas {
     async addFileNodeToCanvas(targetFile: TFile, canvasFile: TFile): Promise<void> {
         if (!canvasFile || !canvasFile.name) return;
 
-        const canvasContent = await this.plugin.app.vault.read(canvasFile);
         let canvasData: CanvasData;
+        const canvasLeaves = this.plugin.app.workspace.getLeavesOfType('canvas');
+        const openLeaf = canvasLeaves.find(leaf => (leaf.view as any).file?.path === canvasFile.path);
+        const canvasView = openLeaf ? (openLeaf.view as any) : null;
 
-        try {
-            canvasData = JSON.parse(canvasContent || '{"nodes":[], "edges":[]}');
-        } catch (e) {
-            new Notice(`Error reading Canvas JSON for ${canvasFile.name}.`);
-            console.error("Canvas JSON Parse Error:", e);
-            return;
+        if (canvasView && canvasView.canvas) {
+            canvasData = canvasView.canvas.getData();
+        } else {
+            const canvasContent = await this.plugin.app.vault.read(canvasFile);
+            try {
+                canvasData = JSON.parse(canvasContent || '{"nodes":[], "edges":[]}');
+            } catch (e) {
+                new Notice(`Error reading Canvas JSON for ${canvasFile.name}.`);
+                console.error("Canvas JSON Parse Error:", e);
+                return;
+            }
         }
 
         if (!Array.isArray(canvasData.nodes)) canvasData.nodes = [];
@@ -125,10 +132,14 @@ export class SendToCanvas {
         const newNode = this.createNodeAtBottom(targetFile, canvasData.nodes);
         canvasData.nodes.push(newNode);
 
-        const updatedContent = JSON.stringify(canvasData, null, 2);
-
         try {
-            await this.plugin.app.vault.modify(canvasFile, updatedContent);
+            if (canvasView && canvasView.canvas) {
+                canvasView.canvas.setData(canvasData);
+                canvasView.canvas.requestSave();
+            } else {
+                const updatedContent = JSON.stringify(canvasData, null, 2);
+                await this.plugin.app.vault.modify(canvasFile, updatedContent);
+            }
 
             const internalLink = `[[${canvasFile.name}]]`;
             await this.plugin.updateFrontmatter(targetFile, internalLink, 'add', 'canvas');

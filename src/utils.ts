@@ -7,8 +7,8 @@ export function isVersionNewer(currentVersion: string, oldVersion: string): bool
     if (currentVersion === oldVersion) return false;
 
     // Split "1.2.3" into [1, 2, 3]
-    const current = currentVersion.split('.').map(Number);
-    const old = oldVersion.split('.').map(Number);
+    const current = currentVersion.split('-')[0].split('.').map(Number);
+    const old = oldVersion.split('-')[0].split('.').map(Number);
 
     // Compare bit by bit
     for (let i = 0; i < 3; i++) {

@@ -121,17 +121,12 @@ class TagSuggestModal extends FuzzySuggestModal<string> {
     }
 
     getItems(): string[] {
+        const tagsMap = (this.plugin.app.metadataCache as any).getTags();
         const tags = new Set<string>();
 
-        for (const file of this.plugin.app.vault.getMarkdownFiles()) {
-            const cache = this.plugin.app.metadataCache.getFileCache(file);
-            if (!cache) continue;
-
-            const fileTags = getAllTags(cache) ?? [];
-            for (const tag of fileTags) {
-                tags.add(tag);
-                this.addParentTags(tag, tags);
-            }
+        for (const tag of Object.keys(tagsMap)) {
+            tags.add(tag);
+            this.addParentTags(tag, tags);
         }
 
         return Array.from(tags).sort((a, b) => a.localeCompare(b));

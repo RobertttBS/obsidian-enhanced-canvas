@@ -1,17 +1,20 @@
 import { App, Modal, MarkdownRenderer, ButtonComponent } from "obsidian";
 import EnhancedCanvas from "../main";
 import { releaseNotesContent, firstInstallContent } from "./releaseNotesData";
+import { isVersionNewer } from "./utils";
 
 export class ReleaseNotesModal extends Modal {
     private plugin: EnhancedCanvas;
     private version: string;
     private isNewInstall: boolean;
+    private previousVersion: string;
 
-    constructor(app: App, plugin: EnhancedCanvas, version: string, isNewInstall: boolean) {
+    constructor(app: App, plugin: EnhancedCanvas, version: string, isNewInstall: boolean, previousVersion: string = "0.0.0") {
         super(app);
         this.plugin = plugin;
         this.version = version;
         this.isNewInstall = isNewInstall;
+        this.previousVersion = previousVersion;
     }
 
     onOpen() {
@@ -31,9 +34,23 @@ export class ReleaseNotesModal extends Modal {
     async renderContent() {
         const { contentEl } = this;
 
-        const markdownText = this.isNewInstall 
-            ? firstInstallContent 
-            : releaseNotesContent[this.version] || "Thank you for updating! This update includes bug fixes.";
+        let markdownText = "";
+        if (this.isNewInstall) {
+            markdownText = firstInstallContent;
+        } else {
+            const notes: string[] = [];
+            const versions = Object.keys(releaseNotesContent).sort((a, b) => isVersionNewer(a, b) ? -1 : 1);
+            
+            for (const v of versions) {
+                if (isVersionNewer(v, this.previousVersion) && !isVersionNewer(v, this.version)) {
+                    notes.push(releaseNotesContent[v]);
+                }
+            }
+            
+            markdownText = notes.length > 0 
+                ? notes.join("\n\n---\n\n")
+                : "Thank you for updating! This update includes bug fixes.";
+        }
 
         await MarkdownRenderer.render(
             this.app,
