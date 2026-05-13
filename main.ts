@@ -616,14 +616,14 @@ export default class EnhancedCanvas extends Plugin {
 		}
 	
 		const uninstaller = around(this.app.fileManager.constructor.prototype, {
-			trashFile(old: Function) {
+			trashFile(old: (...args: any[]) => any) {
 				return function(file: any) {
 					deleteCanvasFile(file);
 					deleteFile(file);
 					return old.call(this, file);
 				};
 			},
-			renameFile(old: Function) {
+			renameFile(old: (...args: any[]) => any) {
 				return function(file: any, newPath: string) {
 					renameCanvasFile(file, newPath);
 					return old.call(this, file, newPath);
@@ -906,7 +906,7 @@ export default class EnhancedCanvas extends Plugin {
 			}
 		};
 
-		const patchedEdgeConstructors = new WeakSet<Function>();
+		const patchedEdgeConstructors = new WeakSet<(...args: any[]) => any>();
 
 		const selfPatched = (edge: any) => {
 			if (patchedEdgeConstructors.has(edge.constructor)) return;
@@ -934,7 +934,7 @@ export default class EnhancedCanvas extends Plugin {
 			if (!canvasView?.canvas) return false;
 
 			const uninstaller = around(canvasView.canvas.constructor.prototype, {
-				removeNode(old: Function) {
+				removeNode(old: (...args: any[]) => any) {
 					return function(node: any) {
 						const result = old.call(this, node);
 						if (this.isClearing !== true) {
@@ -943,14 +943,14 @@ export default class EnhancedCanvas extends Plugin {
 						return result;
 					};
 				},
-				addNode(old: Function) {
+				addNode(old: (...args: any[]) => any) {
 					return function(node: any) {
 						const result = old.call(this, node);
 						addNodeUpdate(node);
 						return result;
 					};
 				},
-				removeEdge(old: Function) {
+				removeEdge(old: (...args: any[]) => any) {
 					return function(edge: any) {
 						const result = old.call(this, edge);
 						if (this.isClearing !== true) {
@@ -959,7 +959,7 @@ export default class EnhancedCanvas extends Plugin {
 						return result;
 					};
 				},
-				addEdge(old: Function) {
+				addEdge(old: (...args: any[]) => any) {
 					return function(edge: any) {
 						const result = old.call(this, edge);
 						selfPatched(edge);
@@ -967,7 +967,7 @@ export default class EnhancedCanvas extends Plugin {
 						return result;
 					};
 				},
-				clear(old: Function) {
+				clear(old: (...args: any[]) => any) {
 					return function() {
 						this.isClearing = true;
 						const result = old.call(this);
@@ -1083,7 +1083,7 @@ export default class EnhancedCanvas extends Plugin {
         const anyNodeConstructor = anyNode.constructor;
         const baseNodePrototype = Object.getPrototypeOf(anyNodeConstructor.prototype);
         
-        const methodsToPatch: Record<string, (originalMethod: Function) => Function> = {};
+        const methodsToPatch: Record<string, (originalMethod: (...args: any[]) => any) => (...args: any[]) => any> = {};
 
         if (baseNodePrototype.onResizeDblclick) {
             methodsToPatch.onResizeDblclick = (originalMethod) => {
@@ -1143,7 +1143,7 @@ export default class EnhancedCanvas extends Plugin {
         }
 
 		if (baseNodePrototype.blur) {
-			methodsToPatch.blur = (originalMethod: Function) => {
+			methodsToPatch.blur = (originalMethod: (...args: any[]) => any) => {
 				return function(this: CanvasNodeWithFlag, ...args: any[]) {
 					const result = originalMethod.apply(this, args);
 
@@ -1254,7 +1254,7 @@ export default class EnhancedCanvas extends Plugin {
 		// eslint-disable-next-line @typescript-eslint/no-this-alias
 		const plugin = this;
 		const uninstall = around(canvas.constructor.prototype, {
-			dragTempNode(orig: Function) {
+			dragTempNode(orig: (...args: any[]) => any) {
 				return function (dragEvent: any, _nodeSize: Size, onDropped: any) {
 					const overridden: Size = {
 						width:  plugin.settings.defaultFileNodeWidth,
