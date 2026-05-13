@@ -396,9 +396,9 @@ export default class EnhancedCanvas extends Plugin {
 	/** Applies or removes the body CSS class that gates the optional visual styles. */
 	toggleCSSClass(enabled: boolean) {
 		if (enabled) {
-			document.body.classList.add('enhanced-canvas-enabled');
+			activeDocument.body.classList.add('enhanced-canvas-enabled');
 		} else {
-			document.body.classList.remove('enhanced-canvas-enabled');
+			activeDocument.body.classList.remove('enhanced-canvas-enabled');
 		}
 	}
 
@@ -477,7 +477,7 @@ export default class EnhancedCanvas extends Plugin {
 
 				if (!leaf) return;
 
-				const isStacked = !!document.querySelector('.workspace-tabs.mod-stacked');
+				const isStacked = !!activeDocument.querySelector('.workspace-tabs.mod-stacked');
 				if (!isStacked) return;
 
 				const view = leaf.view;
@@ -712,7 +712,7 @@ export default class EnhancedCanvas extends Plugin {
 	registerFocusCanvas() {
 		let clickedSourceFile: string | null = null;
 
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
+		this.registerDomEvent(activeDocument, 'click', (evt: MouseEvent) => {
 			const target = evt.target as HTMLElement;
 			if (target.closest('.metadata-container') || target.closest('.search-result-container')) {
 				this.isMetadataClicked = true;
@@ -1342,7 +1342,7 @@ export default class EnhancedCanvas extends Plugin {
 			this.canvasStackInterval = null;
 		}
 
-		document.body.classList.remove('enhanced-canvas-enabled');
+		activeDocument.body.classList.remove('enhanced-canvas-enabled');
 		this.detachAutoHeightPatcherListeners();
 		this.detachAutoLinkListeners();
 		this.detachDragTempNodeListeners();
