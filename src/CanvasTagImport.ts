@@ -50,6 +50,7 @@ export class CanvasTagImport {
         if (!canvas?.constructor?.prototype?.showCreationMenu) return false;
 
         const plugin = this.plugin;
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
         const tagImport = this;
         const uninstall = around(canvas.constructor.prototype, {
             showCreationMenu: (next) => {

@@ -487,7 +487,7 @@ export default class EnhancedCanvas extends Plugin {
 					view.onResize();
 				}
 				
-				setTimeout(() => {
+				activeWindow.setTimeout(() => {
 					if (typeof view.onResize === 'function') view.onResize();
 				}, 200);
 
@@ -555,23 +555,21 @@ export default class EnhancedCanvas extends Plugin {
 	 * original operation proceeds.
 	 */
 	registerFileManagerPatches() {
-		const plugin = this;
-
 		const deleteFile = async (file: any) => {
 			if (file.deleted === true) return;
 			
 			// getBacklinksForFile is missing from MetadataCache typings in this obsidian version.
-			const backLinks = (plugin.app.metadataCache as any).getBacklinksForFile(file);
+			const backLinks = (this.app.metadataCache as any).getBacklinksForFile(file);
 			if (!backLinks || !backLinks.data) return;
 		
 			const linkRegexBasename = new RegExp(`\\[\\[${file.basename}(\\|.*)?\\]\\]`);
 			const linkRegexFullName = new RegExp(`\\[\\[${file.name}(\\|.*)?\\]\\]`);
 			
 			for (const [sourcePath, references] of backLinks.data.entries()) {
-				const sourceFile = plugin.app.vault.getFileByPath(sourcePath);
+				const sourceFile = this.app.vault.getFileByPath(sourcePath);
 				if (!sourceFile || sourceFile.extension !== 'md') continue;
 
-				await plugin.app.fileManager.processFrontMatter(sourceFile, (frontmatter) => {
+				await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter) => {
 					if (!frontmatter) return;
 					
 					Object.keys(frontmatter).forEach(key => {
@@ -591,14 +589,14 @@ export default class EnhancedCanvas extends Plugin {
 			if (file.extension !== 'canvas') return;
 			if (file.deleted === true) return;
 			
-			const content = await plugin.app.vault.read(file);
+			const content = await this.app.vault.read(file);
 			if (!content) return;
 			const canvasData = JSON.parse(content);
 			if (!canvasData) return;
 			
 			canvasData.nodes.forEach((node: any) => {
 				if (node.type !== 'file') return;
-				plugin.removeProperty(node, file.name, file.basename);
+				this.removeProperty(node, file.name, file.basename);
 			});
 		}
 	
@@ -606,14 +604,14 @@ export default class EnhancedCanvas extends Plugin {
 			if (file.extension !== 'canvas') return;
 			if (file.deleted === true) return;
 			
-			const content = await plugin.app.vault.read(file);
+			const content = await this.app.vault.read(file);
 			if (!content) return;
 			const canvasData = JSON.parse(content);
 			if (!canvasData) return;
 			
 			canvasData.nodes.forEach((node: any) => {
 				if (node.type !== 'file') return;
-				plugin.renameProperty(node, file.name, newPath);
+				this.renameProperty(node, file.name, newPath);
 			});
 		}
 	
@@ -724,7 +722,7 @@ export default class EnhancedCanvas extends Plugin {
 					clickedSourceFile = null;
 				}
 			
-				setTimeout(() => {
+				activeWindow.setTimeout(() => {
 					this.isMetadataClicked = false;
 					clickedSourceFile = null;
 				}, 500);
@@ -751,7 +749,7 @@ export default class EnhancedCanvas extends Plugin {
 							canvas.select(value);
 						}
 					}
-					setTimeout(() => {
+					activeWindow.setTimeout(() => {
 						canvas.zoomToSelection();
 					}, 100);
 				});
@@ -766,8 +764,6 @@ export default class EnhancedCanvas extends Plugin {
 	 * visual graph structure as nodes and edges are added, removed, or updated.
 	 */
 	registerCanvasAutoLink() {
-		const plugin = this;
-
 		const processNodeUpdate = async (e: any) => {
 			const fromNode = e?.from?.node;
 			const toNode = e?.to?.node;
@@ -926,7 +922,7 @@ export default class EnhancedCanvas extends Plugin {
 				}
 			});
 
-			plugin.register(uninstaller);
+			this.register(uninstaller);
 		};
 
 		let canvasPatched = false;
@@ -934,7 +930,7 @@ export default class EnhancedCanvas extends Plugin {
 		const patchCanvas = () => {
 			if (canvasPatched) return false;
 
-			const canvasView = plugin.app.workspace.getLeavesOfType('canvas')[0]?.view as any;
+			const canvasView = this.app.workspace.getLeavesOfType('canvas')[0]?.view as any;
 			if (!canvasView?.canvas) return false;
 
 			const uninstaller = around(canvasView.canvas.constructor.prototype, {
@@ -983,21 +979,21 @@ export default class EnhancedCanvas extends Plugin {
 				}
 			});
 
-			plugin.register(uninstaller);
+			this.register(uninstaller);
 			canvasPatched = true;
 			return true;
 		};
 		
 		const tryToPatch = () => {
 			if (patchCanvas()) {
-				plugin.detachAutoLinkListeners();
+				this.detachAutoLinkListeners();
 			}
 		};
-		plugin.autoLinkCheckReference = tryToPatch;
+		this.autoLinkCheckReference = tryToPatch;
 
-		plugin.app.workspace.on('active-leaf-change', tryToPatch);
-		plugin.app.workspace.on('layout-change', tryToPatch);
-		plugin.app.workspace.onLayoutReady(tryToPatch);
+		this.app.workspace.on('active-leaf-change', tryToPatch);
+		this.app.workspace.on('layout-change', tryToPatch);
+		this.app.workspace.onLayoutReady(tryToPatch);
 
 		tryToPatch();
 	}
@@ -1028,6 +1024,7 @@ export default class EnhancedCanvas extends Plugin {
      * Patches Canvas to add context menu for text nodes (which don't trigger file-menu).
      */
     patchCanvasNodeMenu() {
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
         const plugin = this;
         let patched = false;
         
@@ -1114,9 +1111,9 @@ export default class EnhancedCanvas extends Plugin {
 
                     if (direction === "bottom") {
                         if (this._autoHeightTimer) {
-                            window.clearTimeout(this._autoHeightTimer);
+                            activeWindow.clearTimeout(this._autoHeightTimer);
                         }
-                        this._autoHeightTimer = window.setTimeout(() => {
+                        this._autoHeightTimer = activeWindow.setTimeout(() => {
                             this.autoHeightEnabled = false; 
                             this._autoHeightTimer = null;
                         }, 300);
@@ -1124,7 +1121,7 @@ export default class EnhancedCanvas extends Plugin {
                     else if (direction === "right" || direction === "left") {
                         if (this.autoHeightEnabled === true) {
                             const handlePointerUp = () => {
-                                window.setTimeout(() => {
+                                activeWindow.setTimeout(() => {
                                     if (!this.canvas || !this.canvas.nodes.has(this.id)) return;
                                     
                                     if (this.nodeEl && this.nodeEl.classList.contains('is-resizing')) {
@@ -1151,7 +1148,7 @@ export default class EnhancedCanvas extends Plugin {
 					const result = originalMethod.apply(this, args);
 
 					if (this.autoHeightEnabled) {
-						setTimeout(() => {
+						activeWindow.setTimeout(() => {
 							if (typeof this.onResizeDblclick === 'function') {
 								const mockEvent = {
 									preventDefault: () => {},
@@ -1254,6 +1251,7 @@ export default class EnhancedCanvas extends Plugin {
 		const canvas = canvasView?.canvas;
 		if (!canvas?.constructor?.prototype?.dragTempNode) return false;
 
+		// eslint-disable-next-line @typescript-eslint/no-this-alias
 		const plugin = this;
 		const uninstall = around(canvas.constructor.prototype, {
 			dragTempNode(orig: Function) {
