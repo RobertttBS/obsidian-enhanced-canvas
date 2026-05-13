@@ -261,7 +261,7 @@ class CanvasFileSuggestModal extends FuzzySuggestModal<TFile> {
         return file.path;
     }
 
-    onChooseItem(file: TFile, evt: MouseEvent | KeyboardEvent): void {
+    onChooseItem(file: TFile, _evt: MouseEvent | KeyboardEvent): void {
         this.onSelect(file);
         this.close();
     }
