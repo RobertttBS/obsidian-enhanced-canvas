@@ -20,6 +20,9 @@ With this update, double-clicking the bottom edge activates "Auto-Resize." Now, 
 `;
 
 export const fixCursorShiftIssueInStackTabsCanvas = `
+> [!NOTE] Feature in 1.0.25
+> Add advanced multi-tag suggestions with robust querying.
+
 > [!tip] Feature in 1.0.24
 > Implement configurable default dimensions for new canvas nodes. Check the Enhanced Canvas settings to configure your preferred width and height.
 
@@ -44,6 +47,7 @@ export const fixCursorShiftIssueInStackTabsCanvas = `
 `;
 
 export const releaseNotesContent: Record<string, string> = {
+    "1.0.25": fixCursorShiftIssueInStackTabsCanvas, 
     "1.0.24": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.23": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.22": fixCursorShiftIssueInStackTabsCanvas,
