@@ -45,7 +45,7 @@ export default class EnhancedCanvas extends Plugin {
 	 * currently missing on the canvas.
 	 */
 	createMissingEdgesFromLinks(canvas: any) {
-		const selectedNodes = Array.from(canvas.selection) as CanvasNode[];
+		const selectedNodes = Array.from(canvas.selection);
 		const fileNodes = selectedNodes.filter((node: CanvasNode) => !!node?.filePath);
 		const resolvedLinks = this.app.metadataCache.resolvedLinks;
 		const currentData = canvas.getData();
@@ -94,7 +94,7 @@ export default class EnhancedCanvas extends Plugin {
 	 * current selection to ensure optimal visual alignment and routing.
 	 */
 	optimizeEdgesBetweenSelectedNodes(canvas: any) {
-		const selectedNodes = Array.from(canvas.selection) as CanvasNode[];
+		const selectedNodes = Array.from(canvas.selection);
 		if (selectedNodes.length < 2) return;
 
 		const currentData = canvas.getData();
@@ -124,7 +124,7 @@ export default class EnhancedCanvas extends Plugin {
 	}
 
 	deleteEdges(canvas: any) {
-		const selectedNodes = Array.from(canvas.selection) as CanvasNode[];
+		const selectedNodes = Array.from(canvas.selection);
 		const selectedNodeIds = new Set(selectedNodes.map((node: CanvasNode) => node.id));
 		const currentData = canvas.getData();
 
