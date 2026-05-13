@@ -2,7 +2,6 @@ import {
     Menu,
     ItemView,
     TFile,
-    TAbstractFile,
     Notice
 } from 'obsidian';
 
@@ -47,7 +46,7 @@ export class CanvasExploder {
                             item
                                 .setTitle(title)
                                 .onClick(() => {
-                                    this.explodeFileNode(canvas, node);
+                                    void this.explodeFileNode(canvas, node);
                                 });
                         });
                     }
@@ -57,7 +56,7 @@ export class CanvasExploder {
                             item
                                 .setTitle(title)
                                 .onClick(() => {
-                                    this.explodeTextNode(canvas, node);
+                                    void this.explodeTextNode(canvas, node);
                                 });
                         });
                     }
@@ -82,7 +81,7 @@ export class CanvasExploder {
             item
                 .setTitle("Split by Headings")
                 .onClick(() => {
-                    this.explodeTextNode(canvas, node);
+                    void this.explodeTextNode(canvas, node);
                 });
         });
     }

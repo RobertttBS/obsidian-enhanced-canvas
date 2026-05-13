@@ -144,7 +144,7 @@ export default class EnhancedCanvas extends Plugin {
 		const file = this.app.vault.getFileByPath(node.file); // node is JSON node, not canvas node
 		if (!file) return;
 
-		this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+		void this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
 
 			if (!frontmatter.canvas) {
@@ -203,7 +203,7 @@ export default class EnhancedCanvas extends Plugin {
 		const oldBaseName = oldName.endsWith('.canvas') ? oldName.slice(0, -7) : oldName;
 		const newBaseName = newName.endsWith('.canvas') ? newName.slice(0, -7) : newName;
 	
-		this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+		void this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
 	
 			// rebuild the frontmatter with the new property name
@@ -596,7 +596,7 @@ export default class EnhancedCanvas extends Plugin {
 			
 			canvasData.nodes.forEach((node: any) => {
 				if (node.type !== 'file') return;
-				this.removeProperty(node, file.name, file.basename);
+				void this.removeProperty(node, file.name, file.basename);
 			});
 		}
 	
@@ -618,14 +618,14 @@ export default class EnhancedCanvas extends Plugin {
 		const uninstaller = around(this.app.fileManager.constructor.prototype, {
 			trashFile(old: (...args: any[]) => any) {
 				return function(file: any) {
-					deleteCanvasFile(file);
-					deleteFile(file);
+					void deleteCanvasFile(file);
+					void deleteFile(file);
 					return old.call(this, file);
 				};
 			},
 			renameFile(old: (...args: any[]) => any) {
 				return function(file: any, newPath: string) {
-					renameCanvasFile(file, newPath);
+					void renameCanvasFile(file, newPath);
 					return old.call(this, file, newPath);
 				};
 			}
@@ -671,7 +671,7 @@ export default class EnhancedCanvas extends Plugin {
 			id: 'remove-canvas-property',
 			name: 'Remove the property of all nodes in current Canvas',
 			checkCallback: this.ifActiveViewIsCanvas((canvas, canvasData) => {
-				this.removeAllProperty(canvas, canvasData);
+				void this.removeAllProperty(canvas, canvasData);
 			})
 		});
 
@@ -819,8 +819,8 @@ export default class EnhancedCanvas extends Plugin {
 			await Promise.all(updatePromises);
 		};
 
-		const updateTargetNode = debounce(async (e: any) => {
-			await processNodeUpdate(e);
+		const updateTargetNode = debounce((e: any) => {
+			void processNodeUpdate(e);
 		}, 500, true);
 
 		const updateTargetNodeImmediate = async (e: any) => {
@@ -858,7 +858,7 @@ export default class EnhancedCanvas extends Plugin {
 				);
 
 				if (!stillHasConnection) {
-					this.updateFrontmatter(fromFile, link, 'remove', canvasName);
+					void this.updateFrontmatter(fromFile, link, 'remove', canvasName);
 				}
 			}
 		};
@@ -885,7 +885,7 @@ export default class EnhancedCanvas extends Plugin {
                     // use the method for JSON node to remove the property named after the canvas file name.
                     let tmpNode: { file?: string } = {};
                     tmpNode.file = resolvedNode.filePath;
-                    this.removeProperty(tmpNode, canvasFile.name, canvasFile.basename);
+                    void this.removeProperty(tmpNode, canvasFile.name, canvasFile.basename);
                 }
             }
         };
@@ -902,7 +902,7 @@ export default class EnhancedCanvas extends Plugin {
 				// use the method for JSON node to add the property named after the canvas file name.
 				let tmpNode: { file?: string } = {};
 				tmpNode.file = resolvedNode.filePath;
-				this.addProperty(tmpNode, canvasFile.name, canvasFile.basename);
+				void this.addProperty(tmpNode, canvasFile.name, canvasFile.basename);
 			}
 		};
 
@@ -938,7 +938,7 @@ export default class EnhancedCanvas extends Plugin {
 					return function(node: any) {
 						const result = old.call(this, node);
 						if (this.isClearing !== true) {
-							removeNodeUpdate(node);
+							void removeNodeUpdate(node);
 						}
 						return result;
 					};
@@ -946,7 +946,7 @@ export default class EnhancedCanvas extends Plugin {
 				addNode(old: (...args: any[]) => any) {
 					return function(node: any) {
 						const result = old.call(this, node);
-						addNodeUpdate(node);
+						void addNodeUpdate(node);
 						return result;
 					};
 				},
@@ -954,7 +954,7 @@ export default class EnhancedCanvas extends Plugin {
 					return function(edge: any) {
 						const result = old.call(this, edge);
 						if (this.isClearing !== true) {
-							updateOriginalNode(edge);
+							void updateOriginalNode(edge);
 						}
 						return result;
 					};
@@ -963,7 +963,7 @@ export default class EnhancedCanvas extends Plugin {
 					return function(edge: any) {
 						const result = old.call(this, edge);
 						selfPatched(edge);
-						updateTargetNodeImmediate(edge);
+						void updateTargetNodeImmediate(edge);
 						return result;
 					};
 				},

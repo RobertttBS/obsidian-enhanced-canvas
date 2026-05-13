@@ -28,7 +28,7 @@ export class ReleaseNotesModal extends Modal {
 
         contentEl.classList.add("enhanced-canvas-release-notes");
 
-        this.renderContent();
+        void this.renderContent();
     }
 
     async renderContent() {

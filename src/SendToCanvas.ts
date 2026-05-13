@@ -58,7 +58,7 @@ export class SendToCanvas {
         }
 
         if (this.selectedCanvas) {
-            this.addFileNodeToCanvas(currentFile, this.selectedCanvas);
+            void this.addFileNodeToCanvas(currentFile, this.selectedCanvas);
             new Notice(`Using previously selected Canvas: ${this.selectedCanvas.name}`);
         } else {
             new Notice(`Failed to send. No Canvas file selected yet.`);
@@ -87,7 +87,7 @@ export class SendToCanvas {
                 this.selectedCanvas = canvasFile;
                 this.updateStatusBar();
 
-                this.addFileNodeToCanvas(targetFile, canvasFile);
+                void this.addFileNodeToCanvas(targetFile, canvasFile);
             },
         );
         modal.open();
