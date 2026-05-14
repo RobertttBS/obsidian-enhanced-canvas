@@ -1,10 +1,12 @@
 import {
+    EventRef,
     ItemView,
     Menu,
 } from "obsidian";
 import { around } from "monkey-around";
 
 import EnhancedCanvas from "../main";
+import { Canvas, CanvasView } from "../Canvas";
 import { AdvancedTagSuggestModal } from "./AdvancedTagSuggestModal";
 
 type Position = {
@@ -20,8 +22,8 @@ export class CanvasTagImport {
     private plugin: EnhancedCanvas;
     private patched = false;
     private menus = new WeakSet<Menu>();
-    private leafEvent: any = null;
-    private layoutEvent: any = null;
+    private leafEvent: EventRef | null = null;
+    private layoutEvent: EventRef | null = null;
 
     constructor(plugin: EnhancedCanvas) {
         this.plugin = plugin;
@@ -53,8 +55,8 @@ export class CanvasTagImport {
         // eslint-disable-next-line @typescript-eslint/no-this-alias
         const tagImport = this;
         const uninstall = around(canvas.constructor.prototype, {
-            showCreationMenu: (next) => {
-                return function(menu: Menu, position: Position, ...args: any[]) {
+            showCreationMenu: (next: (menu: Menu, position: Position, ...args: unknown[]) => unknown) => {
+                return function(this: Canvas, menu: Menu, position: Position, ...args: unknown[]) {
                     const result = next.call(this, menu, position, ...args);
                     tagImport.addMenuItem(menu, this, position);
                     return result;
@@ -79,14 +81,14 @@ export class CanvasTagImport {
         }
     }
 
-    private getAnyCanvas(): any {
+    private getAnyCanvas(): Canvas | null {
         const canvasView = this.plugin.app.workspace.getLeavesOfType("canvas")?.[0]?.view as ItemView | undefined;
         if (!canvasView || canvasView.getViewType() !== "canvas") return null;
 
-        return (canvasView as any).canvas;
+        return (canvasView as CanvasView).canvas;
     }
 
-    private addMenuItem(menu: Menu, canvas: any, position: Position): void {
+    private addMenuItem(menu: Menu, canvas: Canvas, position: Position): void {
         if (!canvas || canvas.readonly || this.menus.has(menu)) return;
         this.menus.add(menu);
 

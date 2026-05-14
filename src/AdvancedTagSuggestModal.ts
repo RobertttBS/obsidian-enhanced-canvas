@@ -84,7 +84,7 @@ export class AdvancedTagSuggestModal extends Modal {
      * but it's the most efficient way to get a list of all existing tags.
      */
     private getTags(): string[] {
-        const tagsMap = (this.app.metadataCache as any).getTags();
+        const tagsMap = this.app.metadataCache.getTags();
         const tags = new Set<string>();
 
         for (const tag of Object.keys(tagsMap)) {

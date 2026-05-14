@@ -4,8 +4,10 @@ import {
     TFile,
     Notice
 } from 'obsidian';
+import { AllCanvasNodeData, CanvasEdgeData, CanvasNodeData } from "obsidian/canvas";
 
-import EnhancedCanvas from '../main'; 
+import EnhancedCanvas from '../main';
+import { Canvas, CanvasNode, CanvasView } from '../Canvas';
 import { randomId } from './utils';
 
 const HEADING_LIMIT = 10;
@@ -31,17 +33,16 @@ export class CanvasExploder {
     checkAndAddMenu(menu: Menu, title: string) {
         const activeView = this.plugin.app.workspace.getActiveViewOfType(ItemView);
         if (activeView && activeView.getViewType() === "canvas") {
-            // @ts-ignore
-            const canvas = (activeView as any).canvas;
-            
+            const canvas = (activeView as CanvasView).canvas;
+
             if (canvas) {
                 const selection = canvas.selection;
-                
+
                 if (selection.size === 1) {
-                    const node = selection.values().next().value;
+                    const node = selection.values().next().value as CanvasNode | undefined;
 
                     // File Node
-                    if (node && node.file) { 
+                    if (node && node.file) {
                         menu.addItem((item) => {
                             item
                                 .setTitle(title)
@@ -69,12 +70,11 @@ export class CanvasExploder {
      * Adds the "Split Card by Headings" menu item for text nodes.
      * Called from main.ts when a text node context menu is shown.
      */
-    addTextNodeMenu(menu: Menu, node: any) {
+    addTextNodeMenu(menu: Menu, node: CanvasNode) {
         const activeView = this.plugin.app.workspace.getActiveViewOfType(ItemView);
         if (!activeView || activeView.getViewType() !== "canvas") return;
-        
-        // @ts-ignore
-        const canvas = (activeView as any).canvas;
+
+        const canvas = (activeView as CanvasView).canvas;
         if (!canvas) return;
 
         menu.addItem((item) => {
@@ -147,8 +147,9 @@ export class CanvasExploder {
 	 * Deconstructs a single file node into a hierarchical tree of connected nodes representing its internal headings,
 	 * replacing the original node to visualize the document's structure directly on the canvas.
 	 */
-	async explodeFileNode(canvas: any, originalNode: any) {
-		const targetFile: TFile = originalNode.file;
+	async explodeFileNode(canvas: Canvas, originalNode: CanvasNode) {
+		const targetFile = originalNode.file;
+		if (!targetFile) return;
 
 		const cache = this.plugin.app.metadataCache.getFileCache(targetFile);
 		if (!cache || !cache.headings || cache.headings.length === 0) {
@@ -161,17 +162,17 @@ export class CanvasExploder {
 
 		const baseX = originalNode.x;
 		let currentY = originalNode.y;
-		
+
 		const width = Math.max(originalNode.width ?? 0, DEFAULT_WIDTH);
 
-		const minLevel = Math.min(...headings.map((h: any) => h.level));
+		const minLevel = Math.min(...headings.map((h) => h.level));
 
 		const nodeStack: { level: number, nodeId: string }[] = [];
-		const newNodesData: any[] = [];
-		const newEdgesData: any[] = [];
+		const newNodesData: AllCanvasNodeData[] = [];
+		const newEdgesData: CanvasEdgeData[] = [];
 
 		let createdCount = 0;
-		const originalData = canvas.getData().nodes.find((n: any) => n.id === originalNode.id) || {};
+		const originalData = canvas.getData().nodes.find((n: CanvasNodeData) => n.id === originalNode.id) ?? ({} as Partial<CanvasNodeData>);
 
 		for (let i = 0; i < headings.length; i++) {
 			const heading = headings[i];
@@ -243,8 +244,8 @@ export class CanvasExploder {
 
 		if (createdCount > 0) {
 			const currentData = canvas.getData();
-			currentData.nodes = currentData.nodes.filter((n: any) => n.id !== originalNode.id);
-			currentData.edges = currentData.edges.filter((e: any) => 
+			currentData.nodes = currentData.nodes.filter((n: CanvasNodeData) => n.id !== originalNode.id);
+			currentData.edges = currentData.edges.filter((e: CanvasEdgeData) =>
 				e.fromNode !== originalNode.id && e.toNode !== originalNode.id
 			);
 
@@ -271,8 +272,8 @@ export class CanvasExploder {
 	 * Deconstructs a single text node into a hierarchical tree of connected nodes representing its internal headings,
 	 * replacing the original node to visualize the card's structure directly on the canvas.
 	 */
-	async explodeTextNode(canvas: any, originalNode: any) {
-		const rawText = originalNode.text;
+	async explodeTextNode(canvas: Canvas, originalNode: CanvasNode) {
+		const rawText = originalNode.text ?? '';
 		const sections = this.parseMarkdownHeadings(rawText);
 
 		if (sections.length === 0) {
@@ -286,17 +287,17 @@ export class CanvasExploder {
 		const originalWidth = originalNode.width ?? 0;
 		const originalHeight = originalNode.height;
 		const originalNodeId = originalNode.id;
-		
+
 		const width = Math.max(originalWidth, DEFAULT_WIDTH);
 		const minLevel = Math.min(...sections.map(s => s.level));
 
-		const originalData = canvas.getData().nodes.find((n: any) => n.id === originalNodeId) || {};
+		const originalData = canvas.getData().nodes.find((n: CanvasNodeData) => n.id === originalNodeId) ?? ({} as Partial<CanvasNodeData>);
 
 		// --- 2. Build new nodes and edges data ---
 		let currentY = baseY;
 		const nodeStack: { level: number, nodeId: string }[] = [];
-		const newNodesData: any[] = [];
-		const newEdgesData: any[] = [];
+		const newNodesData: AllCanvasNodeData[] = [];
+		const newEdgesData: CanvasEdgeData[] = [];
 
 		for (let i = 0; i < sections.length; i++) {
 			const section = sections[i];
@@ -373,10 +374,10 @@ export class CanvasExploder {
 		const currentData = canvas.getData();
 		
 		// Remove original node from data
-		currentData.nodes = currentData.nodes.filter((n: any) => n.id !== originalNodeId);
-		
+		currentData.nodes = currentData.nodes.filter((n: CanvasNodeData) => n.id !== originalNodeId);
+
 		// Remove any edges connected to original node
-		currentData.edges = currentData.edges.filter((e: any) => 
+		currentData.edges = currentData.edges.filter((e: CanvasEdgeData) =>
 			e.fromNode !== originalNodeId && e.toNode !== originalNodeId
 		);
 		

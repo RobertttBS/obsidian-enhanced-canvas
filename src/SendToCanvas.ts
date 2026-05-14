@@ -13,7 +13,7 @@ import {
 } from "obsidian";
 
 import EnhancedCanvas from '../main';
-import { CanvasData, CanvasNodeData } from '../Canvas'; 
+import { AllCanvasNodeData, CanvasData, CanvasView } from '../Canvas';
 import { randomId } from './utils';
 
 type ObsidianApp = App & {
@@ -104,8 +104,8 @@ export class SendToCanvas {
 
         let canvasData: CanvasData;
         const canvasLeaves = this.plugin.app.workspace.getLeavesOfType('canvas');
-        const openLeaf = canvasLeaves.find(leaf => (leaf.view as any).file?.path === canvasFile.path);
-        const canvasView = openLeaf ? (openLeaf.view as any) : null;
+        const openLeaf = canvasLeaves.find(leaf => (leaf.view as CanvasView).file?.path === canvasFile.path);
+        const canvasView = openLeaf ? (openLeaf.view as CanvasView) : null;
 
         if (canvasView && canvasView.canvas) {
             canvasData = canvasView.canvas.getData();
@@ -158,7 +158,7 @@ export class SendToCanvas {
      * @param existingNodes - The existing nodes in the canvas.
      * @returns The new node.
      */
-    createNodeAtBottom(file: TFile, existingNodes: CanvasNodeData[]): CanvasNodeData {
+    createNodeAtBottom(file: TFile, existingNodes: AllCanvasNodeData[]): AllCanvasNodeData {
         const id = randomId();
         const WIDTH  = this.plugin.settings.defaultFileNodeWidth;
         const HEIGHT = this.plugin.settings.defaultFileNodeHeight;

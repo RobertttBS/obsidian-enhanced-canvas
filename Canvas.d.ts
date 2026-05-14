@@ -1,4 +1,14 @@
 import { ItemView, TFile, WorkspaceLeaf } from "obsidian"
+import type { CanvasData, CanvasEdgeData, CanvasNodeData, NodeSide } from "obsidian/canvas"
+
+export type { AllCanvasNodeData, CanvasData, CanvasEdgeData, CanvasNodeData } from "obsidian/canvas"
+
+declare module "obsidian" {
+  interface MetadataCache {
+    getBacklinksForFile(file: TFile): { data: Map<string, unknown[]> }
+    getTags(): Record<string, number>
+  }
+}
 
 export interface Size {
   width: number
@@ -67,13 +77,14 @@ export interface Canvas {
   getSelectionData(): SelectionData
   updateSelection(update: () => void): void
   deselectAll(): void
+  select(node: CanvasNode): void
 
   toggleObjectSnapping(enabled: boolean): void
-  dragTempNode(dragEvent: any, nodeSize: Size, onDropped: (position: Position) => void): void
+  dragTempNode(dragEvent: unknown, nodeSize: Size, onDropped: (position: Position) => void): void
 
-  createTextNode(options: { [key: string]: any }): CanvasNode
-  createGroupNode(options: { [key: string]: any }): CanvasNode
-  createFileNode(options: { [key: string]: any }): CanvasNode
+  createTextNode(options: { [key: string]: unknown }): CanvasNode
+  createGroupNode(options: { [key: string]: unknown }): CanvasNode
+  createFileNode(options: { [key: string]: unknown }): CanvasNode
 
   addNode(node: CanvasNode): void
   removeNode(node: CanvasNode): void
@@ -90,10 +101,11 @@ export interface Canvas {
   posFromEvt(event: MouseEvent): Position
   onDoubleClick(event: MouseEvent): void
   handlePaste(): void
-  requestSave(): void
+  requestSave(save?: boolean): void
 
   // Custom
   isCopying: boolean
+  isClearing?: boolean
   lockedX: number
   lockedY: number
   lockedZoom: number
@@ -105,7 +117,7 @@ export interface CanvasOptions {
 }
 
 export interface CanvasMetadata {
-  properties: { [key: string]: any }
+  properties: { [key: string]: unknown }
 }
 
 export interface CanvasHistory {
@@ -166,11 +178,6 @@ export interface FileNodeOptions extends NodeOptions {
   subpath?: string
 }
 
-export interface CanvasData {
-  nodes: CanvasNodeData[]
-  edges: CanvasEdgeData[]
-}
-
 export interface CanvasElement {
   canvas: Canvas
   initialized: boolean
@@ -194,45 +201,6 @@ export interface CanvasElement {
   setData(data: CanvasNodeData | CanvasEdgeData): void
 }
 
-export type CanvasNodeType = 'text' | 'group' | 'file' | 'link'
-export interface CanvasNodeData {
-  id: string
-  x: number
-  y: number
-  width: number
-  height: number
-
-  type: CanvasNodeType
-  text?: string
-  label?: string
-  file?: string
-
-  // TODO: needsToBeInitialized?: boolean
-  styleAttributes?: { [key: string]: string | null }
-
-  lockedHeight?: boolean
-
-  isCollapsed?: boolean
-  collapsedData?: CanvasData
-
-  isStartNode?: boolean
-  sideRatio?: number
-
-  edgesToNodeFromPortal?: { [key: string]: CanvasEdgeData[] }
-
-  // Portal node
-  portalToFile?: string
-  closedPortalWidth?: number
-  closedPortalHeight?: number
-  portalIdMaps?: { 
-    nodeIdMap: { [key: string]: string }
-    edgeIdMap: { [key: string]: string }
-  }
-
-  // Node from portal
-  portalId?: string
-}
-
 export interface CanvasNode extends CanvasElement {
   id: string
 
@@ -245,6 +213,8 @@ export interface CanvasNode extends CanvasElement {
   file?: TFile
   /** Path string for file-backed nodes; mirrors CanvasNodeData.file. */
   filePath?: string
+  /** Body text for text nodes; undefined for non-text nodes. */
+  text?: string
 
   x: number
   y: number
@@ -261,27 +231,8 @@ export interface CanvasNode extends CanvasElement {
   getData(): CanvasNodeData
 }
 
-type Side = 'top' | 'right' | 'bottom' | 'left'
+type Side = NodeSide
 type EndType = 'none' | 'arrow'
-export interface CanvasEdgeData {
-  id: string
-
-  fromNode: string
-  toNode: string
-
-  fromSide: Side
-  toSide: Side
-  
-  fromEnd?: EndType
-  toEnd?: EndType
-
-  styleAttributes?: { [key: string]: string | null }
-
-  portalId?: string
-  isUnsaved?: boolean
-
-  [key: string]: any
-}
 
 export interface CanvasEdge extends CanvasElement {
   label: string
