@@ -510,7 +510,7 @@ export default class EnhancedCanvas extends Plugin {
 					view.onResize();
 				}
 				
-				activeWindow.setTimeout(() => {
+				window.setTimeout(() => {
 					if (typeof view.onResize === 'function') view.onResize();
 				}, 200);
 
@@ -740,7 +740,7 @@ export default class EnhancedCanvas extends Plugin {
 				const activeView = this.app.workspace.getActiveViewOfType(FileView);
 				clickedSourceFile = activeView?.file?.path ?? null;
 			
-				activeWindow.setTimeout(() => {
+				window.setTimeout(() => {
 					this.isMetadataClicked = false;
 					clickedSourceFile = null;
 				}, 500);
@@ -766,7 +766,7 @@ export default class EnhancedCanvas extends Plugin {
 							canvas.select(value);
 						}
 					}
-					activeWindow.setTimeout(() => {
+					window.setTimeout(() => {
 						canvas.zoomToSelection();
 					}, 100);
 				});
@@ -1126,9 +1126,9 @@ export default class EnhancedCanvas extends Plugin {
 
                     if (direction === "bottom") {
                         if (this._autoHeightTimer) {
-                            activeWindow.clearTimeout(this._autoHeightTimer);
+                            window.clearTimeout(this._autoHeightTimer);
                         }
-                        this._autoHeightTimer = activeWindow.setTimeout(() => {
+                        this._autoHeightTimer = window.setTimeout(() => {
                             this.autoHeightEnabled = false; 
                             this._autoHeightTimer = null;
                         }, 300);
@@ -1136,7 +1136,7 @@ export default class EnhancedCanvas extends Plugin {
                     else if (direction === "right" || direction === "left") {
                         if (this.autoHeightEnabled === true) {
                             const handlePointerUp = () => {
-                                activeWindow.setTimeout(() => {
+                                window.setTimeout(() => {
                                     if (!this.canvas || !this.canvas.nodes.has(this.id)) return;
                                     
                                     if (this.nodeEl && this.nodeEl.classList.contains('is-resizing')) {
@@ -1163,7 +1163,7 @@ export default class EnhancedCanvas extends Plugin {
 					const result = originalMethod.apply(this, args);
 
 					if (this.autoHeightEnabled) {
-						activeWindow.setTimeout(() => {
+						window.setTimeout(() => {
 							if (typeof this.onResizeDblclick === 'function') {
 								const mockEvent = {
 									preventDefault: () => {},
