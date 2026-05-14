@@ -89,7 +89,7 @@ export class CanvasExploder {
     sanitizeHeading(rawHeading: string): string {
         let text = rawHeading.replace(/\[\[|\]\]/g, "");
 
-        text = text.replace(/[\[\](){}<>|#:]/g, " ");
+        text = text.replace(/[[\](){}<>|#:]/g, " ");
         text = text.replace(/\s+/g, " ");
         return text.trim();
     }
