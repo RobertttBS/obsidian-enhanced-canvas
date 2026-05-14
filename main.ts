@@ -50,7 +50,7 @@ export default class EnhancedCanvas extends Plugin {
 	public sendToCanvas: SendToCanvas;
 	public canvasTagImport: CanvasTagImport;
 	public patchedEdge: boolean;
-	private isMetadataClicked: boolean = false;
+	private isMetadataClicked = false;
 	settings: EnhancedCanvasSettings;
 
 	private autoHeightCheckReference: (() => void) | null = null;
@@ -276,7 +276,7 @@ export default class EnhancedCanvas extends Plugin {
 
         const canvasName = e.canvas.view.file.basename;
 
-        let link = this.app.fileManager.generateMarkdownLink(toFile, fromFilePath).replace(/^!(\[\[.*\]\])$/, '$1');
+        const link = this.app.fileManager.generateMarkdownLink(toFile, fromFilePath).replace(/^!(\[\[.*\]\])$/, '$1');
         await this.updateFrontmatter(fromFile, link, 'add', canvasName);
     }
 
@@ -316,7 +316,7 @@ export default class EnhancedCanvas extends Plugin {
 				if (fromFilePath === toFilePath) continue;
 				if (!fromFile || !toFile) continue;
 		
-				let link = this.app.fileManager.generateMarkdownLink(toFile, fromFilePath).replace(/^!(\[\[.*\]\])$/, '$1');
+				const link = this.app.fileManager.generateMarkdownLink(toFile, fromFilePath).replace(/^!(\[\[.*\]\])$/, '$1');
 				
 				if (!fileLinksToAdd.has(fromFilePath)) {
 					fileLinksToAdd.set(fromFilePath, new Set());
@@ -331,12 +331,13 @@ export default class EnhancedCanvas extends Plugin {
 			if (fromFile) {
 				await this.app.fileManager.processFrontMatter(fromFile, (fm) => {
 					const existingValue = Reflect.get(fm, canvasName);
-					let currentSet = new Set<string>();
+					const currentSet = new Set<string>();
 					let wasString = false;
 
 					if (Array.isArray(existingValue)) {
-						existingValue.filter((item): item is string => typeof item === 'string' && item.trim() !== '')
-									 .forEach(item => currentSet.add(item));
+						existingValue
+							.filter((item): item is string => typeof item === 'string' && item.trim() !== '')
+							.forEach(item => currentSet.add(item));
 					} else if (typeof existingValue === 'string' && existingValue.trim() !== '') {
 						currentSet.add(existingValue);
 						wasString = true;
@@ -370,7 +371,7 @@ export default class EnhancedCanvas extends Plugin {
 		if (!this.settings.enableFrontmatter) return;
         await this.app.fileManager.processFrontMatter(file, (fm) => {
             const existingValue = Reflect.get(fm, propertyName);
-            let currentSet = new Set<string>();
+            const currentSet = new Set<string>();
             let wasString = false;
 
             if (Array.isArray(existingValue)) {
@@ -817,7 +818,7 @@ export default class EnhancedCanvas extends Plugin {
 					const targetFile = getFilePath(filePath);
 					if (!targetFile) return;
 		
-					let link = this.app.fileManager.generateMarkdownLink(targetFile, filePath).replace(/^!(\[\[.*\]\])$/, '$1');
+					const link = this.app.fileManager.generateMarkdownLink(targetFile, filePath).replace(/^!(\[\[.*\]\])$/, '$1');
 					updatePromises.push(this.updateFrontmatter(fromFile, link, 'remove', canvasName));
 				}
 			});
@@ -827,7 +828,7 @@ export default class EnhancedCanvas extends Plugin {
 					const targetFile = getFilePath(toNode.filePath);
 					
 					if (targetFile) {
-						let link = this.app.fileManager.generateMarkdownLink(targetFile, toNode.filePath).replace(/^!(\[\[.*\]\])$/, '$1');
+						const link = this.app.fileManager.generateMarkdownLink(targetFile, toNode.filePath).replace(/^!(\[\[.*\]\])$/, '$1');
 						// 將此操作加入 Promise 佇列
 						updatePromises.push(this.updateFrontmatter(fromFile, link, 'add', canvasName));
 					}
@@ -1315,7 +1316,7 @@ export default class EnhancedCanvas extends Plugin {
 		const node1CenterY = node1.y + node1.height / 2;
 		const node2CenterX = node2.x + node2.width / 2;
 		const node2CenterY = node2.y + node2.height / 2;
-	  
+
 		const angle = Math.atan2(node2CenterY - node1CenterY, node2CenterX - node1CenterX) * 180 / Math.PI;
 		const normalizedAngle = angle < 0 ? angle + 360 : angle;
 		
@@ -1483,8 +1484,7 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 		const sizeRow = (
 			name: string,
 			desc: string,
-			key: 'defaultTextNodeWidth' | 'defaultTextNodeHeight'
-			   | 'defaultFileNodeWidth' | 'defaultFileNodeHeight',
+			key: 'defaultTextNodeWidth' | 'defaultTextNodeHeight' | 'defaultFileNodeWidth' | 'defaultFileNodeHeight',
 		) => {
 			new Setting(containerEl)
 				.setName(name)

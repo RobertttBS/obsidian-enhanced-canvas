@@ -12,7 +12,7 @@ export class AdvancedTagSuggestModal extends Modal {
     private inputComponent: TextComponent;
     private suggestionContainer: HTMLDivElement;
     private suggestions: string[] = [];
-    private selectedIndex: number = -1;
+    private selectedIndex = -1;
     private allTags: string[] = [];
 
     constructor(app: App, plugin: EnhancedCanvas, canvas: Canvas, position: { x: number, y: number }) {

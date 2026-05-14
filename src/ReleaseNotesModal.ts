@@ -10,7 +10,7 @@ export class ReleaseNotesModal extends Modal {
     private previousVersion: string;
     private renderComponent = new Component();
 
-    constructor(app: App, plugin: EnhancedCanvas, version: string, isNewInstall: boolean, previousVersion: string = "0.0.0") {
+    constructor(app: App, plugin: EnhancedCanvas, version: string, isNewInstall: boolean, previousVersion = "0.0.0") {
         super(app);
         this.plugin = plugin;
         this.version = version;

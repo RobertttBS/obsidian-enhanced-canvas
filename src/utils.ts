@@ -27,7 +27,7 @@ export function isVersionNewer(currentVersion: string, oldVersion: string): bool
 /**
  * Generates a cryptographically secure random ID.
  */
-export function randomId(length: number = 16): string {
+export function randomId(length = 16): string {
     const byteLength = Math.ceil(length / 2);
     const array = new Uint8Array(byteLength);
     
@@ -79,7 +79,7 @@ export class TagQueryParser {
 
                 // Split by '#' to handle concatenated tags like #tag1#tag2
                 const tagTokens = wToken.split("#");
-                for (let tagToken of tagTokens) {
+                for (const tagToken of tagTokens) {
                     if (!tagToken) continue;
 
                     // Normalize to lowercase and strip trailing punctuation (e.g., commas)

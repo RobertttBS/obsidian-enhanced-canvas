@@ -219,7 +219,7 @@ export class SendToCanvas {
         this.clearSelectedCanvas();
     }
     
-    clearSelectedCanvas(showNotice: boolean = true): void {
+    clearSelectedCanvas(showNotice = true): void {
         if (this.selectedCanvas) {
             const fileName = this.selectedCanvas.name;
             this.selectedCanvas = null; 

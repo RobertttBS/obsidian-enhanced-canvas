@@ -1,7 +1,6 @@
 import {
     Menu,
     ItemView,
-    TFile,
     Notice
 } from 'obsidian';
 import { AllCanvasNodeData, CanvasEdgeData, CanvasNodeData } from "obsidian/canvas";
