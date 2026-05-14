@@ -1353,7 +1353,7 @@ export default class EnhancedCanvas extends Plugin {
 	 * unloaded, ensuring any custom properties or data managed by this plugin
 	 * are removed from the vault.
 	 */
-	async onunload() {
+	onunload() {
 		if (this.canvasStackInterval !== null) {
 			window.clearInterval(this.canvasStackInterval);
 			this.canvasStackInterval = null;
@@ -1365,14 +1365,18 @@ export default class EnhancedCanvas extends Plugin {
 		this.detachDragTempNodeListeners();
 
 		this.sendToCanvas.clearSelectedCanvas(false);
+		void this.cleanupCanvasProperties();
+	}
+
+	private async cleanupCanvasProperties() {
 		try {
 			const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
-			
+
 			await Promise.all(canvasFiles.map(async (canvasFile) => {
 				try {
 					const content = await this.app.vault.read(canvasFile);
 					const canvasData = JSON.parse(content) as CanvasData;
-					
+
 					const tempCanvas = {
 						view: {
 							file: canvasFile
@@ -1380,16 +1384,14 @@ export default class EnhancedCanvas extends Plugin {
 						setData: () => {},
 						requestSave: () => {}
 					};
-					
+
 					await this.removeAllProperty(tempCanvas, canvasData);
 				} catch (error) {
 					console.error("Enhanced Canvas: Failed to remove property from canvas", error);
-					return;
 				}
 			}));
 		} catch (error) {
 			console.error("Enhanced Canvas: Error during bulk property removal", error);
-			return;
 		}
 	}
 }
