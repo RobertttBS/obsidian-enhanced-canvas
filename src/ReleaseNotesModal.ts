@@ -74,13 +74,13 @@ export class ReleaseNotesModal extends Modal {
             });
     }
 
-    async onClose() {
+    onClose() {
         this.renderComponent.unload();
         this.contentEl.empty();
 
         if (this.plugin.settings.previousRelease !== this.version) {
             this.plugin.settings.previousRelease = this.version;
-            await this.plugin.saveSettings();
+            void this.plugin.saveSettings();
         }
     }
 }
