@@ -1479,7 +1479,7 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 		const MIN_NODE_DIMENSION = 50;
 		const MAX_NODE_DIMENSION = 5000;
 
-		containerEl.createEl('h3', { text: 'Default node size' });
+		new Setting(containerEl).setName('Default node size').setHeading();
 
 		const sizeRow = (
 			name: string,
