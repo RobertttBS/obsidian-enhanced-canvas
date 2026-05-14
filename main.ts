@@ -494,7 +494,7 @@ export default class EnhancedCanvas extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on('active-leaf-change', (leaf) => {
 				if (this.canvasStackInterval) {
-					clearInterval(this.canvasStackInterval);
+					window.clearInterval(this.canvasStackInterval);
 					this.canvasStackInterval = null;
 				}
 
@@ -519,7 +519,7 @@ export default class EnhancedCanvas extends Plugin {
 				this.canvasStackInterval = window.setInterval(() => {
 					if (!view || !view.containerEl) {
 						if (this.canvasStackInterval !== null) {
-							clearInterval(this.canvasStackInterval);
+							window.clearInterval(this.canvasStackInterval);
 							this.canvasStackInterval = null;
 						}
 						return;
@@ -1038,7 +1038,7 @@ export default class EnhancedCanvas extends Plugin {
      * Patches Canvas to add context menu for text nodes (which don't trigger file-menu).
      */
     patchCanvasNodeMenu() {
-        // eslint-disable-next-line @typescript-eslint/no-this-alias
+        // eslint-disable-next-line @typescript-eslint/no-this-alias -- alias needed: `this` inside the around() patch rebinds to the Canvas node, so the plugin reference must be captured in an outer variable
         const plugin = this;
         let patched = false;
         
@@ -1266,7 +1266,7 @@ export default class EnhancedCanvas extends Plugin {
 		const canvas = canvasView?.canvas;
 		if (!canvas?.constructor?.prototype?.dragTempNode) return false;
 
-		// eslint-disable-next-line @typescript-eslint/no-this-alias
+		// eslint-disable-next-line @typescript-eslint/no-this-alias -- alias needed: `this` inside the around() patch rebinds to the Canvas instance, so the plugin reference must be captured in an outer variable
 		const plugin = this;
 		const uninstall = around(canvas.constructor.prototype, {
 			dragTempNode(orig: (dragEvent: unknown, nodeSize: Size, onDropped: (position: Position) => void) => void) {
@@ -1354,7 +1354,7 @@ export default class EnhancedCanvas extends Plugin {
 	 */
 	async onunload() {
 		if (this.canvasStackInterval !== null) {
-			clearInterval(this.canvasStackInterval);
+			window.clearInterval(this.canvasStackInterval);
 			this.canvasStackInterval = null;
 		}
 
