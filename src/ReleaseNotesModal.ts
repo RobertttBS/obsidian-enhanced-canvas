@@ -1,4 +1,4 @@
-import { App, Modal, MarkdownRenderer, ButtonComponent } from "obsidian";
+import { App, Modal, MarkdownRenderer, ButtonComponent, Component } from "obsidian";
 import EnhancedCanvas from "../main";
 import { releaseNotesContent, firstInstallContent } from "./releaseNotesData";
 import { isVersionNewer } from "./utils";
@@ -8,6 +8,7 @@ export class ReleaseNotesModal extends Modal {
     private version: string;
     private isNewInstall: boolean;
     private previousVersion: string;
+    private renderComponent = new Component();
 
     constructor(app: App, plugin: EnhancedCanvas, version: string, isNewInstall: boolean, previousVersion: string = "0.0.0") {
         super(app);
@@ -19,15 +20,16 @@ export class ReleaseNotesModal extends Modal {
 
     onOpen() {
         const { contentEl, titleEl } = this;
-        
+
         titleEl.setText(
-            this.isNewInstall 
-            ? "Welcome to Enhanced Canvas" 
+            this.isNewInstall
+            ? "Welcome to Enhanced Canvas"
             : `Enhanced Canvas updated to v${this.version}`
         );
 
         contentEl.classList.add("enhanced-canvas-release-notes");
 
+        this.renderComponent.load();
         void this.renderContent();
     }
 
@@ -57,7 +59,7 @@ export class ReleaseNotesModal extends Modal {
             markdownText,
             contentEl,
             "/",
-            this.plugin 
+            this.renderComponent
         );
 
         const buttonContainer = contentEl.createDiv({ cls: "release-notes-button-container" });
@@ -73,8 +75,9 @@ export class ReleaseNotesModal extends Modal {
     }
 
     async onClose() {
+        this.renderComponent.unload();
         this.contentEl.empty();
-        
+
         if (this.plugin.settings.previousRelease !== this.version) {
             this.plugin.settings.previousRelease = this.version;
             await this.plugin.saveSettings();
