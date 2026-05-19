@@ -733,20 +733,42 @@ export default class EnhancedCanvas extends Plugin {
 	registerFocusCanvas() {
 		let clickedSourceFile: string | null = null;
 
-		this.registerDomEvent(activeDocument, 'click', (evt: MouseEvent) => {
+		const handleClick = (evt: MouseEvent) => {
 			const target = evt.target as HTMLElement;
 			if (target.closest('.metadata-container') || target.closest('.search-result-container')) {
 				this.isMetadataClicked = true;
 
 				const activeView = this.app.workspace.getActiveViewOfType(FileView);
 				clickedSourceFile = activeView?.file?.path ?? null;
-			
+
 				window.setTimeout(() => {
 					this.isMetadataClicked = false;
 					clickedSourceFile = null;
 				}, 500);
 			}
-		}, true);
+		};
+
+		// DOM events don't cross window boundaries, so attach to every window's
+		// document — main, any popouts open at load, and any opened later.
+		const attachedDocs = new WeakSet<Document>();
+		const attachTo = (doc: Document) => {
+			if (attachedDocs.has(doc)) return;
+			attachedDocs.add(doc);
+			this.registerDomEvent(doc, 'click', handleClick, true);
+		};
+
+		attachTo(document);
+
+		this.app.workspace.iterateAllLeaves((leaf) => {
+			const doc = leaf.view.containerEl.ownerDocument;
+			if (doc) attachTo(doc);
+		});
+
+		this.registerEvent(
+			this.app.workspace.on('window-open', (_workspaceWindow, win: Window) => {
+				attachTo(win.document);
+			})
+		);
 
 		this.registerEvent(
 			this.app.workspace.on('active-leaf-change', () => {
