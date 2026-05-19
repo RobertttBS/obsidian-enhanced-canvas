@@ -1039,13 +1039,13 @@ export default class EnhancedCanvas extends Plugin {
         // For File Nodes - use file-menu event
         this.registerEvent(
             this.app.workspace.on("file-menu", (menu: Menu) => {
-                this.exploder.checkAndAddMenu(menu, "Split by Headings");
+                this.exploder.checkAndAddMenu(menu, "Split by headings");
             })
         );
 
         this.registerEvent(
             this.app.workspace.on("editor-menu", (menu: Menu) => {
-                this.exploder.checkAndAddMenu(menu, "Split by Headings");
+                this.exploder.checkAndAddMenu(menu, "Split by headings");
             })
         );
 

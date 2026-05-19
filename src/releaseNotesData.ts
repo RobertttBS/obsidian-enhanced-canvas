@@ -1,8 +1,9 @@
 export const firstInstallContent = `
 Building upon the original "Property Link" and "Auto Focus" features, I am excited to share three key additions in recent updates.
-### ✨ Split Node by Headings
+### ✨ Split Node by Headings & Add Notes by Tag
 
 **Split Node by Headings** instantly deconstructs a single file node into a hierarchical tree based on its headings. You can try this by right-clicking on a file node and selecting "Split Node by Headings" in Canvas.
+**Add Notes
 
 ### ✨ Send Note to Canvas
 
@@ -24,7 +25,7 @@ export const fixCursorShiftIssueInStackTabsCanvas = `
 > Add advanced multi-tag suggestions with robust querying.
 
 > [!tip] Feature in 1.0.24
-> Implement configurable default dimensions for new canvas nodes. Check the Enhanced Canvas settings to configure your preferred width and height.
+> Check the Enhanced Canvas settings to configure your preferred width and height for new nodes in Canvas.
 
 > [!note] Feature in 1.0.23
 > Added "Add notes by tag..." right-click menu option to bulk import notes by tag.
@@ -39,7 +40,7 @@ export const fixCursorShiftIssueInStackTabsCanvas = `
 > Added "Focus" functionality for Linked Mentions.
 
 > [!NOTE] Feature in 1.0.19
-> Added "Split by Headings" functionality for Card Nodes.
+> Added "Split by headings" functionality for Card Nodes.
 
 > [!bug] Fixed in 1.0.18
 > You can now use Canvas with "stacked tabs" enabled without experiencing the cursor position shift issue.

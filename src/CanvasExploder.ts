@@ -78,7 +78,7 @@ export class CanvasExploder {
 
         menu.addItem((item) => {
             item
-                .setTitle("Split by Headings")
+                .setTitle("Split by headings")
                 .onClick(() => {
                     void this.explodeTextNode(canvas, node);
                 });
