@@ -21,6 +21,9 @@ With this update, double-clicking the bottom edge activates "Auto-Resize." Now, 
 `;
 
 export const fixCursorShiftIssueInStackTabsCanvas = `
+> [!success] Refactor in 1.0.26
+> No new features, but some refactoring.
+
 > [!NOTE] Feature in 1.0.25
 > Add advanced multi-tag suggestions with robust querying.
 
@@ -48,6 +51,7 @@ export const fixCursorShiftIssueInStackTabsCanvas = `
 `;
 
 export const releaseNotesContent: Record<string, string> = {
+    "1.0.26": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.25": fixCursorShiftIssueInStackTabsCanvas, 
     "1.0.24": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.23": fixCursorShiftIssueInStackTabsCanvas,
