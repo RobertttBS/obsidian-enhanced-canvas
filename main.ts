@@ -28,9 +28,7 @@ interface CanvasNodeWithFlag extends CanvasNode {
     onResizeDblclick(event: unknown, direction: string): void;
 }
 
-/** Subset of Canvas used by removeAllProperty; also satisfied by the
- * minimal stub built in onunload / settings cleanup, which avoids
- * constructing a real Canvas for read-only file operations. */
+/** Subset of Canvas used by removeAllProperty. */
 interface CanvasLike {
     view: { file: TFile };
     setData(data: CanvasData): void;
@@ -1371,9 +1369,9 @@ export default class EnhancedCanvas extends Plugin {
 	}
 
 	/**
-	 * Performs a comprehensive cleanup on all canvas files when the plugin is
-	 * unloaded, ensuring any custom properties or data managed by this plugin
-	 * are removed from the vault.
+	 * Performs a comprehensive cleanup on all markdown notes when the plugin
+	 * is unloaded, ensuring any custom properties or data managed by this
+	 * plugin are removed from the vault.
 	 */
 	onunload() {
 		if (this.canvasStackInterval !== null) {
@@ -1390,31 +1388,58 @@ export default class EnhancedCanvas extends Plugin {
 		void this.cleanupCanvasProperties();
 	}
 
-	private async cleanupCanvasProperties() {
-		try {
-			const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
+	/**
+	 * Strips every plugin-managed property from every markdown note: the
+	 * `canvas` property plus each per-canvas property (named after a canvas
+	 * basename). Note-driven rather than canvas-driven so it also removes
+	 * orphans left behind by deleted/renamed canvases or removed nodes, and
+	 * it works regardless of `enableFrontmatter`. Returns the paths of notes
+	 * whose frontmatter could not be updated.
+	 */
+	async cleanupCanvasProperties(): Promise<string[]> {
+		const canvasBasenames = new Set(
+			this.app.vault.getFiles()
+				.filter(file => file.extension === 'canvas')
+				.map(file => file.basename)
+		);
 
-			await Promise.all(canvasFiles.map(async (canvasFile) => {
-				try {
-					const content = await this.app.vault.read(canvasFile);
-					const canvasData = JSON.parse(content) as CanvasData;
+		// '[[folder/Name.canvas|Alias]]' -> 'Name'
+		const linkToBasename = (link: string) => {
+			const target = link.replace(/^\[\[(.*)\]\]$/, '$1').split('|')[0];
+			const base = target.substring(target.lastIndexOf('/') + 1);
+			return base.endsWith('.canvas') ? base.slice(0, -'.canvas'.length) : base;
+		};
 
-					const tempCanvas = {
-						view: {
-							file: canvasFile
-						},
-						setData: () => {},
-						requestSave: () => {}
-					};
+		const failedFiles: string[] = [];
 
-					await this.removeAllProperty(tempCanvas, canvasData);
-				} catch (error) {
-					console.error("Enhanced Canvas: Failed to remove property from canvas", error);
-				}
-			}));
-		} catch (error) {
-			console.error("Enhanced Canvas: Error during bulk property removal", error);
-		}
+		await Promise.all(this.app.vault.getMarkdownFiles().map(async (file) => {
+			const cached = this.app.metadataCache.getFileCache(file)?.frontmatter;
+			if (!cached) return;
+			if (!('canvas' in cached) && !Object.keys(cached).some(key => canvasBasenames.has(key))) return;
+
+			try {
+				await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+					if (!frontmatter) return;
+
+					const canvasLinks = Array.isArray(frontmatter.canvas)
+						? frontmatter.canvas
+						: typeof frontmatter.canvas === 'string' ? [frontmatter.canvas] : [];
+					for (const link of canvasLinks) {
+						if (typeof link === 'string') delete frontmatter[linkToBasename(link)];
+					}
+					delete frontmatter.canvas;
+
+					for (const key of Object.keys(frontmatter)) {
+						if (canvasBasenames.has(key)) delete frontmatter[key];
+					}
+				});
+			} catch (error) {
+				console.error("Enhanced Canvas: Failed to clean properties from note", file.path, error);
+				failedFiles.push(file.path);
+			}
+		}));
+
+		return failedFiles;
 	}
 }
 
@@ -1441,43 +1466,19 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.enableFrontmatter)
 					.onChange(async (value) => {
 						if (!value) {
-							// Run cleanup BEFORE disabling the flag, because removeProperty()
-							// has an early-return guard that checks enableFrontmatter.
-							try {
-								const canvasFiles = this.plugin.app.vault.getFiles().filter(file => file.extension === 'canvas');
-								const failedFiles: string[] = [];
+							// Disable first so live canvas handlers can't re-add
+							// properties mid-sweep; the sweep ignores the setting.
+							this.plugin.settings.enableFrontmatter = false;
+							await this.plugin.saveSettings();
 
-								await Promise.all(canvasFiles.map(async (canvasFile) => {
-									try {
-										const content = await this.plugin.app.vault.read(canvasFile);
-										const canvasData = JSON.parse(content) as CanvasData;
-
-										const tempCanvas = {
-											view: {
-												file: canvasFile
-											},
-											setData: () => {},
-											requestSave: () => {}
-										};
-
-										await this.plugin.removeAllProperty(tempCanvas, canvasData);
-									} catch (error) {
-										console.error("Enhanced Canvas: Settings cleanup failed for file", canvasFile.path, error);
-										failedFiles.push(canvasFile.path);
-									}
-								}));
-
-								if (failedFiles.length > 0) {
-									new Notice(`Failed to clean up properties for ${failedFiles.length} canvases. Check console.`);
-									toggle.setValue(true);
-									return;
-								}
-							} catch (error) {
-								console.error("Enhanced Canvas: Settings cleanup loop failed", error);
-								new Notice("Failed to initiate properties cleanup. Aborting disable.");
+							const failedFiles = await this.plugin.cleanupCanvasProperties();
+							if (failedFiles.length > 0) {
+								new Notice(`Failed to clean up properties for ${failedFiles.length} notes. Check console.`);
+								this.plugin.settings.enableFrontmatter = true;
+								await this.plugin.saveSettings();
 								toggle.setValue(true);
-								return;
 							}
+							return;
 						}
 
 						this.plugin.settings.enableFrontmatter = value;
