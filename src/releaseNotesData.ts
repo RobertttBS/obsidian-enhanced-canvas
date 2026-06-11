@@ -21,7 +21,10 @@ With this update, double-clicking the bottom edge activates "Auto-Resize." Now, 
 `;
 
 export const fixCursorShiftIssueInStackTabsCanvas = `
-> [!success] Refactor in 1.0.27                                                                                                                                                                    
+> [!success] Refactor in 1.0.28
+> Performance optimizations: faster startup sync and fewer redundant frontmatter writes.
+
+> [!success] Refactor in 1.0.27                                                                                                                                                                   
 > Robust Frontmatter & Property Cleanup
 
 > [!success] Refactor in 1.0.26
@@ -54,6 +57,7 @@ export const fixCursorShiftIssueInStackTabsCanvas = `
 `;
 
 export const releaseNotesContent: Record<string, string> = {
+    "1.0.28": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.27": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.26": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.25": fixCursorShiftIssueInStackTabsCanvas, 
