@@ -14,7 +14,7 @@ Obsidian plugin (`isDesktopOnly: false`). Entry `main.ts` → `main.js` via `esb
 
 ### `main.ts` — `EnhancedCanvas`
 
-Features are `register*` methods called from `onload()` (see `main.ts:445-453`): plugin commands, canvas auto-link, file-manager patches, focus-canvas, exploder, tag import, node auto-height, default node size, drag-temp-node. `onload` walks every `.canvas` to bulk-add properties; `onunload` strips them.
+Features are `register*` methods called from `onload()` (see `main.ts:445-453`): plugin commands, canvas auto-link, file-manager patches, focus-canvas, exploder, tag import, node auto-height, default node size, drag-temp-node. `onload` runs `syncAllCanvasProperties`: it aggregates the desired frontmatter across all `.canvas` files, diffs against the metadata cache, and does at most one `processFrontMatter` write per out-of-date note (zero writes when nothing changed — keep it that way). `onunload` strips the properties.
 
 ### Prototype patching (load-bearing)
 

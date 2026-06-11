@@ -120,11 +120,16 @@ export default class EnhancedCanvas extends Plugin {
 
 		const selectedNodeIds = new Set(selectedNodes.map((node) => node.id));
 
+		const nodeById = new Map<string, CanvasNodeData>();
+		for (const node of currentData.nodes) {
+			nodeById.set(node.id, node);
+		}
+
 		let didUpdateEdges = false;
 		currentData.edges.forEach((edge: CanvasEdgeData) => {
 			if (selectedNodeIds.has(edge.fromNode) && selectedNodeIds.has(edge.toNode)) {
-				const fromNode = currentData.nodes.find((node: CanvasNodeData) => node.id === edge.fromNode);
-				const toNode = currentData.nodes.find((node: CanvasNodeData) => node.id === edge.toNode);
+				const fromNode = nodeById.get(edge.fromNode);
+				const toNode = nodeById.get(edge.toNode);
 				if (fromNode && toNode) {
 					const updatedEdge = this.createEdge(fromNode, toNode);
 					if (edge.fromSide !== updatedEdge.fromSide || edge.toSide !== updatedEdge.toSide) {
@@ -279,86 +284,152 @@ export default class EnhancedCanvas extends Plugin {
     }
 
 	/**
-	 * Orchestrates a batch update for all connections within the provided canvas data
-	 * to ensure every edge is validated and processed according to the plugin's
-	 * current update logic.
+	 * Startup sweep: ensures every markdown note referenced by a canvas carries
+	 * the plugin's frontmatter properties (the `canvas` link list plus one
+	 * property per canvas holding links to edge-connected notes).
+	 *
+	 * The desired state is aggregated across all canvases first, then compared
+	 * against the metadata cache, so each note gets at most one
+	 * `processFrontMatter` write — and none at all when it is already up to
+	 * date, which is the common case on restart.
 	 */
-	async processEdgesInCanvas(canvasData: CanvasData, canvasFile: TFile) {
-		if (!canvasData || !this.settings.enableFrontmatter) return;
-	
-		const nodeIdToNodeMap = new Map<string, CanvasNodeData>();
+	async syncAllCanvasProperties() {
+		if (!this.settings.enableFrontmatter) return;
 
-		if (canvasData.nodes && Array.isArray(canvasData.nodes)) {
-			for (const node of canvasData.nodes) {
-				nodeIdToNodeMap.set(node.id, node);
-			}
+		interface DesiredProps {
+			/** Entries the `canvas` property must contain, e.g. '[[Name.canvas]]'. */
+			canvasLinks: Set<string>;
+			/** Per-canvas properties (canvas basenames) that must exist. */
+			ensureKeys: Set<string>;
+			/** Links each per-canvas property must contain. */
+			linksByKey: Map<string, Set<string>>;
 		}
-	
-		const fileLinksToAdd = new Map<string, Set<string>>();
+		const desiredByPath = new Map<string, DesiredProps>();
+		const getDesired = (path: string): DesiredProps => {
+			let desired = desiredByPath.get(path);
+			if (!desired) {
+				desired = { canvasLinks: new Set(), ensureKeys: new Set(), linksByKey: new Map() };
+				desiredByPath.set(path, desired);
+			}
+			return desired;
+		};
 
-		if (canvasData.edges && Array.isArray(canvasData.edges)) {
-			for (const edgeData of canvasData.edges) {
-				const fromNode = nodeIdToNodeMap.get(edgeData.fromNode);
-				const toNode = nodeIdToNodeMap.get(edgeData.toNode);
-	
-				if (!fromNode || !toNode) continue;
+		const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
 
-				const fromFilePath = fromNode.file;
-				const toFilePath = toNode.file;
+		await Promise.all(canvasFiles.map(async (canvasFile) => {
+			let canvasData: CanvasData;
+			try {
+				const content = await this.app.vault.read(canvasFile);
+				if (!content || content.trim() === '') return;
+				canvasData = JSON.parse(content) as CanvasData;
+			} catch (error) {
+				console.error("Enhanced Canvas: Failed to read canvas file", canvasFile.path, error);
+				return;
+			}
+			if (!canvasData) return;
 
-				if (!fromFilePath || !toFilePath) continue;
-		
-				const fromFile = this.app.vault.getFileByPath(fromFilePath);
-				const toFile = this.app.vault.getFileByPath(toFilePath);
-		
-				if (fromFilePath === toFilePath) continue;
-				if (!fromFile || !toFile) continue;
-		
-				const link = this.app.fileManager.generateMarkdownLink(toFile, fromFilePath).replace(/^!(\[\[.*\]\])$/, '$1');
-				
-				if (!fileLinksToAdd.has(fromFilePath)) {
-					fileLinksToAdd.set(fromFilePath, new Set());
+			const nodes = Array.isArray(canvasData.nodes) ? canvasData.nodes : [];
+			const edges = Array.isArray(canvasData.edges) ? canvasData.edges : [];
+
+			const nodeById = new Map<string, CanvasNodeData>();
+			for (const node of nodes) {
+				nodeById.set(node.id, node);
+			}
+
+			for (const node of nodes) {
+				if (!node?.file) continue;
+				const desired = getDesired(node.file);
+				desired.canvasLinks.add(`[[${canvasFile.name}]]`);
+				desired.ensureKeys.add(canvasFile.basename);
+			}
+
+			for (const edgeData of edges) {
+				const fromNode = nodeById.get(edgeData.fromNode);
+				const toNode = nodeById.get(edgeData.toNode);
+
+				if (!fromNode?.file || !toNode?.file) continue;
+				if (fromNode.file === toNode.file) continue;
+
+				const toFile = this.app.vault.getFileByPath(toNode.file);
+				if (!toFile) continue;
+
+				const link = this.app.fileManager.generateMarkdownLink(toFile, fromNode.file).replace(/^!(\[\[.*\]\])$/, '$1');
+
+				const desired = getDesired(fromNode.file);
+				let links = desired.linksByKey.get(canvasFile.basename);
+				if (!links) {
+					links = new Set();
+					desired.linksByKey.set(canvasFile.basename, links);
 				}
-				fileLinksToAdd.get(fromFilePath)!.add(link);
+				links.add(link);
 			}
-		}
+		}));
 
-		const canvasName = canvasFile.basename;
-		for (const [fromFilePath, links] of fileLinksToAdd.entries()) {
-			const fromFile = this.app.vault.getFileByPath(fromFilePath);
-			if (fromFile) {
-				await this.app.fileManager.processFrontMatter(fromFile, (fm) => {
-					const existingValue = Reflect.get(fm, canvasName);
-					const currentSet = new Set<string>();
-					let wasString = false;
+		const toStringArray = (value: unknown): string[] => {
+			if (Array.isArray(value)) {
+				return value.filter((item): item is string => typeof item === 'string' && item.trim() !== '');
+			}
+			if (typeof value === 'string' && value.trim() !== '') return [value];
+			return [];
+		};
 
-					if (Array.isArray(existingValue)) {
-						existingValue
-							.filter((item): item is string => typeof item === 'string' && item.trim() !== '')
-							.forEach(item => currentSet.add(item));
-					} else if (typeof existingValue === 'string' && existingValue.trim() !== '') {
-						currentSet.add(existingValue);
-						wasString = true;
+		await Promise.all(Array.from(desiredByPath.entries()).map(async ([path, desired]) => {
+			const file = this.app.vault.getFileByPath(path);
+			// processFrontMatter only works on markdown notes; skip everything else.
+			if (!file || file.extension !== 'md') return;
+
+			const cached = this.app.metadataCache.getFileCache(file)?.frontmatter;
+			if (cached) {
+				const cachedCanvas = toStringArray(cached.canvas);
+				const upToDate =
+					Array.from(desired.canvasLinks).every(link => cachedCanvas.includes(link)) &&
+					Array.from(desired.ensureKeys).every(key => !!cached[key]) &&
+					Array.from(desired.linksByKey.entries()).every(([key, links]) => {
+						const existing = toStringArray(cached[key]);
+						return Array.from(links).every(link => existing.includes(link));
+					});
+				if (upToDate) return;
+			}
+
+			try {
+				await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+					if (!frontmatter) return;
+
+					if (!frontmatter.canvas) {
+						frontmatter.canvas = [];
+					} else if (typeof frontmatter.canvas === 'string') {
+						frontmatter.canvas = [frontmatter.canvas];
 					}
-					
-					for (const link of links) {
-						currentSet.add(link);
-					}
-
-					const finalArray = Array.from(currentSet);
-
-					if (finalArray.length > 0) {
-						if (finalArray.length === 1 && wasString) {
-							Reflect.set(fm, canvasName, finalArray[0]);
-						} else {
-							Reflect.set(fm, canvasName, finalArray);
+					if (Array.isArray(frontmatter.canvas)) {
+						for (const link of desired.canvasLinks) {
+							if (!frontmatter.canvas.includes(link)) {
+								frontmatter.canvas.push(link);
+							}
 						}
-					} else {
-						Reflect.deleteProperty(fm, canvasName);
+					}
+
+					for (const key of desired.ensureKeys) {
+						if (!frontmatter[key]) {
+							frontmatter[key] = [];
+						}
+					}
+
+					for (const [key, links] of desired.linksByKey) {
+						const existingValue = Reflect.get(frontmatter, key);
+						const wasString = typeof existingValue === 'string' && existingValue.trim() !== '';
+						const merged = toStringArray(existingValue);
+						for (const link of links) {
+							if (!merged.includes(link)) {
+								merged.push(link);
+							}
+						}
+						Reflect.set(frontmatter, key, merged.length === 1 && wasString ? merged[0] : merged);
 					}
 				});
+			} catch (error) {
+				console.error("Enhanced Canvas: Failed to update properties for note", path, error);
 			}
-		}
+		}));
 	}
 
 	/**
@@ -451,35 +522,7 @@ export default class EnhancedCanvas extends Plugin {
 		this.registerCanvasDragTempNodePatcher();
 
 		try {
-			const canvasFiles = this.app.vault.getFiles().filter(file => file.extension === 'canvas');
-			
-			await Promise.all(canvasFiles.map(async (canvasFile) => {
-				try {
-					const content = await this.app.vault.read(canvasFile);
-					if (!content || content.trim() === '') return;
-					
-					try {
-						const canvasData = JSON.parse(content) as CanvasData;
-						if (!canvasData) return;
-						
-						if (canvasData.nodes && Array.isArray(canvasData.nodes)) {
-							for (const node of canvasData.nodes) {
-								if (!node?.file) continue;
-								
-								this.addProperty(node, canvasFile.name, canvasFile.basename);
-							}
-						}
-												
-						await this.processEdgesInCanvas(canvasData, canvasFile);
-					} catch (parseError) {
-						console.error("Enhanced Canvas: Failed to parse canvas data", parseError);
-						return;
-					}
-				} catch (fileError) {
-					console.error("Enhanced Canvas: Failed to read canvas file", fileError);
-					return;
-				}
-			}));
+			await this.syncAllCanvasProperties();
 		} catch (error) {
 			console.error("Enhanced Canvas: Error in metadata update loop", error);
 			return;
@@ -818,14 +861,17 @@ export default class EnhancedCanvas extends Plugin {
 
 			const { edges, nodes } = e.canvas.getData();
 
-			const sameFileNodeIds = new Set(
-				nodes.filter((node: CanvasNodeData) => node.file === fromNode.filePath).map((node: CanvasNodeData) => node.id)
-			);
-			const allRelevantEdges = edges.filter((edge: CanvasEdgeData) => sameFileNodeIds.has(edge.fromNode));
+			const nodeById = new Map<string, CanvasNodeData>();
+			const sameFileNodeIds = new Set<string>();
+			for (const node of nodes) {
+				nodeById.set(node.id, node);
+				if (node.file === fromNode.filePath) sameFileNodeIds.add(node.id);
+			}
 
 			const edgeToNodesFilePathSet = new Set<string>();
-			for (const edge of allRelevantEdges) {
-				const targetNode = nodes.find((node) => node.id === edge.toNode);
+			for (const edge of edges) {
+				if (!sameFileNodeIds.has(edge.fromNode)) continue;
+				const targetNode = nodeById.get(edge.toNode);
 				if (targetNode?.type === 'file') edgeToNodesFilePathSet.add(targetNode.file);
 			}
 
@@ -889,12 +935,14 @@ export default class EnhancedCanvas extends Plugin {
 			if (!fromFile) return;
 
 			const { edges, nodes } = edge.canvas.getData();
-			const sameFileNodes = nodes.filter((node: CanvasNodeData) => node.file === fromFilePath);
+			const sameFileNodeIds = new Set(
+				nodes.filter((node: CanvasNodeData) => node.file === fromFilePath).map((node: CanvasNodeData) => node.id)
+			);
 
 			const stillHasConnection = edges.some((e: CanvasEdgeData) =>
-				sameFileNodes.some((node: CanvasNodeData) => e.fromNode === node.id) &&
+				sameFileNodeIds.has(e.fromNode) &&
 				e.toNode === toNode.id &&
-				!(e.fromNode === fromNode.id && e.toNode === toNode.id)
+				e.fromNode !== fromNode.id
 			);
 
 			if (!stillHasConnection) {
