@@ -43,6 +43,15 @@ interface JsonNodeRef {
     [key: string]: unknown;
 }
 
+/** Normalizes a frontmatter value (missing, string, or array) to a string array. */
+function frontmatterValueToArray(value: unknown): string[] {
+	if (Array.isArray(value)) {
+		return value.filter((item): item is string => typeof item === 'string' && item.trim() !== '');
+	}
+	if (typeof value === 'string' && value.trim() !== '') return [value];
+	return [];
+}
+
 export default class EnhancedCanvas extends Plugin {
 	public exploder: CanvasExploder;
 	public sendToCanvas: SendToCanvas;
@@ -169,17 +178,22 @@ export default class EnhancedCanvas extends Plugin {
 		const file = this.app.vault.getFileByPath(node.file); // node is JSON node, not canvas node
 		if (!file) return;
 
+		const canvasLink = `[[${propertyName}]]`;
+
+		// Skip the write when the cached frontmatter already carries both properties.
+		const cached = this.app.metadataCache.getFileCache(file)?.frontmatter;
+		if (cached && cached[basename] && frontmatterValueToArray(cached.canvas).includes(canvasLink)) return;
+
 		void this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
 
 			if (!frontmatter.canvas) {
 				frontmatter.canvas = [];
 			}
-			const canvasLink = `[[${propertyName}]]`;
 			if (!frontmatter.canvas.includes(canvasLink)) {
 				frontmatter.canvas.push(canvasLink);
 			}
-	
+
 			if (!frontmatter[basename]) {
 				frontmatter[basename] = [];
 			}
@@ -195,6 +209,11 @@ export default class EnhancedCanvas extends Plugin {
 		const file = this.app.vault.getFileByPath(node.file); // node is JSON node, not canvas node
 		if (!file) return;
 
+		// Skip the write when the cached frontmatter has nothing to remove.
+		const canvasLink = `[[${propertyName}]]`;
+		const cached = this.app.metadataCache.getFileCache(file)?.frontmatter;
+		if (!cached || (!(basename in cached) && !frontmatterValueToArray(cached.canvas).includes(canvasLink))) return;
+
 		return this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
 	
@@ -205,7 +224,6 @@ export default class EnhancedCanvas extends Plugin {
 	
 			// remove the link from the canvas property
 			if (frontmatter.canvas) {
-				const canvasLink = `[[${propertyName}]]`;
 				frontmatter.canvas = frontmatter.canvas.filter((link: string) => link !== canvasLink);
 
 				if (frontmatter.canvas.length === 0) {
@@ -259,29 +277,6 @@ export default class EnhancedCanvas extends Plugin {
 		canvas.setData(canvasData);
 		canvas.requestSave(false);
 	}
-
-	async processEdgeUpdate(e: CanvasEdge) {
-		if (!this.settings.enableFrontmatter) return;
-        const fromNode = e?.from?.node;
-        const toNode = e?.to?.node;
-
-        if (!fromNode || !toNode) return;
-
-        const fromFilePath = fromNode.filePath ?? fromNode.file?.path;
-        const toFilePath = toNode.filePath ?? toNode.file?.path;
-        if (!fromFilePath || !toFilePath) return;
-
-        const fromFile = this.app.vault.getFileByPath(fromFilePath);
-        const toFile = this.app.vault.getFileByPath(toFilePath);
-
-		if (fromFilePath === toFilePath) return;
-        if (!fromFile || !toFile) return;
-
-        const canvasName = e.canvas.view.file.basename;
-
-        const link = this.app.fileManager.generateMarkdownLink(toFile, fromFilePath).replace(/^!(\[\[.*\]\])$/, '$1');
-        await this.updateFrontmatter(fromFile, link, 'add', canvasName);
-    }
 
 	/**
 	 * Startup sweep: ensures every markdown note referenced by a canvas carries
@@ -365,14 +360,6 @@ export default class EnhancedCanvas extends Plugin {
 			}
 		}));
 
-		const toStringArray = (value: unknown): string[] => {
-			if (Array.isArray(value)) {
-				return value.filter((item): item is string => typeof item === 'string' && item.trim() !== '');
-			}
-			if (typeof value === 'string' && value.trim() !== '') return [value];
-			return [];
-		};
-
 		await Promise.all(Array.from(desiredByPath.entries()).map(async ([path, desired]) => {
 			const file = this.app.vault.getFileByPath(path);
 			// processFrontMatter only works on markdown notes; skip everything else.
@@ -380,12 +367,12 @@ export default class EnhancedCanvas extends Plugin {
 
 			const cached = this.app.metadataCache.getFileCache(file)?.frontmatter;
 			if (cached) {
-				const cachedCanvas = toStringArray(cached.canvas);
+				const cachedCanvas = frontmatterValueToArray(cached.canvas);
 				const upToDate =
 					Array.from(desired.canvasLinks).every(link => cachedCanvas.includes(link)) &&
 					Array.from(desired.ensureKeys).every(key => !!cached[key]) &&
 					Array.from(desired.linksByKey.entries()).every(([key, links]) => {
-						const existing = toStringArray(cached[key]);
+						const existing = frontmatterValueToArray(cached[key]);
 						return Array.from(links).every(link => existing.includes(link));
 					});
 				if (upToDate) return;
@@ -417,7 +404,7 @@ export default class EnhancedCanvas extends Plugin {
 					for (const [key, links] of desired.linksByKey) {
 						const existingValue = Reflect.get(frontmatter, key);
 						const wasString = typeof existingValue === 'string' && existingValue.trim() !== '';
-						const merged = toStringArray(existingValue);
+						const merged = frontmatterValueToArray(existingValue);
 						for (const link of links) {
 							if (!merged.includes(link)) {
 								merged.push(link);
@@ -877,26 +864,34 @@ export default class EnhancedCanvas extends Plugin {
 
 			const updatePromises: Promise<void>[] = [];
 			const getFilePath = (path: string) => this.app.vault.getFileByPath(path);
-		
+
+			// Links the property currently holds per the metadata cache; lets
+			// removes/adds that would be no-ops skip processFrontMatter entirely.
+			const cachedLinks = frontmatterValueToArray(
+				this.app.metadataCache.getFileCache(fromFile)?.frontmatter?.[canvasName]
+			);
+
 			fromNodeLinks.forEach(filePath => {
 				if (!edgeToNodesFilePathSet.has(filePath)) {
 					if (filePath === e.canvas.view.file.path) return;
 					const targetFile = getFilePath(filePath);
 					if (!targetFile) return;
-		
+
 					const link = this.app.fileManager.generateMarkdownLink(targetFile, filePath).replace(/^!(\[\[.*\]\])$/, '$1');
+					if (!cachedLinks.includes(link)) return;
 					updatePromises.push(this.updateFrontmatter(fromFile, link, 'remove', canvasName));
 				}
 			});
-		
+
 			if (toNode?.filePath) {
 				if (fromNode.filePath !== toNode.filePath) {
 					const targetFile = getFilePath(toNode.filePath);
-					
+
 					if (targetFile) {
 						const link = this.app.fileManager.generateMarkdownLink(targetFile, toNode.filePath).replace(/^!(\[\[.*\]\])$/, '$1');
-						// 將此操作加入 Promise 佇列
-						updatePromises.push(this.updateFrontmatter(fromFile, link, 'add', canvasName));
+						if (!cachedLinks.includes(link)) {
+							updatePromises.push(this.updateFrontmatter(fromFile, link, 'add', canvasName));
+						}
 					}
 				}
 			}
@@ -904,9 +899,35 @@ export default class EnhancedCanvas extends Plugin {
 			await Promise.all(updatePromises);
 		};
 
-		const updateTargetNode = debounce((e: CanvasEdge) => {
-			void processNodeUpdate(e);
+		// Edges touched within the debounce window all get processed; repeated
+		// updates of the same edge collapse into one slot.
+		const pendingEdgeUpdates = new Set<CanvasEdge>();
+		const flushEdgeUpdates = debounce(() => {
+			const pending = Array.from(pendingEdgeUpdates);
+			pendingEdgeUpdates.clear();
+			for (const edge of pending) {
+				void processNodeUpdate(edge);
+			}
 		}, 500, true);
+
+		// edge.update() fires on every geometric change (node drag, pan, layout),
+		// but the frontmatter sync only depends on what the edge connects. Track
+		// each edge's endpoints and queue a sync only when they change. The first
+		// sighting is the baseline: new edges are already synced by the addEdge
+		// patch below.
+		const edgeConnectivity = new WeakMap<CanvasEdge, string>();
+		const updateTargetNode = (e: CanvasEdge) => {
+			const connectivity =
+				`${e.from?.node?.id ?? ''}:${e.from?.node?.filePath ?? ''}` +
+				`->${e.to?.node?.id ?? ''}:${e.to?.node?.filePath ?? ''}`;
+			const previous = edgeConnectivity.get(e);
+			if (previous === connectivity) return;
+			edgeConnectivity.set(e, connectivity);
+			if (previous === undefined) return;
+
+			pendingEdgeUpdates.add(e);
+			flushEdgeUpdates();
+		};
 
 		const updateTargetNodeImmediate = async (e: CanvasEdge) => {
 			await processNodeUpdate(e);

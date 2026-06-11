@@ -171,7 +171,8 @@ export class CanvasExploder {
 		const newEdgesData: CanvasEdgeData[] = [];
 
 		let createdCount = 0;
-		const originalData = canvas.getData().nodes.find((n: CanvasNodeData) => n.id === originalNode.id) ?? ({} as Partial<CanvasNodeData>);
+		const currentData = canvas.getData();
+		const originalData = currentData.nodes.find((n: CanvasNodeData) => n.id === originalNode.id) ?? ({} as Partial<CanvasNodeData>);
 
 		for (let i = 0; i < headings.length; i++) {
 			const heading = headings[i];
@@ -242,7 +243,6 @@ export class CanvasExploder {
 		}
 
 		if (createdCount > 0) {
-			const currentData = canvas.getData();
 			currentData.nodes = currentData.nodes.filter((n: CanvasNodeData) => n.id !== originalNode.id);
 			currentData.edges = currentData.edges.filter((e: CanvasEdgeData) =>
 				e.fromNode !== originalNode.id && e.toNode !== originalNode.id
@@ -290,7 +290,8 @@ export class CanvasExploder {
 		const width = Math.max(originalWidth, DEFAULT_WIDTH);
 		const minLevel = Math.min(...sections.map(s => s.level));
 
-		const originalData = canvas.getData().nodes.find((n: CanvasNodeData) => n.id === originalNodeId) ?? ({} as Partial<CanvasNodeData>);
+		const currentData = canvas.getData();
+		const originalData = currentData.nodes.find((n: CanvasNodeData) => n.id === originalNodeId) ?? ({} as Partial<CanvasNodeData>);
 
 		// --- 2. Build new nodes and edges data ---
 		let currentY = baseY;
@@ -370,8 +371,6 @@ export class CanvasExploder {
 		}
 
 		// --- 3. Apply all changes ---
-		const currentData = canvas.getData();
-		
 		// Remove original node from data
 		currentData.nodes = currentData.nodes.filter((n: CanvasNodeData) => n.id !== originalNodeId);
 
