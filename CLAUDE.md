@@ -39,7 +39,7 @@ When `settings.enableFrontmatter` is on, plugin writes:
 1. `canvas: [[<canvas-name>]]` on every referenced note.
 2. A property named after each canvas's basename, holding links to edge-connected nodes.
 
-Mutation functions early-return if disabled, and check the metadata cache first to skip `processFrontMatter` calls that would be no-ops — keep that pattern when adding writes. The auto-link edge patch only queues a sync when an edge's endpoints change (geometry-only `edge.update()` calls are ignored).
+Mutation functions early-return if disabled, and check the metadata cache first to skip `processFrontMatter` calls that would be no-ops — keep that pattern when adding writes. Property order matters: `canvas` must precede the per-canvas properties; every write path calls `ensureCanvasKeyOrder` inside its `processFrontMatter` callback to enforce this (writes race, so insertion order alone isn't enough). The auto-link edge patch only queues a sync when an edge's endpoints change (geometry-only `edge.update()` calls are ignored). All edge syncs — including `addEdge` — go through the debounced queue, never immediately: opening a canvas re-adds every edge, and a sync mid-import sees partial canvas data and strips valid links. The metadata cache only gates whether a sync runs at all; the actual add/remove decisions happen inside the `processFrontMatter` callback against the real frontmatter, because the cache lags right after a write.
 
 **Invariant: cleanup must run *before* flipping the setting off**, else `removeProperty` no-ops. Settings tab handler enforces this — preserve it.
 

@@ -56,6 +56,30 @@ function escapeRegExp(text: string): string {
 	return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * processFrontMatter serializes keys in object insertion order, so a per-canvas
+ * property created before the `canvas` property (e.g. by an edge sync racing the
+ * node-add sync) ends up above it in the YAML. Rebuilds the object so `canvas`
+ * sits just before the first per-canvas key, leaving other properties in place.
+ */
+function ensureCanvasKeyOrder(frontmatter: Record<string, unknown>, canvasKeys: Iterable<string>) {
+	const keys = Object.keys(frontmatter);
+	const canvasIndex = keys.indexOf('canvas');
+	if (canvasIndex === -1) return;
+
+	const targetKeys = new Set(canvasKeys);
+	targetKeys.delete('canvas');
+	const firstTargetIndex = keys.findIndex(key => targetKeys.has(key));
+	if (firstTargetIndex === -1 || canvasIndex < firstTargetIndex) return;
+
+	const values = { ...frontmatter };
+	const reordered = keys.filter(key => key !== 'canvas');
+	reordered.splice(reordered.indexOf(keys[firstTargetIndex]), 0, 'canvas');
+
+	for (const key of keys) delete frontmatter[key];
+	for (const key of reordered) frontmatter[key] = values[key];
+}
+
 export default class EnhancedCanvas extends Plugin {
 	public exploder: CanvasExploder;
 	public sendToCanvas: SendToCanvas;
@@ -197,6 +221,8 @@ export default class EnhancedCanvas extends Plugin {
 			if (!frontmatter[basename]) {
 				frontmatter[basename] = [];
 			}
+
+			ensureCanvasKeyOrder(frontmatter, [basename]);
 		});
 	}
 
@@ -368,9 +394,13 @@ export default class EnhancedCanvas extends Plugin {
 			const cached = this.app.metadataCache.getFileCache(file)?.frontmatter;
 			if (cached) {
 				const cachedCanvas = frontmatterValueToArray(cached.canvas);
+				const cachedKeys = Object.keys(cached);
+				const canvasKeyIndex = cachedKeys.indexOf('canvas');
 				const upToDate =
 					Array.from(desired.canvasLinks).every(link => cachedCanvas.includes(link)) &&
-					Array.from(desired.ensureKeys).every(key => !!cached[key]) &&
+					// The key must exist *and* sit below the `canvas` property in the YAML.
+					Array.from(desired.ensureKeys).every(key =>
+						!!cached[key] && canvasKeyIndex !== -1 && canvasKeyIndex < cachedKeys.indexOf(key)) &&
 					Array.from(desired.linksByKey.entries()).every(([key, links]) => {
 						const existing = frontmatterValueToArray(cached[key]);
 						return Array.from(links).every(link => existing.includes(link));
@@ -412,6 +442,8 @@ export default class EnhancedCanvas extends Plugin {
 						}
 						Reflect.set(frontmatter, key, merged.length === 1 && wasString ? merged[0] : merged);
 					}
+
+					ensureCanvasKeyOrder(frontmatter, desired.ensureKeys);
 				});
 			} catch (error) {
 				console.error("Enhanced Canvas: Failed to update properties for note", path, error);
@@ -455,7 +487,9 @@ export default class EnhancedCanvas extends Plugin {
             } else {
                 Reflect.deleteProperty(fm, propertyName);
             }
-        }); 
+
+            ensureCanvasKeyOrder(fm, [propertyName]);
+        });
     };
 
 	private ifActiveViewIsCanvas = (commandFn: (canvas: Canvas) => void) => (checking: boolean) => {
@@ -856,6 +890,8 @@ export default class EnhancedCanvas extends Plugin {
 	 */
 	registerCanvasAutoLink() {
 		const processNodeUpdate = async (e: CanvasEdge) => {
+			if (!this.settings.enableFrontmatter) return;
+
 			const fromNode = e?.from?.node;
 			const toNode = e?.to?.node;
 
@@ -865,7 +901,11 @@ export default class EnhancedCanvas extends Plugin {
 			const fromFile = this.app.vault.getFileByPath(fromNode.filePath);
 			if (!fromFile) return;
 
-			const canvasName = e.canvas.view.file.basename;
+			// The sync is debounced, so the canvas may have unloaded meanwhile.
+			const canvasFile = e.canvas?.view?.file;
+			if (!canvasFile) return;
+			const canvasName = canvasFile.basename;
+
 			const resolvedLinks = this.app.metadataCache.resolvedLinks[fromNode.filePath] || {};
 			const fromNodeLinks = Object.keys(resolvedLinks);
 
@@ -878,6 +918,11 @@ export default class EnhancedCanvas extends Plugin {
 				if (node.file === fromNode.filePath) sameFileNodeIds.add(node.id);
 			}
 
+			// Node gone from the canvas (closed or node deleted) — removeNodeUpdate
+			// owns that cleanup; reconciling against the now-empty data would
+			// wrongly strip every link.
+			if (!sameFileNodeIds.has(fromNode.id)) return;
+
 			const edgeToNodesFilePathSet = new Set<string>();
 			for (const edge of edges) {
 				if (!sameFileNodeIds.has(edge.fromNode)) continue;
@@ -885,45 +930,62 @@ export default class EnhancedCanvas extends Plugin {
 				if (targetNode?.type === 'file') edgeToNodesFilePathSet.add(targetNode.file);
 			}
 
-			const updatePromises: Promise<void>[] = [];
 			const getFilePath = (path: string) => this.app.vault.getFileByPath(path);
+			const toLink = (path: string, file: TFile) =>
+				this.app.fileManager.generateMarkdownLink(file, path).replace(/^!(\[\[.*\]\])$/, '$1');
 
-			// Links the property currently holds per the metadata cache; lets
-			// removes/adds that would be no-ops skip processFrontMatter entirely.
+			const linksToRemove: string[] = [];
+			fromNodeLinks.forEach(filePath => {
+				if (edgeToNodesFilePathSet.has(filePath)) return;
+				if (filePath === canvasFile.path) return;
+				const targetFile = getFilePath(filePath);
+				if (!targetFile) return;
+				linksToRemove.push(toLink(filePath, targetFile));
+			});
+
+			// Only add the link when the edge is still present in the canvas data —
+			// the debounced sync may run after the edge was already deleted again.
+			let linkToAdd: string | null = null;
+			if (toNode.filePath && fromNode.filePath !== toNode.filePath && edgeToNodesFilePathSet.has(toNode.filePath)) {
+				const targetFile = getFilePath(toNode.filePath);
+				if (targetFile) linkToAdd = toLink(toNode.filePath, targetFile);
+			}
+
+			// Early skip via the metadata cache so a clean canvas open issues no
+			// writes. The cache lags right after a write, so it only gates the
+			// call — the actual add/remove decisions are made against the real
+			// frontmatter inside processFrontMatter below.
 			const cachedLinks = frontmatterValueToArray(
 				this.app.metadataCache.getFileCache(fromFile)?.frontmatter?.[canvasName]
 			);
+			const cacheOutOfDate =
+				linksToRemove.some(link => cachedLinks.includes(link)) ||
+				(linkToAdd !== null && !cachedLinks.includes(linkToAdd));
+			if (!cacheOutOfDate) return;
 
-			fromNodeLinks.forEach(filePath => {
-				if (!edgeToNodesFilePathSet.has(filePath)) {
-					if (filePath === e.canvas.view.file.path) return;
-					const targetFile = getFilePath(filePath);
-					if (!targetFile) return;
+			await this.app.fileManager.processFrontMatter(fromFile, (fm) => {
+				const existingValue = Reflect.get(fm, canvasName);
+				const wasString = typeof existingValue === 'string' && existingValue.trim() !== '';
+				const removeSet = new Set(linksToRemove);
+				const next = frontmatterValueToArray(existingValue).filter(link => !removeSet.has(link));
+				if (linkToAdd && !next.includes(linkToAdd)) next.push(linkToAdd);
 
-					const link = this.app.fileManager.generateMarkdownLink(targetFile, filePath).replace(/^!(\[\[.*\]\])$/, '$1');
-					if (!cachedLinks.includes(link)) return;
-					updatePromises.push(this.updateFrontmatter(fromFile, link, 'remove', canvasName));
+				if (next.length > 0) {
+					Reflect.set(fm, canvasName, next.length === 1 && wasString ? next[0] : next);
+				} else {
+					Reflect.deleteProperty(fm, canvasName);
 				}
+
+				ensureCanvasKeyOrder(fm, [canvasName]);
 			});
-
-			if (toNode?.filePath) {
-				if (fromNode.filePath !== toNode.filePath) {
-					const targetFile = getFilePath(toNode.filePath);
-
-					if (targetFile) {
-						const link = this.app.fileManager.generateMarkdownLink(targetFile, toNode.filePath).replace(/^!(\[\[.*\]\])$/, '$1');
-						if (!cachedLinks.includes(link)) {
-							updatePromises.push(this.updateFrontmatter(fromFile, link, 'add', canvasName));
-						}
-					}
-				}
-			}
-
-			await Promise.all(updatePromises);
 		};
 
 		// Edges touched within the debounce window all get processed; repeated
-		// updates of the same edge collapse into one slot.
+		// updates of the same edge collapse into one slot. Opening a canvas
+		// re-adds every edge, so the addEdge patch queues here too: the flush
+		// then runs after the import finishes, against complete canvas data —
+		// an immediate sync would reconcile against partially imported edges
+		// and strip links that are still being loaded.
 		const pendingEdgeUpdates = new Set<CanvasEdge>();
 		const flushEdgeUpdates = debounce(() => {
 			const pending = Array.from(pendingEdgeUpdates);
@@ -950,10 +1012,6 @@ export default class EnhancedCanvas extends Plugin {
 
 			pendingEdgeUpdates.add(e);
 			flushEdgeUpdates();
-		};
-
-		const updateTargetNodeImmediate = async (e: CanvasEdge) => {
-			await processNodeUpdate(e);
 		};
 
 		/**
@@ -1090,7 +1148,8 @@ export default class EnhancedCanvas extends Plugin {
 					return function(this: Canvas, edge: CanvasEdge) {
 						const result = old.call(this, edge);
 						selfPatched(edge);
-						void updateTargetNodeImmediate(edge);
+						pendingEdgeUpdates.add(edge);
+						flushEdgeUpdates();
 						return result;
 					};
 				},
