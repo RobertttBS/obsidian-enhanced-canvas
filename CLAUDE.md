@@ -18,17 +18,9 @@ Features are `register*` methods called from `onload()` (see `main.ts:445-453`):
 
 ### Prototype patching (load-bearing)
 
-Uses `monkey-around`'s `around()`. Canvas internals are reverse-engineered in `Canvas.d.ts`. Patching needs a Canvas leaf, so every patcher uses:
+Uses `monkey-around`'s `around()`. Canvas internals are reverse-engineered in `Canvas.d.ts`. Patching needs a Canvas leaf, so every patcher goes through `EnhancedCanvas.registerLazyPatcher(patch)`: it retries `patch()` (which returns success) on `active-leaf-change`/`layout-change`/`onLayoutReady` and detaches the retry listeners after the first success.
 
-```ts
-const tryToPatch = () => { if (patch()) detachListeners(); };
-plugin.app.workspace.on('active-leaf-change', tryToPatch);
-plugin.app.workspace.on('layout-change', tryToPatch);
-plugin.app.workspace.onLayoutReady(tryToPatch);
-tryToPatch();
-```
-
-Touching this broke Windows pinned tabs before (commit `742eb70`). **Detach listeners after a successful patch** — leaving them attached re-patches and breaks things. Register every uninstaller with `this.register(...)`.
+Touching this broke Windows pinned tabs before (commit `742eb70`). **Don't hand-roll the retry pattern — use the helper**, which guarantees listeners detach after a successful patch (leaving them attached re-patches and breaks things). Register every uninstaller with `this.register(...)`.
 
 ### Two node concepts — don't mix
 

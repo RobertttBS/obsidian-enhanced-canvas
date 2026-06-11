@@ -1,5 +1,4 @@
 import {
-    EventRef,
     ItemView,
     Menu,
 } from "obsidian";
@@ -22,27 +21,13 @@ export class CanvasTagImport {
     private plugin: EnhancedCanvas;
     private patched = false;
     private menus = new WeakSet<Menu>();
-    private leafEvent: EventRef | null = null;
-    private layoutEvent: EventRef | null = null;
 
     constructor(plugin: EnhancedCanvas) {
         this.plugin = plugin;
     }
 
     register(): void {
-        const tryToPatch = () => {
-            if (this.patchCanvasCreationMenu()) {
-                this.detachPatchListeners();
-            }
-        };
-
-        this.leafEvent = this.plugin.app.workspace.on("active-leaf-change", tryToPatch);
-        this.layoutEvent = this.plugin.app.workspace.on("layout-change", tryToPatch);
-
-        this.plugin.registerEvent(this.leafEvent);
-        this.plugin.registerEvent(this.layoutEvent);
-        this.plugin.app.workspace.onLayoutReady(tryToPatch);
-        tryToPatch();
+        this.plugin.registerLazyPatcher(() => this.patchCanvasCreationMenu());
     }
 
     private patchCanvasCreationMenu(): boolean {
@@ -67,18 +52,6 @@ export class CanvasTagImport {
         plugin.register(uninstall);
         this.patched = true;
         return true;
-    }
-
-    private detachPatchListeners(): void {
-        if (this.leafEvent) {
-            this.plugin.app.workspace.offref(this.leafEvent);
-            this.leafEvent = null;
-        }
-
-        if (this.layoutEvent) {
-            this.plugin.app.workspace.offref(this.layoutEvent);
-            this.layoutEvent = null;
-        }
     }
 
     private getAnyCanvas(): Canvas | null {

@@ -63,9 +63,6 @@ export default class EnhancedCanvas extends Plugin {
 	private isMetadataClicked = false;
 	settings: EnhancedCanvasSettings;
 
-	private autoHeightCheckReference: (() => void) | null = null;
-	private autoLinkCheckReference: (() => void) | null = null;
-	private dragTempNodeCheckReference: (() => void) | null = null;
 	public canvasStackInterval: number | null = null;
 	public autoHeightUninstaller: (() => void) | null = null;
 	public dragTempNodeUninstaller: (() => void) | null = null;
@@ -481,6 +478,31 @@ export default class EnhancedCanvas extends Plugin {
 		} else {
 			activeDocument.body.classList.remove('enhanced-canvas-enabled');
 		}
+	}
+
+	/**
+	 * Patching Canvas internals needs a live Canvas leaf, which may not exist
+	 * at load time. Runs `patch` now and again on every workspace change that
+	 * could introduce one, until it reports success — then detaches the retry
+	 * listeners so the patch can't run twice (see CLAUDE.md). The listeners
+	 * are also registered for unload cleanup, so a patch that never succeeds
+	 * leaks nothing.
+	 */
+	registerLazyPatcher(patch: () => boolean) {
+		let patched = false;
+		const tryToPatch = () => {
+			if (patched || !patch()) return;
+			patched = true;
+			this.app.workspace.offref(leafEvent);
+			this.app.workspace.offref(layoutEvent);
+		};
+
+		const leafEvent = this.app.workspace.on('active-leaf-change', tryToPatch);
+		const layoutEvent = this.app.workspace.on('layout-change', tryToPatch);
+		this.registerEvent(leafEvent);
+		this.registerEvent(layoutEvent);
+		this.app.workspace.onLayoutReady(tryToPatch);
+		tryToPatch();
 	}
 
 	/**
@@ -1088,19 +1110,8 @@ export default class EnhancedCanvas extends Plugin {
 			canvasPatched = true;
 			return true;
 		};
-		
-		const tryToPatch = () => {
-			if (patchCanvas()) {
-				this.detachAutoLinkListeners();
-			}
-		};
-		this.autoLinkCheckReference = tryToPatch;
 
-		this.app.workspace.on('active-leaf-change', tryToPatch);
-		this.app.workspace.on('layout-change', tryToPatch);
-		this.app.workspace.onLayoutReady(tryToPatch);
-
-		tryToPatch();
+		this.registerLazyPatcher(patchCanvas);
 	}
 
 	registerCanvasExploder() {
@@ -1131,17 +1142,14 @@ export default class EnhancedCanvas extends Plugin {
     patchCanvasNodeMenu() {
         // eslint-disable-next-line @typescript-eslint/no-this-alias -- alias needed: `this` inside the around() patch rebinds to the Canvas node, so the plugin reference must be captured in an outer variable
         const plugin = this;
-        let patched = false;
-        
-        const tryPatch = () => {
-            if (patched) return;
-            
+
+        this.registerLazyPatcher(() => {
             const canvasView = this.app.workspace.getLeavesOfType("canvas")?.[0]?.view as CanvasView | undefined;
             const anyNode = canvasView?.canvas?.nodes?.values()?.next()?.value;
-            if (!anyNode) return;
+            if (!anyNode) return false;
 
             const basePrototype = Object.getPrototypeOf(Object.getPrototypeOf(anyNode));
-            if (!basePrototype?.showMenu) return;
+            if (!basePrototype?.showMenu) return false;
 
             const uninstall = around(basePrototype, {
                 showMenu: (next: (menu: Menu, ...args: unknown[]) => unknown) => {
@@ -1159,13 +1167,8 @@ export default class EnhancedCanvas extends Plugin {
             });
 
             this.register(uninstall);
-            patched = true;
-            plugin.app.workspace.offref(leafEvent);
-        };
-
-        const leafEvent = this.app.workspace.on('active-leaf-change', tryPatch);
-        this.app.workspace.onLayoutReady(tryPatch);
-        this.registerEvent(leafEvent);
+            return true;
+        });
     }
 	
 	/**
@@ -1280,36 +1283,7 @@ export default class EnhancedCanvas extends Plugin {
     }
 
 	registerCanvasNodeAutoHeightPatcher() {
-		const tryToPatch = () => {
-			const success = this.patchCanvasNodeAutoHeight();
-
-			if (success) {
-				this.detachAutoHeightPatcherListeners();
-			}
-		};
-		this.autoHeightCheckReference = tryToPatch;
-
-		this.app.workspace.on('active-leaf-change', tryToPatch);
-		this.app.workspace.on('layout-change', tryToPatch);
-		this.app.workspace.onLayoutReady(tryToPatch);
-
-		tryToPatch();
-	}
-
-	private detachAutoHeightPatcherListeners() {
-		if (this.autoHeightCheckReference) {
-			this.app.workspace.off('active-leaf-change', this.autoHeightCheckReference);
-			this.app.workspace.off('layout-change', this.autoHeightCheckReference);
-			this.autoHeightCheckReference = null;
-		}
-	}
-
-	private detachAutoLinkListeners() {
-		if (this.autoLinkCheckReference) {
-			this.app.workspace.off('active-leaf-change', this.autoLinkCheckReference);
-			this.app.workspace.off('layout-change', this.autoLinkCheckReference);
-			this.autoLinkCheckReference = null;
-		}
+		this.registerLazyPatcher(() => this.patchCanvasNodeAutoHeight());
 	}
 
 	/**
@@ -1377,25 +1351,7 @@ export default class EnhancedCanvas extends Plugin {
 	}
 
 	registerCanvasDragTempNodePatcher() {
-		const tryToPatch = () => {
-			if (this.patchCanvasDragTempNode()) {
-				this.detachDragTempNodeListeners();
-			}
-		};
-		this.dragTempNodeCheckReference = tryToPatch;
-
-		this.app.workspace.on('active-leaf-change', tryToPatch);
-		this.app.workspace.on('layout-change',     tryToPatch);
-		this.app.workspace.onLayoutReady(tryToPatch);
-		tryToPatch();
-	}
-
-	private detachDragTempNodeListeners() {
-		if (this.dragTempNodeCheckReference) {
-			this.app.workspace.off('active-leaf-change', this.dragTempNodeCheckReference);
-			this.app.workspace.off('layout-change', this.dragTempNodeCheckReference);
-			this.dragTempNodeCheckReference = null;
-		}
+		this.registerLazyPatcher(() => this.patchCanvasDragTempNode());
 	}
 
 	createEdge(
@@ -1450,9 +1406,6 @@ export default class EnhancedCanvas extends Plugin {
 		}
 
 		activeDocument.body.classList.remove('enhanced-canvas-enabled');
-		this.detachAutoHeightPatcherListeners();
-		this.detachAutoLinkListeners();
-		this.detachDragTempNodeListeners();
 
 		this.sendToCanvas.clearSelectedCanvas(false);
 		void this.cleanupCanvasProperties();
