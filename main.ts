@@ -23,7 +23,6 @@ import { ReleaseNotesModal } from "./src/ReleaseNotesModal";
 
 interface CanvasNodeWithFlag extends CanvasNode {
     _autoHeightTimer?: number | null;
-    _delayedResizeTimer?: number | null;
     autoHeightEnabled?: boolean;
     onResizeDblclick(event: unknown, direction: string): void;
 }
@@ -52,11 +51,15 @@ function frontmatterValueToArray(value: unknown): string[] {
 	return [];
 }
 
+/** Escapes regex metacharacters so file names can be embedded in a RegExp. */
+function escapeRegExp(text: string): string {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export default class EnhancedCanvas extends Plugin {
 	public exploder: CanvasExploder;
 	public sendToCanvas: SendToCanvas;
 	public canvasTagImport: CanvasTagImport;
-	public patchedEdge: boolean;
 	private isMetadataClicked = false;
 	settings: EnhancedCanvasSettings;
 
@@ -458,7 +461,7 @@ export default class EnhancedCanvas extends Plugin {
         }); 
     };
 
-	private ifActiveViewIsCanvas = (commandFn: (canvas: Canvas, canvasData: CanvasData) => void) => (checking: boolean) => {
+	private ifActiveViewIsCanvas = (commandFn: (canvas: Canvas) => void) => (checking: boolean) => {
 		const activeView = this.app.workspace.getActiveViewOfType(ItemView);
 		if (activeView?.getViewType() !== 'canvas') {
 			return checking ? false : undefined;
@@ -467,10 +470,8 @@ export default class EnhancedCanvas extends Plugin {
 		if (checking) return true;
 
 		const canvas = (activeView as CanvasView).canvas;
-		const canvasData = canvas?.getData();
-
-		if (!canvas || !canvasData) return;
-		return commandFn(canvas, canvasData);
+		if (!canvas) return;
+		return commandFn(canvas);
 	}
 
 	/** Applies or removes the body CSS class that gates the optional visual styles. */
@@ -613,8 +614,8 @@ export default class EnhancedCanvas extends Plugin {
 			const backLinks = this.app.metadataCache.getBacklinksForFile(file);
 			if (!backLinks || !backLinks.data) return;
 
-			const linkRegexBasename = new RegExp(`\\[\\[${file.basename}(\\|.*)?\\]\\]`);
-			const linkRegexFullName = new RegExp(`\\[\\[${file.name}(\\|.*)?\\]\\]`);
+			const linkRegexBasename = new RegExp(`\\[\\[${escapeRegExp(file.basename)}(\\|.*)?\\]\\]`);
+			const linkRegexFullName = new RegExp(`\\[\\[${escapeRegExp(file.name)}(\\|.*)?\\]\\]`);
 
 			for (const [sourcePath] of backLinks.data.entries()) {
 				const sourceFile = this.app.vault.getFileByPath(sourcePath);
@@ -696,7 +697,7 @@ export default class EnhancedCanvas extends Plugin {
 		this.addCommand({
 			id: 'optimize-edges',
 			name: 'Adjust edges with shortest path',
-			checkCallback: this.ifActiveViewIsCanvas((canvas, canvasData) => {
+			checkCallback: this.ifActiveViewIsCanvas((canvas) => {
 				this.optimizeEdgesBetweenSelectedNodes(canvas);
 			})
 		});
@@ -704,7 +705,7 @@ export default class EnhancedCanvas extends Plugin {
 		this.addCommand({
 			id: 'delete-edges',
 			name: 'Delete edges between selected nodes',
-			checkCallback: this.ifActiveViewIsCanvas((canvas, canvasData) => {
+			checkCallback: this.ifActiveViewIsCanvas((canvas) => {
 				this.deleteEdges(canvas);
 			})
 		});
@@ -712,7 +713,7 @@ export default class EnhancedCanvas extends Plugin {
 		this.addCommand({
 			id: 'add-link-and-optimize-edge',
 			name: 'Add edges according the links in notes',
-			checkCallback: this.ifActiveViewIsCanvas((canvas, canvasData) => {
+			checkCallback: this.ifActiveViewIsCanvas((canvas) => {
 				this.createMissingEdgesFromLinks(canvas);
 				this.optimizeEdgesBetweenSelectedNodes(canvas);
 			})
@@ -721,8 +722,8 @@ export default class EnhancedCanvas extends Plugin {
 		this.addCommand({
 			id: 'remove-canvas-property',
 			name: 'Remove the property of all nodes in current Canvas',
-			checkCallback: this.ifActiveViewIsCanvas((canvas, canvasData) => {
-				void this.removeAllProperty(canvas, canvasData);
+			checkCallback: this.ifActiveViewIsCanvas((canvas) => {
+				void this.removeAllProperty(canvas, canvas.getData());
 			})
 		});
 
