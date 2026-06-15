@@ -1115,7 +1115,8 @@ export default class EnhancedCanvas extends Plugin {
 		const patchCanvas = () => {
 			if (canvasPatched) return false;
 
-			const canvasView = this.app.workspace.getLeavesOfType('canvas')[0]?.view as CanvasView | undefined;
+			const canvasView = this.app.workspace.getLeavesOfType('canvas')
+				.find(l => (l.view as CanvasView)?.canvas != null)?.view as CanvasView | undefined;
 			if (!canvasView?.canvas) return false;
 
 			const uninstaller = around(canvasView.canvas.constructor.prototype, {
@@ -1203,7 +1204,8 @@ export default class EnhancedCanvas extends Plugin {
         const plugin = this;
 
         this.registerLazyPatcher(() => {
-            const canvasView = this.app.workspace.getLeavesOfType("canvas")?.[0]?.view as CanvasView | undefined;
+            const canvasView = this.app.workspace.getLeavesOfType("canvas")
+                .find(l => (l.view as CanvasView)?.canvas?.nodes?.size)?.view as CanvasView | undefined;
             const anyNode = canvasView?.canvas?.nodes?.values()?.next()?.value;
             if (!anyNode) return false;
 
