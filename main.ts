@@ -535,7 +535,16 @@ export default class EnhancedCanvas extends Plugin {
 		const layoutEvent = this.app.workspace.on('layout-change', tryToPatch);
 		this.registerEvent(leafEvent);
 		this.registerEvent(layoutEvent);
-		this.app.workspace.onLayoutReady(tryToPatch);
+		this.app.workspace.onLayoutReady(() => {
+			tryToPatch();
+			// A pinned canvas tab on Windows may not have .canvas initialised when
+			// onLayoutReady fires (the Canvas plugin finishes async after layout).
+			// Retry with backoff so we catch it without relying on a tab-switch.
+			for (const delay of [500, 1500, 4000]) {
+				const t = window.setTimeout(tryToPatch, delay);
+				this.register(() => window.clearTimeout(t));
+			}
+		});
 		tryToPatch();
 	}
 
