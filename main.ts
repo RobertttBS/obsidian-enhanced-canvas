@@ -1240,7 +1240,8 @@ export default class EnhancedCanvas extends Plugin {
 	patchCanvasNodeAutoHeight(): boolean {
         if (this.autoHeightUninstaller) return false;
 
-        const canvasView = this.app.workspace.getLeavesOfType("canvas")?.first()?.view;
+        const canvasView = this.app.workspace.getLeavesOfType("canvas")
+            .find(l => (l.view as CanvasView)?.canvas?.nodes?.size)?.view;
         if (!canvasView) return false;
 
         const canvas = (canvasView as CanvasView).canvas;
@@ -1388,7 +1389,8 @@ export default class EnhancedCanvas extends Plugin {
 	patchCanvasDragTempNode(): boolean {
 		if (this.dragTempNodeUninstaller) return false;
 
-		const canvasView = this.app.workspace.getLeavesOfType('canvas')?.first()?.view as CanvasView | undefined;
+		const canvasView = this.app.workspace.getLeavesOfType('canvas')
+			.find(l => (l.view as CanvasView)?.canvas != null)?.view as CanvasView | undefined;
 		const canvas = canvasView?.canvas;
 		if (!canvas?.constructor?.prototype?.dragTempNode) return false;
 
