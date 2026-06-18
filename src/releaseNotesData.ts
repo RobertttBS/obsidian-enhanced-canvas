@@ -21,6 +21,9 @@ With this update, double-clicking the bottom edge activates "Auto-Resize." Now, 
 `;
 
 export const fixCursorShiftIssueInStackTabsCanvas = `
+> [!bug] Fixed in 1.0.29
+> Auto-resize and drag-to-create nodes now patch correctly even when a pinned Canvas tab is left uninitialised (Windows).
+
 > [!success] Refactor in 1.0.28
 > Performance optimizations: faster startup sync and fewer redundant frontmatter writes.
 
@@ -57,6 +60,7 @@ export const fixCursorShiftIssueInStackTabsCanvas = `
 `;
 
 export const releaseNotesContent: Record<string, string> = {
+    "1.0.29": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.28": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.27": fixCursorShiftIssueInStackTabsCanvas,
     "1.0.26": fixCursorShiftIssueInStackTabsCanvas,
