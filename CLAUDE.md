@@ -56,6 +56,17 @@ Mutation functions early-return if disabled, and check the metadata cache first 
 
 `styles.css` ships with the plugin. Rules live behind body class `enhanced-canvas-enabled`, toggled by `toggleCSSClass` based on `settings.enableCustomCSS`. Hides metadata container in markdown embeds inside Canvas nodes.
 
+## Release process
+
+1. Bump `version` in `manifest.json`.
+2. In `src/releaseNotesData.ts`: prepend a callout entry to the current notes string, and map the new version to that string in `releaseNotesContent`.
+3. Commit as `update manifest.json to <version>`.
+
+Release-note callouts — keep each entry to one or two short lines:
+- Refactor: `> [!success] Refactor in <version>`
+- New feature: `> [!note]` or `> [!tip]` — `Feature in <version>`
+- Bug fix: `> [!bug] Fixed in <version>`
+
 ## Conventions
 
 `any` and `@ts-ignore` are used heavily against Canvas internals; ESLint allows it. When typing new code, prefer extending `Canvas.d.ts` over `any`.

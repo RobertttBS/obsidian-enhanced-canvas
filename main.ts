@@ -27,13 +27,6 @@ interface CanvasNodeWithFlag extends CanvasNode {
     onResizeDblclick(event: unknown, direction: string): void;
 }
 
-/** Subset of Canvas used by removeAllProperty. */
-interface CanvasLike {
-    view: { file: TFile };
-    setData(data: CanvasData): void;
-    requestSave(save?: boolean): void;
-}
-
 /** A JSON canvas node, narrowed to just the file reference used by the
  * property-mutating methods. Accepts both AllCanvasNodeData (via its
  * `[key: string]: any` index signature) and ad-hoc `{ file: '…' }` stubs. */
@@ -49,6 +42,21 @@ function frontmatterValueToArray(value: unknown): string[] {
 	}
 	if (typeof value === 'string' && value.trim() !== '') return [value];
 	return [];
+}
+
+/**
+ * Reads a frontmatter link property as an array, applies `mutate`, and writes the
+ * result back — preserving scalar-vs-list shape and deleting the key when empty.
+ */
+function writeLinkSet(fm: Record<string, unknown>, key: string, mutate: (links: string[]) => string[]) {
+	const existingValue = Reflect.get(fm, key);
+	const wasString = typeof existingValue === 'string' && existingValue.trim() !== '';
+	const next = mutate(frontmatterValueToArray(existingValue));
+	if (next.length > 0) {
+		Reflect.set(fm, key, next.length === 1 && wasString ? next[0] : next);
+	} else {
+		Reflect.deleteProperty(fm, key);
+	}
 }
 
 /** Escapes regex metacharacters so file names can be embedded in a RegExp. */
@@ -293,15 +301,13 @@ export default class EnhancedCanvas extends Plugin {
 		});
 	}
 
-	async removeAllProperty(canvas: CanvasLike, canvasData: CanvasData) {
+	async removeAllProperty(canvas: Canvas, canvasData: CanvasData) {
 		if (!this.settings.enableFrontmatter) return;
 		const nodes = canvasData.nodes;
 		await Promise.all(nodes.map(node => {
 			if (!node?.file) return;
 			return this.removeProperty(node, canvas.view.file.name, canvas.view.file.basename);
 		}));
-		canvas.setData(canvasData);
-		canvas.requestSave(false);
 	}
 
 	/**
@@ -432,15 +438,14 @@ export default class EnhancedCanvas extends Plugin {
 					}
 
 					for (const [key, links] of desired.linksByKey) {
-						const existingValue = Reflect.get(frontmatter, key);
-						const wasString = typeof existingValue === 'string' && existingValue.trim() !== '';
-						const merged = frontmatterValueToArray(existingValue);
-						for (const link of links) {
-							if (!merged.includes(link)) {
-								merged.push(link);
+						writeLinkSet(frontmatter, key, (merged) => {
+							for (const link of links) {
+								if (!merged.includes(link)) {
+									merged.push(link);
+								}
 							}
-						}
-						Reflect.set(frontmatter, key, merged.length === 1 && wasString ? merged[0] : merged);
+							return merged;
+						});
 					}
 
 					ensureCanvasKeyOrder(frontmatter, desired.ensureKeys);
@@ -458,35 +463,12 @@ export default class EnhancedCanvas extends Plugin {
     updateFrontmatter = async (file: TFile, link: string, action: 'add' | 'remove', propertyName: string) => {
 		if (!this.settings.enableFrontmatter) return;
         await this.app.fileManager.processFrontMatter(file, (fm) => {
-            const existingValue = Reflect.get(fm, propertyName);
-            const currentSet = new Set<string>();
-            let wasString = false;
-
-            if (Array.isArray(existingValue)) {
-                existingValue.filter((item): item is string => typeof item === 'string' && item.trim() !== '')
-                             .forEach(item => currentSet.add(item));
-            } else if (typeof existingValue === 'string' && existingValue.trim() !== '') {
-                currentSet.add(existingValue);
-                wasString = true;
-            }
-            
-            if (action === 'add') {
-                currentSet.add(link);
-            } else if (action === 'remove') {
-                currentSet.delete(link);
-            }
-
-            const finalArray = Array.from(currentSet);
-
-            if (finalArray.length > 0) {
-                if (finalArray.length === 1 && wasString) {
-                    Reflect.set(fm, propertyName, finalArray[0]);
-                } else {
-                    Reflect.set(fm, propertyName, finalArray);
-                }
-            } else {
-                Reflect.deleteProperty(fm, propertyName);
-            }
+            writeLinkSet(fm, propertyName, (links) => {
+                const set = new Set(links);
+                if (action === 'add') set.add(link);
+                else set.delete(link);
+                return Array.from(set);
+            });
 
             ensureCanvasKeyOrder(fm, [propertyName]);
         });
@@ -964,17 +946,12 @@ export default class EnhancedCanvas extends Plugin {
 			if (!cacheOutOfDate) return;
 
 			await this.app.fileManager.processFrontMatter(fromFile, (fm) => {
-				const existingValue = Reflect.get(fm, canvasName);
-				const wasString = typeof existingValue === 'string' && existingValue.trim() !== '';
-				const removeSet = new Set(linksToRemove);
-				const next = frontmatterValueToArray(existingValue).filter(link => !removeSet.has(link));
-				if (linkToAdd && !next.includes(linkToAdd)) next.push(linkToAdd);
-
-				if (next.length > 0) {
-					Reflect.set(fm, canvasName, next.length === 1 && wasString ? next[0] : next);
-				} else {
-					Reflect.deleteProperty(fm, canvasName);
-				}
+				writeLinkSet(fm, canvasName, (links) => {
+					const removeSet = new Set(linksToRemove);
+					const next = links.filter(link => !removeSet.has(link));
+					if (linkToAdd && !next.includes(linkToAdd)) next.push(linkToAdd);
+					return next;
+				});
 
 				ensureCanvasKeyOrder(fm, [canvasName]);
 			});
