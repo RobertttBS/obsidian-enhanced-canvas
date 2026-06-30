@@ -1,6 +1,6 @@
 import { App, Modal, TextComponent, ButtonComponent, TFile, Notice } from "obsidian";
 import EnhancedCanvas from "../main";
-import { TagQueryParser, TagLogicResolver } from "./utils";
+import { parseTagQuery, matchesTagQuery } from "./utils";
 import { Canvas, CanvasNode } from "../Canvas";
 
 const NODE_GAP = 20;
@@ -237,7 +237,7 @@ export class AdvancedTagSuggestModal extends Modal {
         const queryStr = this.inputComponent.getValue();
         if (!queryStr.trim()) return;
 
-        const query = TagQueryParser.parse(queryStr);
+        const query = parseTagQuery(queryStr);
         
         // Provide feedback if the query resulted in no valid groups (e.g., only exclude tags or nonsense tags)
         if (query.length === 0) {
@@ -246,7 +246,7 @@ export class AdvancedTagSuggestModal extends Modal {
         }
 
         const matchingFiles = this.app.vault.getMarkdownFiles()
-            .filter(file => TagLogicResolver.matchesQuery(file, query, this.app.metadataCache))
+            .filter(file => matchesTagQuery(file, query, this.app.metadataCache))
             .sort((a, b) => a.path.localeCompare(b.path));
 
         if (matchingFiles.length === 0) {

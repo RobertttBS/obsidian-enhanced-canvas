@@ -6,22 +6,11 @@ import {
     FuzzySuggestModal,
     MarkdownView,
     Notice,
-    MetadataCache,
-    FileManager,
-    Vault,
-    Workspace,
 } from "obsidian";
 
 import EnhancedCanvas from '../main';
 import { AllCanvasNodeData, CanvasData, CanvasView } from '../Canvas';
 import { randomId } from './utils';
-
-type ObsidianApp = App & {
-    metadataCache: MetadataCache;
-    fileManager: FileManager;
-    vault: Vault;
-    workspace: Workspace;
-};
 
 /**
  * Orchestrates the workflow for pushing active markdown context into Canvas workspaces, 
@@ -81,7 +70,7 @@ export class SendToCanvas {
         }
 
         const modal = new CanvasFileSuggestModal(
-            this.plugin.app as ObsidianApp,
+            this.plugin.app,
             canvasFiles,
             (canvasFile: TFile) => {    
                 this.selectedCanvas = canvasFile;
@@ -246,7 +235,7 @@ class CanvasFileSuggestModal extends FuzzySuggestModal<TFile> {
     files: TFile[];
     onSelect: (file: TFile) => void;
 
-    constructor(app: ObsidianApp, files: TFile[], onSelect: (file: TFile) => void) {
+    constructor(app: App, files: TFile[], onSelect: (file: TFile) => void) {
         super(app);
         this.files = files;
         this.onSelect = onSelect;

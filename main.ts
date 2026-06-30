@@ -1447,7 +1447,7 @@ export default class EnhancedCanvas extends Plugin {
 		}
 	
 		const edgeData: CanvasEdgeData = {
-			id: randomId(16),
+			id: randomId(),
 			fromSide: fromSide,
 			fromNode: node1.id,
 			toSide: toSide,
