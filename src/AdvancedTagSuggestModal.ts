@@ -1,26 +1,67 @@
-import { App, Modal, TextComponent, ButtonComponent, TFile, Notice } from "obsidian";
+import { App, Modal, TextComponent, ButtonComponent, TFile, Notice, AbstractInputSuggest } from "obsidian";
 import EnhancedCanvas from "../main";
 import { parseTagQuery, matchesTagQuery } from "./utils";
 import { Canvas, CanvasNode } from "../Canvas";
 
 const NODE_GAP = 20;
 
+// Matches the (optionally -/# prefixed) word ending at the cursor, supporting
+// non-ASCII characters.
+const WORD_AT_CURSOR = /([-#]?)([^\s#|]*)$/;
+
+/**
+ * Completes the tag under the cursor (not the whole input), so multi-term
+ * queries like "#a -#b" get suggestions for each term.
+ */
+class TagSuggest extends AbstractInputSuggest<string> {
+    isOpen = false;
+
+    constructor(app: App, private inputEl: HTMLInputElement, private allTags: string[]) {
+        super(app, inputEl);
+        this.limit = 10;
+    }
+
+    open() { super.open(); this.isOpen = true; }
+    close() { super.close(); this.isOpen = false; }
+
+    protected getSuggestions(value: string): string[] {
+        const cursor = this.inputEl.selectionStart ?? value.length;
+        const query = (value.substring(0, cursor).match(WORD_AT_CURSOR)?.[2] ?? "").toLowerCase();
+        if (!query) return [];
+        return this.allTags.filter(tag => tag.toLowerCase().includes(query));
+    }
+
+    renderSuggestion(tag: string, el: HTMLElement): void {
+        el.setText(tag);
+    }
+
+    selectSuggestion(tag: string): void {
+        const value = this.inputEl.value;
+        const cursor = this.inputEl.selectionStart ?? value.length;
+        const match = value.substring(0, cursor).match(WORD_AT_CURSOR);
+        if (match) {
+            const start = cursor - match[0].length;
+            const inserted = (match[1] === "-" ? "-#" : "#") + tag.replace(/^#/, "");
+            this.setValue(value.substring(0, start) + inserted + value.substring(cursor));
+            const pos = start + inserted.length;
+            this.inputEl.setSelectionRange(pos, pos);
+        }
+        this.close();
+    }
+}
+
 export class AdvancedTagSuggestModal extends Modal {
     private plugin: EnhancedCanvas;
     private canvas: Canvas;
     private position: { x: number, y: number };
     private inputComponent: TextComponent;
-    private suggestionContainer: HTMLDivElement;
-    private suggestions: string[] = [];
-    private selectedIndex = -1;
-    private allTags: string[] = [];
+    private tagSuggest: TagSuggest;
 
     constructor(app: App, plugin: EnhancedCanvas, canvas: Canvas, position: { x: number, y: number }) {
         super(app);
         this.plugin = plugin;
         this.canvas = canvas;
         this.position = position;
-        this.allTags = this.getTags();
     }
 
     onOpen() {
@@ -36,45 +77,23 @@ export class AdvancedTagSuggestModal extends Modal {
 
         this.inputComponent = new TextComponent(inputContainer);
         this.inputComponent.setPlaceholder("Enter tag query...");
-        
-        this.inputComponent.onChange(() => {
-            this.updateSuggestions();
-        });
+        this.tagSuggest = new TagSuggest(this.app, this.inputComponent.inputEl, this.getTags());
 
+        // Enter imports — unless the suggestion popover is open, in which case
+        // AbstractInputSuggest's own scope handles it (completes the tag).
+        // Both guards are needed because the popover's key handler and this
+        // listener can fire in either order.
         this.inputComponent.inputEl.addEventListener("keydown", (e: KeyboardEvent) => {
-            if (e.key === "ArrowDown") {
-                e.preventDefault();
-                this.navigateSuggestions(1);
-            } else if (e.key === "ArrowUp") {
-                e.preventDefault();
-                this.navigateSuggestions(-1);
-            } else if (e.key === "Enter") {
-                if (this.selectedIndex !== -1 && this.suggestions.length > 0) {
-                    e.preventDefault();
-                    this.selectSuggestion(this.suggestions[this.selectedIndex]);
-                } else {
-                    this.executeImport();
-                }
-            } else if (e.key === "Escape") {
-                // Two-tier Escape behavior:
-                // 1. First Escape clears suggestions if they are visible.
-                // 2. Second Escape (or Escape when no suggestions) closes the modal (handled by Obsidian).
-                if (this.suggestions.length > 0) {
-                    e.preventDefault();
-                    this.clearSuggestions();
-                }
+            if (e.key === "Enter" && !e.isComposing && !e.defaultPrevented && !this.tagSuggest.isOpen) {
+                this.executeImport();
             }
         });
 
         new ButtonComponent(inputContainer)
             .setButtonText("Import")
             .setCta()
-            .onClick(() => {
-                this.executeImport();
-            });
+            .onClick(() => this.executeImport());
 
-        this.suggestionContainer = contentEl.createDiv({ cls: "advanced-tag-suggestions" });
-        
         this.inputComponent.inputEl.focus();
     }
 
@@ -104,141 +123,12 @@ export class AdvancedTagSuggestModal extends Modal {
         }
     }
 
-    private updateSuggestions() {
-        const value = this.inputComponent.getValue();
-        const cursorPosition = this.inputComponent.inputEl.selectionStart || 0;
-        
-        // Find the word under the cursor, supporting non-ASCII characters.
-        // Matches an optional leading - or # followed by non-whitespace/separator characters.
-        const beforeCursor = value.substring(0, cursorPosition);
-        const lastWordMatch = beforeCursor.match(/([-#]?)[^\s#|]*$/);
-        
-        if (!lastWordMatch || lastWordMatch[0].length === 0) {
-            this.clearSuggestions();
-            return;
-        }
-
-        const lastWord = lastWordMatch[0];
-        let query = lastWord;
-        if (query.startsWith("-")) query = query.substring(1);
-        if (query.startsWith("#")) query = query.substring(1);
-
-        if (query.length === 0) {
-            this.clearSuggestions();
-            return;
-        }
-
-        this.suggestions = this.allTags
-            .filter(tag => tag.toLowerCase().includes(query.toLowerCase()))
-            .slice(0, 10);
-
-        this.renderSuggestions();
-    }
-
-    private renderSuggestions() {
-        this.suggestionContainer.empty();
-        this.selectedIndex = -1;
-
-        if (this.suggestions.length === 0) {
-            this.suggestionContainer.removeClass("is-visible");
-            return;
-        }
-
-        this.suggestionContainer.addClass("is-visible");
-        this.suggestions.forEach((suggestion, index) => {
-            const div = this.suggestionContainer.createDiv({
-                text: suggestion,
-                cls: "suggestion-item"
-            });
-
-            div.addEventListener("click", () => {
-                this.selectSuggestion(suggestion);
-            });
-
-            div.addEventListener("mouseenter", () => {
-                this.setHighlight(index);
-            });
-        });
-
-        // Automatically highlight the first suggestion
-        this.setHighlight(0);
-    }
-
-    private setHighlight(index: number) {
-        const items = this.suggestionContainer.querySelectorAll(".suggestion-item");
-        items.forEach((item, i) => {
-            if (i === index) {
-                item.addClass("is-selected");
-            } else {
-                item.removeClass("is-selected");
-            }
-        });
-        this.selectedIndex = index;
-    }
-
-    private navigateSuggestions(direction: number) {
-        if (this.suggestions.length === 0) return;
-
-        let newIndex = this.selectedIndex + direction;
-        if (newIndex < 0) newIndex = this.suggestions.length - 1;
-        if (newIndex >= this.suggestions.length) newIndex = 0;
-
-        this.setHighlight(newIndex);
-        
-        const highlightedItem = this.suggestionContainer.querySelectorAll(".suggestion-item")[newIndex] as HTMLElement;
-        if (highlightedItem) {
-            highlightedItem.scrollIntoView({ block: "nearest" });
-        }
-    }
-
-    private selectSuggestion(suggestion: string) {
-        const value = this.inputComponent.getValue();
-        const cursorPosition = this.inputComponent.inputEl.selectionStart || 0;
-        
-        const beforeCursor = value.substring(0, cursorPosition);
-        const afterCursor = value.substring(cursorPosition);
-        
-        const lastWordMatch = beforeCursor.match(/([-#]?)[^\s#|]*$/);
-        if (lastWordMatch) {
-            const prefix = lastWordMatch[1]; 
-            const startOfWord = cursorPosition - lastWordMatch[0].length;
-            
-            let newPrefix = prefix;
-            if (!newPrefix) {
-                newPrefix = "#";
-            } else if (newPrefix === "-") {
-                newPrefix = "-#";
-            }
-
-            let cleanSuggestion = suggestion;
-            if (cleanSuggestion.startsWith("#")) {
-                cleanSuggestion = cleanSuggestion.substring(1);
-            }
-
-            const newValue = value.substring(0, startOfWord) + newPrefix + cleanSuggestion + afterCursor;
-            
-            this.inputComponent.setValue(newValue);
-            this.inputComponent.inputEl.focus();
-            const newCursorPos = startOfWord + newPrefix.length + cleanSuggestion.length;
-            this.inputComponent.inputEl.setSelectionRange(newCursorPos, newCursorPos);
-        }
-
-        this.clearSuggestions();
-    }
-
-    private clearSuggestions() {
-        this.suggestionContainer.empty();
-        this.suggestionContainer.removeClass("is-visible");
-        this.suggestions = [];
-        this.selectedIndex = -1;
-    }
-
     private executeImport() {
         const queryStr = this.inputComponent.getValue();
         if (!queryStr.trim()) return;
 
         const query = parseTagQuery(queryStr);
-        
+
         // Provide feedback if the query resulted in no valid groups (e.g., only exclude tags or nonsense tags)
         if (query.length === 0) {
             new Notice("Invalid query. Ensure you have at least one inclusion tag (e.g., #tag).");
@@ -306,6 +196,7 @@ export class AdvancedTagSuggestModal extends Modal {
     }
 
     onClose() {
+        this.tagSuggest?.close();
         this.contentEl.empty();
     }
 }

@@ -154,18 +154,9 @@ export class SendToCanvas {
         const GAP = 100;
         const DEFAULT_X = -200;
 
-        let startY = -200;
-
-        if (existingNodes.length > 0) {
-            const maxY = existingNodes.reduce((max, node) => {
-                const bottomEdge = node.y + node.height;
-                return bottomEdge > max ? bottomEdge : max;
-            }, -Infinity);
-            
-            if (maxY !== -Infinity) {
-                startY = maxY + GAP;
-            }
-        }
+        const startY = existingNodes.length > 0
+            ? Math.max(...existingNodes.map(node => node.y + node.height)) + GAP
+            : -200;
 
         return {
             id: id,

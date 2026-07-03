@@ -1,27 +1,18 @@
 import { TFile, MetadataCache, getAllTags } from "obsidian";
 
 /**
- * Compares version numbers.
+ * Compares version numbers (pre-release suffixes ignored).
  * Returns true if currentVersion > oldVersion.
  */
 export function isVersionNewer(currentVersion: string, oldVersion: string): boolean {
     if (!currentVersion || !oldVersion) return false;
-    if (currentVersion === oldVersion) return false;
-
-    // Split "1.2.3" into [1, 2, 3]
-    const current = currentVersion.split('-')[0].split('.').map(Number);
-    const old = oldVersion.split('-')[0].split('.').map(Number);
-
-    // Compare bit by bit
-    for (let i = 0; i < 3; i++) {
-        const v1 = current[i] || 0;
-        const v2 = old[i] || 0;
-        
-        if (v1 > v2) return true;
-        if (v1 < v2) return false;
+    const parse = (v: string) => v.split('-')[0].split('.').map(Number);
+    const [a, b] = [parse(currentVersion), parse(oldVersion)];
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+        const diff = (a[i] ?? 0) - (b[i] ?? 0); // missing segments count as 0, so "1.0" == "1.0.0"
+        if (diff) return diff > 0;
     }
-    
-    return false; // Versions are the same
+    return false;
 }
 
 /**

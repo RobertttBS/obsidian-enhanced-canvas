@@ -43,25 +43,3 @@ If your plugin does not need CSS, delete this file.
 .advanced-tag-input-container input {
     width: 100%;
 }
-
-.advanced-tag-suggestions {
-    max-height: 200px;
-    overflow-y: auto;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 4px;
-    display: none;
-}
-
-.advanced-tag-suggestions.is-visible {
-    display: block;
-}
-
-.advanced-tag-suggestions .suggestion-item {
-    padding: 5px 10px;
-    cursor: pointer;
-}
-
-.advanced-tag-suggestions .suggestion-item:hover,
-.advanced-tag-suggestions .suggestion-item.is-selected {
-    background-color: var(--background-modifier-hover);
-}

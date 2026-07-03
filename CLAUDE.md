@@ -5,7 +5,7 @@ Guidance for Claude Code in this repo.
 ## Commands
 
 - `npm run dev` — esbuild watch, inline-sourcemap `main.js`. **Default.** Reload plugin in Obsidian to pick up changes.
-- `npm run build` / `npm run version` exist but aren't part of the maintainer's flow — don't run unless asked.
+- `npm run build` exists but isn't part of the maintainer's flow — don't run unless asked.
 - No tests/lint/CI. esbuild ignores type errors; run `npx tsc -noEmit` ad hoc.
 
 ## Architecture
@@ -14,7 +14,7 @@ Obsidian plugin (`isDesktopOnly: false`). Entry `main.ts` → `main.js` via `esb
 
 ### `main.ts` — `EnhancedCanvas`
 
-Features are `register*` methods called from `onload()` (see `main.ts:445-453`): plugin commands, canvas auto-link, file-manager patches, focus-canvas, exploder, tag import, node auto-height, default node size, drag-temp-node. `onload` runs `syncAllCanvasProperties`: it aggregates the desired frontmatter across all `.canvas` files, diffs against the metadata cache, and does at most one `processFrontMatter` write per out-of-date note (zero writes when nothing changed — keep it that way). `onunload` strips the properties.
+Features are registered from `onload()` — `register*` methods plus `canvasTagImport.register()`: plugin commands, canvas auto-link, file-manager patches, focus-canvas, exploder, tag import, node auto-height, default node size, drag-temp-node. `onload` runs `syncAllCanvasProperties`: it aggregates the desired frontmatter across all `.canvas` files, diffs against the metadata cache, and does at most one `processFrontMatter` write per out-of-date note (zero writes when nothing changed — keep it that way). `onunload` strips the properties.
 
 ### Prototype patching (load-bearing)
 
@@ -46,7 +46,7 @@ Mutation functions early-return if disabled, and check the metadata cache first 
 ### `src/` modules
 
 - `CanvasExploder.ts` — file/text node → heading-tree of connected nodes. Layout constants at top.
-- `CanvasTagImport.ts` + `AdvancedTagSuggestModal.ts` — import tagged notes into a canvas.
+- `CanvasTagImport.ts` + `AdvancedTagSuggestModal.ts` — import tagged notes into a canvas. Tag completion uses Obsidian's `AbstractInputSuggest`, completing the word under the cursor.
 - `SendToCanvas.ts` — "Send to Canvas" via `FuzzySuggestModal`. `selectedCanvas` is in-memory only.
 - `settings.ts` — `EnhancedCanvasSettings` + `DEFAULT_SETTINGS`. Settings UI lives in `main.ts`.
 - `utils.ts` — `isVersionNewer` (semver) and `randomId` (uses `crypto.getRandomValues` — prefer over `Math.random()`).
