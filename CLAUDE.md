@@ -1,76 +1,67 @@
 # CLAUDE.md
 
-Guidance for Claude Code in this repo.
+Obsidian plugin (Enhanced Canvas). This file is the always-loaded map + traps.
+Deep detail lives in `docs/agent/`; read the relevant one when you're in that code.
+
+> Keep this file short (routing + traps only). Long prose belongs in
+> `docs/agent/architecture.md`. Any edit here must be mirrored into `AGENTS.md`
+> (they are kept byte-identical for Codex). Update rules: `docs/agent/maintenance.md`.
 
 ## Commands
 
-- `npm run dev` — esbuild watch, inline-sourcemap `main.js`. **Default.** Reload plugin in Obsidian to pick up changes.
-- `npm run build` exists but isn't part of the maintainer's flow — don't run unless asked.
-- No tests/lint/CI. esbuild ignores type errors; run `npx tsc -noEmit` ad hoc.
+- `npm run dev` — esbuild watch → `main.js` (inline sourcemap). **Default.** Reload
+  the plugin in Obsidian to pick up changes.
+- `npx tsc --noEmit` — the **only** correctness gate. esbuild ignores type errors,
+  so a green `dev` build proves nothing. Run this after edits.
+- `npm run build` exists but isn't in the maintainer's flow — don't run unless asked.
+- No tests, no lint, no CI. Behavior is only observable by reloading in Obsidian.
 
-## Architecture
+## Mental model
 
-Obsidian plugin (`isDesktopOnly: false`). Entry `main.ts` → `main.js` via `esbuild.config.mjs`. Obsidian and CodeMirror are externals — do not bundle.
+- Entry `main.ts` (one large file, every feature) → `main.js`. Features register from
+  `onload()` via `register*` methods. Obsidian & CodeMirror are externals — never bundle.
+- Canvas internals are reverse-engineered in `Canvas.d.ts`; extend it over `any`.
+- Full architecture, module catalog, and the frontmatter-sync mechanics:
+  **`docs/agent/architecture.md`**.
 
-### `main.ts` — `EnhancedCanvas`
+## Traps (each has wrecked this repo before — details in architecture.md)
 
-Features are registered from `onload()` — `register*` methods plus `canvasTagImport.register()`: plugin commands, canvas auto-link, file-manager patches, focus-canvas, exploder, tag import, node auto-height, default node size, drag-temp-node. `onload` runs `syncAllCanvasProperties`: it aggregates the desired frontmatter across all `.canvas` files, diffs against the metadata cache, and does at most one `processFrontMatter` write per out-of-date note (zero writes when nothing changed — keep it that way). `onunload` strips the properties.
-
-### Prototype patching (load-bearing)
-
-Uses `monkey-around`'s `around()`. Canvas internals are reverse-engineered in `Canvas.d.ts`. Patching needs a Canvas leaf, so every patcher goes through `EnhancedCanvas.registerLazyPatcher(patch)`: it retries `patch()` (which returns success) on `active-leaf-change`/`layout-change`/`onLayoutReady` and detaches the retry listeners after the first success.
-
-Touching this broke Windows pinned tabs before (commit `742eb70`). **Don't hand-roll the retry pattern — use the helper**, which guarantees listeners detach after a successful patch (leaving them attached re-patches and breaks things). Register every uninstaller with `this.register(...)`.
-
-### Two node concepts — don't mix
-
-- **JSON node** (in `.canvas` file): `node.file` is a **path string**. Used by `addProperty`/`removeProperty`/`renameProperty` and code walking `canvasData.nodes`.
-- **Live `CanvasNode`** (in `canvas.nodes`): `node.filePath` is the path string, `node.file` is the `TFile`. Used by `addNodeUpdate`/`removeNodeUpdate`.
-
-Same names, different things. See comments at `main.ts:158-160`.
-
-### Multi-window
-
-Popped-out Canvas views have their own `Document`. DOM listeners bound to `activeDocument` at load time only fire in the main window. `registerFocusCanvas` already attaches per-document via `workspace.on('window-open')` + `iterateAllLeaves` — follow that pattern for any new DOM listener. Workspace events fire globally and are safe.
-
-### Frontmatter sync
-
-When `settings.enableFrontmatter` is on, plugin writes:
-1. `canvas: [[<canvas-name>]]` on every referenced note.
-2. A property named after each canvas's basename, holding links to edge-connected nodes.
-
-Mutation functions early-return if disabled, and check the metadata cache first to skip `processFrontMatter` calls that would be no-ops — keep that pattern when adding writes. Property order matters: `canvas` must precede the per-canvas properties; every write path calls `ensureCanvasKeyOrder` inside its `processFrontMatter` callback to enforce this (writes race, so insertion order alone isn't enough). The auto-link edge patch only queues a sync when an edge's endpoints change (geometry-only `edge.update()` calls are ignored). All edge syncs — including `addEdge` — go through the debounced queue, never immediately: opening a canvas re-adds every edge, and a sync mid-import sees partial canvas data and strips valid links. The metadata cache only gates whether a sync runs at all; the actual add/remove decisions happen inside the `processFrontMatter` callback against the real frontmatter, because the cache lags right after a write.
-
-**Invariant: cleanup must run *before* flipping the setting off**, else `removeProperty` no-ops. Settings tab handler enforces this — preserve it.
-
-### `src/` modules
-
-- `CanvasExploder.ts` — file/text node → heading-tree of connected nodes. Layout constants at top.
-- `CanvasTagImport.ts` + `AdvancedTagSuggestModal.ts` — import tagged notes into a canvas. Tag completion uses Obsidian's `AbstractInputSuggest`, completing the word under the cursor.
-- `SendToCanvas.ts` — "Send to Canvas" via `FuzzySuggestModal`. `selectedCanvas` is in-memory only.
-- `settings.ts` — `EnhancedCanvasSettings` + `DEFAULT_SETTINGS`. Settings UI lives in `main.ts`.
-- `utils.ts` — `isVersionNewer` (semver) and `randomId` (uses `crypto.getRandomValues` — prefer over `Math.random()`).
-- `ReleaseNotesModal.ts` + `releaseNotesData.ts` — first-run/version-bump modal, gated by `showReleaseNotes`/`previousRelease`.
-
-### CSS
-
-`styles.css` ships with the plugin. Rules live behind body class `enhanced-canvas-enabled`, toggled by `toggleCSSClass` based on `settings.enableCustomCSS`. Hides metadata container in markdown embeds inside Canvas nodes.
-
-## Release process
-
-1. Bump `version` in `manifest.json`.
-2. In `src/releaseNotesData.ts`: prepend a callout entry to the current notes string, and map the new version to that string in `releaseNotesContent`.
-3. Commit as `update manifest.json to <version>`.
-
-Release-note callouts — keep each entry to one or two short lines:
-- Refactor: `> [!success] Refactor in <version>`
-- New feature: `> [!note]` or `> [!tip]` — `Feature in <version>`
-- Bug fix: `> [!bug] Fixed in <version>`
+- **Two `node` concepts.** JSON node `node.file` = path **string**; live `CanvasNode`
+  `node.file` = **TFile** (`node.filePath` is its string). Same name, different type —
+  confirm which you hold before editing anything named `node`. (`main.ts:158-160`)
+- **Never hand-roll a patcher retry.** All prototype patches go through
+  `registerLazyPatcher`; it detaches its retry listeners on success. Hand-rolling and
+  leaving them attached re-patches and broke Windows pinned tabs (commit `742eb70`).
+  Register uninstallers with `this.register(...)`.
+- **Frontmatter sync writes user notes — 4 invariants, all silent-data-loss if broken:**
+  cleanup runs *before* flipping `enableFrontmatter` off; `canvas` key precedes
+  per-canvas keys (`ensureCanvasKeyOrder` in every write callback); all edge syncs go
+  through the debounced queue (never immediate — mid-import strips valid links); the
+  metadata cache only gates *whether* a sync runs, decisions read real frontmatter in
+  the callback. Mutation fns early-return when the setting is off.
+- **New DOM listener?** Attach per-document (popped-out windows have their own
+  `Document`) — follow `registerFocusCanvas`. Workspace events are global and safe.
 
 ## Conventions
 
-`any` and `@ts-ignore` are used heavily against Canvas internals; ESLint allows it. When typing new code, prefer extending `Canvas.d.ts` over `any`.
+`any` / `@ts-ignore` are accepted against Canvas internals (ESLint allows it); prefer
+extending `Canvas.d.ts` for new code. `randomId` in `utils.ts` over `Math.random()`.
 
-## Keeping this file current
+## Working here — agent governance
 
-When a change alters anything documented above — `register*` methods added/removed/renamed, new `src/` modules, new load-bearing patterns or invariants, settings keys, or removed files referenced here — update CLAUDE.md in the same change. Stale guidance is worse than none.
+Universal working rules (delegation, judgment, prompt templates, verification) live in
+`~/.claude/playbooks/`. The **project-specific layer** is in `docs/agent/`:
+
+- `diagnosis.md` — what wastes tokens / breaks in *this* repo (read once per new session).
+- `model-dispatch.md` — when to delegate here (rarely — small repo) and to which model.
+- `judgment.md` — what "done" means here (no tests → tsc + Obsidian reload).
+- `prompt-templates.md` — dispatch templates pre-filled with this repo's files.
+- `maintenance.md` — how to safely update these docs and CLAUDE.md.
+- `letter-to-future-sessions.md` — read if you're a smaller model or new here.
+
+## Keeping this current
+
+When a change alters a `register*` method, a `src/` module, a load-bearing invariant,
+a settings key, or a fact stated here or in `docs/agent/architecture.md`, update the
+doc in the **same change** (and mirror CLAUDE.md ↔ AGENTS.md). Stale guidance is worse
+than none.
