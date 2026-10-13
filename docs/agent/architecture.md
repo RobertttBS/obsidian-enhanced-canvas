@@ -15,8 +15,7 @@ against Canvas internals — ESLint allows it).
 
 Features register from `onload()`: the `register*` methods plus
 `canvasTagImport.register()` — plugin commands, canvas auto-link, file-manager
-patches, focus-canvas, exploder, tag import, node auto-height, default node size,
-drag-temp-node. `onload` then runs `syncAllCanvasProperties`; `onunload` strips the
+patches, focus-canvas, exploder, tag import, node auto-height, default node size. `onload` then runs `syncAllCanvasProperties`; `onunload` strips the
 properties. Get the live method line numbers with:
 
 ```

@@ -39,7 +39,7 @@ export interface Canvas {
 
   createFileNode(options: { [key: string]: unknown }): CanvasNode
 
-  // Patched by this plugin (registerCanvasAutoLink / drag-temp-node).
+  // Patched by this plugin (registerCanvasAutoLink).
   addNode(node: CanvasNode): void
   removeNode(node: CanvasNode): void
   addEdge(edge: CanvasEdge): void

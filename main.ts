@@ -113,7 +113,6 @@ export default class EnhancedCanvas extends Plugin {
 
 	public canvasStackInterval: number | null = null;
 	public autoHeightUninstaller: (() => void) | null = null;
-	public dragTempNodeUninstaller: (() => void) | null = null;
 
 	/**
 	 * Scans the selected nodes to identify underlying file references and automatically
@@ -285,6 +284,9 @@ export default class EnhancedCanvas extends Plugin {
 		newName = getBaseName(newName);
 		const oldBaseName = oldName.endsWith('.canvas') ? oldName.slice(0, -7) : oldName;
 		const newBaseName = newName.endsWith('.canvas') ? newName.slice(0, -7) : newName;
+		// Folder moves keep the basename; the cache only gates whether to write.
+		if (oldBaseName === newBaseName) return;
+		if (!this.app.metadataCache.getFileCache(file)?.frontmatter?.hasOwnProperty(oldBaseName)) return;
 	
 		void this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
@@ -349,7 +351,7 @@ export default class EnhancedCanvas extends Plugin {
 		await Promise.all(canvasFiles.map(async (canvasFile) => {
 			let canvasData: CanvasData;
 			try {
-				const content = await this.app.vault.read(canvasFile);
+				const content = await this.app.vault.cachedRead(canvasFile);
 				if (!content || content.trim() === '') return;
 				canvasData = JSON.parse(content) as CanvasData;
 			} catch (error) {
@@ -542,7 +544,6 @@ export default class EnhancedCanvas extends Plugin {
 		this.canvasTagImport.register();
 		this.registerCanvasNodeAutoHeightPatcher();
 		this.registerCanvasDefaultNodeSize();
-		this.registerCanvasDragTempNodePatcher();
 
 		try {
 			await this.syncAllCanvasProperties();
@@ -668,6 +669,9 @@ export default class EnhancedCanvas extends Plugin {
 			for (const [sourcePath] of backLinks.data.entries()) {
 				const sourceFile = this.app.vault.getFileByPath(sourcePath);
 				if (!sourceFile || sourceFile.extension !== 'md') continue;
+				// Cache gate: skip notes whose frontmatter doesn't link to this file (avoids a YAML rewrite).
+				const links = this.app.metadataCache.getFileCache(sourceFile)?.frontmatterLinks;
+				if (!links?.some(l => this.app.metadataCache.getFirstLinkpathDest(l.link.split('#')[0], sourcePath) === file)) continue;
 
 				await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter) => {
 					if (!frontmatter) return;
@@ -689,7 +693,7 @@ export default class EnhancedCanvas extends Plugin {
 			if (file.extension !== 'canvas') return;
 			if ((file as TFile & { deleted?: boolean }).deleted === true) return;
 
-			const content = await this.app.vault.read(file);
+			const content = await this.app.vault.cachedRead(file);
 			if (!content) return;
 			const canvasData = JSON.parse(content) as CanvasData;
 			if (!canvasData) return;
@@ -704,7 +708,7 @@ export default class EnhancedCanvas extends Plugin {
 			if (file.extension !== 'canvas') return;
 			if ((file as TFile & { deleted?: boolean }).deleted === true) return;
 
-			const content = await this.app.vault.read(file);
+			const content = await this.app.vault.cachedRead(file);
 			if (!content) return;
 			const canvasData = JSON.parse(content) as CanvasData;
 			if (!canvasData) return;
@@ -1156,11 +1160,11 @@ export default class EnhancedCanvas extends Plugin {
 				clear(old: () => void) {
 					return function(this: Canvas) {
 						this.isClearing = true;
-						const result = old.call(this);
-						queueMicrotask(() => {
+						try {
+							return old.call(this);
+						} finally {
 							this.isClearing = false;
-						});
-						return result;
+						}
 					};
 				}
 			});
@@ -1187,45 +1191,17 @@ export default class EnhancedCanvas extends Plugin {
             })
         );
 
-        // For Text Nodes - patch canvas node menu
-        this.patchCanvasNodeMenu();
+        // For Text Nodes (no file-menu) - official canvas event
+        this.registerEvent(
+            // @ts-ignore -- canvas:node-menu isn't in Obsidian's public event typings
+            this.app.workspace.on("canvas:node-menu", (menu: Menu, node: CanvasNode) => {
+                if (node.text !== undefined && !node.file) {
+                    this.exploder.addTextNodeMenu(menu, node);
+                }
+            })
+        );
 	}
 
-    /**
-     * Patches Canvas to add context menu for text nodes (which don't trigger file-menu).
-     */
-    patchCanvasNodeMenu() {
-        // eslint-disable-next-line @typescript-eslint/no-this-alias -- alias needed: `this` inside the around() patch rebinds to the Canvas node, so the plugin reference must be captured in an outer variable
-        const plugin = this;
-
-        this.registerLazyPatcher(() => {
-            const canvasView = this.app.workspace.getLeavesOfType("canvas")
-                .find(l => (l.view as CanvasView)?.canvas?.nodes?.size)?.view as CanvasView | undefined;
-            const anyNode = canvasView?.canvas?.nodes?.values()?.next()?.value;
-            if (!anyNode) return false;
-
-            const basePrototype = Object.getPrototypeOf(Object.getPrototypeOf(anyNode));
-            if (!basePrototype?.showMenu) return false;
-
-            const uninstall = around(basePrototype, {
-                showMenu: (next: (menu: Menu, ...args: unknown[]) => unknown) => {
-                    return function(this: CanvasNode, menu: Menu, ...args: unknown[]) {
-                        const result = next.call(this, menu, ...args);
-
-                        // Add menu for text nodes
-                        if (this.text !== undefined && !this.file) {
-                            plugin.exploder.addTextNodeMenu(menu, this);
-                        }
-
-                        return result;
-                    };
-                }
-            });
-
-            this.register(uninstall);
-            return true;
-        });
-    }
 	
 	/**
 	 * Installs hooks into the native Canvas prototype to enable automatic height adjustment behavior,
@@ -1381,46 +1357,9 @@ export default class EnhancedCanvas extends Plugin {
 	registerCanvasDefaultNodeSize() {
 		const apply = () => this.applyDefaultNodeSizeToAllOpenCanvases();
 
-		this.registerEvent(this.app.workspace.on('active-leaf-change', apply));
 		this.registerEvent(this.app.workspace.on('layout-change',     apply));
 		this.app.workspace.onLayoutReady(apply);
 		apply();
-	}
-
-	/**
-	 * Patches Canvas.prototype.dragTempNode so dragging a note in from the file explorer
-	 * uses the user's configured file-node size instead of whatever Obsidian's drag handler
-	 * computed upstream of canvas.config.
-	 */
-	patchCanvasDragTempNode(): boolean {
-		if (this.dragTempNodeUninstaller) return false;
-
-		const canvasView = this.app.workspace.getLeavesOfType('canvas')
-			.find(l => (l.view as CanvasView)?.canvas != null)?.view as CanvasView | undefined;
-		const canvas = canvasView?.canvas;
-		if (!canvas?.constructor?.prototype?.dragTempNode) return false;
-
-		// eslint-disable-next-line @typescript-eslint/no-this-alias -- alias needed: `this` inside the around() patch rebinds to the Canvas instance, so the plugin reference must be captured in an outer variable
-		const plugin = this;
-		const uninstall = around(canvas.constructor.prototype, {
-			dragTempNode(orig: (dragEvent: unknown, nodeSize: Size, onDropped: (position: Position) => void) => void) {
-				return function (this: Canvas, dragEvent: unknown, _nodeSize: Size, onDropped: (position: Position) => void) {
-					const overridden: Size = {
-						width:  plugin.settings.defaultFileNodeWidth,
-						height: plugin.settings.defaultFileNodeHeight,
-					};
-					return orig.call(this, dragEvent, overridden, onDropped);
-				};
-			},
-		});
-
-		this.dragTempNodeUninstaller = uninstall;
-		this.register(uninstall);
-		return true;
-	}
-
-	registerCanvasDragTempNodePatcher() {
-		this.registerLazyPatcher(() => this.patchCanvasDragTempNode());
 	}
 
 	createEdge(
