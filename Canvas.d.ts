@@ -47,6 +47,8 @@ export interface Canvas {
   dragTempNode(dragEvent: unknown, nodeSize: Size, onDropped: (position: Position) => void): void
 
   requestSave(save?: boolean): void
+  /** Debounced (250ms) history push that requestSave() queues. */
+  requestPushHistory?: { cancel(): void }
 
   // Custom flag set by the clear() patch so node/edge removal hooks can skip
   // cleanup during a full canvas clear.
@@ -79,6 +81,23 @@ export interface CanvasNode {
   y: number
   width: number
   height: number
+
+  /** False while content is swapped for a placeholder (off-screen / zoomed below breakpoint). */
+  isContentMounted?: boolean
+  /** When true the canvas won't unmount/detach the node (native link nodes use this). */
+  alwaysKeepLoaded?: boolean
+  attach?(): void
+  render?(): void
+  mountContent?(): void
+  /** Markdown child of text/file nodes; file nodes fill it via async loadFile(). */
+  child?: {
+    previewMode?: { renderer?: { onRendered(cb: () => void): void } }
+    loadFile?(): Promise<void>
+  } | null
+  autoHeightEnabled?: boolean
+  _autoHeightTimer?: number | null
+  onResizeDblclick?(event: unknown, direction: string): void
+  moveAndResize(bbox: Position & Size): void
 }
 
 export interface CanvasEdge {

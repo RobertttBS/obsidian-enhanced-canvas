@@ -222,12 +222,13 @@ export class CanvasExploder {
 		const nodeStack: { level: number, nodeId: string }[] = [];
 		const newNodesData: AllCanvasNodeData[] = [];
 		const newEdgesData: CanvasEdgeData[] = [];
+		const createdNodeMeta: { id: string; isParent: boolean }[] = [];
 
 		for (let i = 0; i < sections.length; i++) {
 			const section = sections[i];
 
 			const nextSection = sections[i + 1];
-			const isParent = nextSection && nextSection.level > section.level;
+			const isParent = Boolean(nextSection && nextSection.level > section.level);
 
 			let nodeHeight: number;
 			if (isParent) {
@@ -244,6 +245,7 @@ export class CanvasExploder {
 			const currentX = baseX + (levelOffset * (width + GAP_X));
 
 			const newNodeId = randomId();
+			createdNodeMeta.push({ id: newNodeId, isParent });
 			newNodesData.push({
 				...originalData,
 				...nodePayload(section),
@@ -302,7 +304,151 @@ export class CanvasExploder {
 		}
 		canvas.zoomToSelection();
 
+		if (this.plugin.settings.autoResizeOnSplit) {
+			void this.realignTreeAfterAutoResize(canvas, originalNode.y, createdNodeMeta, newNodesData);
+		}
+
 		return newNodesData.length;
+	}
+
+	/**
+	 * Mounts a node's content regardless of viewport/zoom and resolves once it has rendered.
+	 * Sets alwaysKeepLoaded so the canvas doesn't cull it before we measure; caller resets it.
+	 */
+	private async mountAndWaitForRender(node: CanvasNode): Promise<void> {
+		node.alwaysKeepLoaded = true;
+		node.attach?.();
+		node.render?.();
+		node.mountContent?.();
+
+		const child = node.child;
+		// File nodes: render() kicked off an async loadFile(); the preview is shown but empty
+		// until it lands. Re-awaiting it is a cached read and no-ops if contents already loaded.
+		if (node.file) await child?.loadFile?.();
+		const renderer = child?.previewMode?.renderer;
+		if (!renderer) return;
+		// Content was just set, which queued a render, so onRendered waits for it.
+		// Timeout guards against a render that never completes (e.g. element not laid out).
+		await new Promise<void>((resolve) => {
+			const timer = window.setTimeout(resolve, 2000);
+			renderer.onRendered(() => {
+				window.clearTimeout(timer);
+				resolve();
+			});
+		});
+	}
+
+	/**
+	 * Fits leaf nodes to their content via auto-resize and restacks the tree vertically
+	 * based on each node's resulting height (clamped by maxAutoResizeHeight).
+	 */
+	private async realignTreeAfterAutoResize(
+		canvas: Canvas,
+		baseY: number,
+		createdNodes: { id: string; isParent: boolean }[],
+		createdData: AllCanvasNodeData[],
+	): Promise<void> {
+		if (!canvas || !canvas.nodes) return;
+		const view = canvas.view;
+		const file = view?.file;
+
+		const mockEvent = {
+			preventDefault: () => {},
+			stopPropagation: () => {},
+		};
+
+		const leaves = createdNodes
+			.filter((meta) => !meta.isParent)
+			.map((meta) => canvas.nodes.get(meta.id))
+			.filter((node): node is CanvasNode => !!node);
+
+		// 1. Force-mount every leaf (even off-screen / below the zoom breakpoint) and wait
+		// until its markdown has rendered, so the native auto-resize has something to measure.
+		try {
+			await Promise.all(leaves.map((node) => this.mountAndWaitForRender(node)));
+
+			// Bail if the view closed/switched file, or the user touched any new node meanwhile.
+			if (canvas.view !== view || view?.file !== file || !view?.containerEl.isConnected) return;
+			const untouched = createdData.every((d) => {
+				const live = canvas.nodes.get(d.id);
+				return live && live.x === d.x && live.y === d.y && live.width === d.width && live.height === d.height;
+			});
+			if (!untouched) return;
+
+			for (const node of leaves) {
+				if (node.isContentMounted && typeof node.onResizeDblclick === 'function') {
+					node.onResizeDblclick(mockEvent, "bottom");
+				}
+				node.autoHeightEnabled = true;
+			}
+		} finally {
+			// Hand culling back to the canvas.
+			for (const node of leaves) node.alwaysKeepLoaded = false;
+		}
+
+		// 2. Measure heights and recalculate stacked Y positions
+		const maxHeight = this.plugin.settings.maxAutoResizeHeight || 1000;
+		let currentY = baseY;
+		const nodeYMap = new Map<string, number>();
+		const nodeHeightMap = new Map<string, number>();
+
+		for (const meta of createdNodes) {
+			const liveNode = canvas.nodes.get(meta.id);
+			let nodeHeight: number;
+			if (meta.isParent) {
+				nodeHeight = COMPACT_HEIGHT;
+			} else {
+				const rawHeight = (liveNode && liveNode.height > 0)
+					? liveNode.height
+					: (liveNode?.nodeEl?.offsetHeight || LEAF_HEIGHT);
+				nodeHeight = Math.min(rawHeight, maxHeight);
+			}
+
+			nodeHeightMap.set(meta.id, nodeHeight);
+			nodeYMap.set(meta.id, currentY);
+			currentY += nodeHeight + GAP_Y;
+		}
+
+		// 3. Apply new coordinates and heights to canvas data
+		const currentData = canvas.getData();
+		let modified = false;
+		for (const nodeData of currentData.nodes) {
+			const newY = nodeYMap.get(nodeData.id);
+			const newHeight = nodeHeightMap.get(nodeData.id);
+			if (newY !== undefined && newHeight !== undefined) {
+				nodeData.y = newY;
+				nodeData.height = newHeight;
+				modified = true;
+			}
+		}
+
+		if (modified) {
+			// The native fits above queued a debounced history push of the pre-restack layout;
+			// drop it so it can't land on top of the snapshot setData pushes.
+			canvas.requestPushHistory?.cancel();
+			canvas.setData(currentData);
+			canvas.requestSave(false);
+		}
+
+		// 4. Ensure autoHeightEnabled persists on live leaf nodes after setData
+		for (const meta of createdNodes) {
+			if (!meta.isParent) {
+				const liveNode = canvas.nodes.get(meta.id);
+				if (liveNode) {
+					liveNode.autoHeightEnabled = true;
+				}
+			}
+		}
+
+		// 5. Re-select and zoom to the updated selection bounds
+		const newNodeIds = new Set(createdNodes.map(n => n.id));
+		canvas.deselectAll();
+		for (const [id, node] of canvas.nodes) {
+			if (newNodeIds.has(id)) {
+				canvas.select(node);
+			}
+		}
+		canvas.zoomToSelection();
 	}
 
 	/**

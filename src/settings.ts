@@ -8,6 +8,9 @@ export interface EnhancedCanvasSettings {
     defaultTextNodeHeight: number;
     defaultFileNodeWidth: number;
     defaultFileNodeHeight: number;
+
+    autoResizeOnSplit: boolean;
+    maxAutoResizeHeight: number;
 }
 
 export const DEFAULT_SETTINGS: EnhancedCanvasSettings = {
@@ -20,4 +23,7 @@ export const DEFAULT_SETTINGS: EnhancedCanvasSettings = {
     defaultTextNodeHeight: 60,
     defaultFileNodeWidth: 400,
     defaultFileNodeHeight: 400,
+
+    autoResizeOnSplit: true,
+    maxAutoResizeHeight: 1000,
 };

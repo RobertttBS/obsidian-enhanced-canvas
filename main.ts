@@ -1253,6 +1253,7 @@ export default class EnhancedCanvas extends Plugin {
 
         if (baseNodePrototype.onResizeDblclick) {
             methodsToPatch.onResizeDblclick = (originalMethod) => {
+                const plugin = this;
                 return function(this: CanvasNodeWithFlag, ...args: unknown[]) {
                     const [, direction] = args;
 
@@ -1263,7 +1264,17 @@ export default class EnhancedCanvas extends Plugin {
                         }
                         this.autoHeightEnabled = true;
                     }
-                    return originalMethod.apply(this, args);
+                    const heightBefore = this.height;
+                    const result = originalMethod.apply(this, args);
+                    const maxHeight = plugin.settings.maxAutoResizeHeight;
+                    // Only clamp when the native fit actually ran (it no-ops on unmounted content).
+                    if (direction === "bottom" && maxHeight && this.height !== heightBefore && this.height > maxHeight) {
+                        // Go through moveAndResize so bbox, edges and render stay in sync.
+                        this.moveAndResize({ x: this.x, y: this.y, width: this.width, height: maxHeight });
+                        // With history: replaces the native fit's pending (unclamped) undo snapshot.
+                        this.canvas?.requestSave?.();
+                    }
+                    return result;
                 };
             };
         }
@@ -1600,5 +1611,39 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 		sizeRow('Text node height', 'Initial height (px) for new text cards. 50–5000.', 'defaultTextNodeHeight');
 		sizeRow('File node width',  'Initial width (px) for new file nodes. 50–5000.',  'defaultFileNodeWidth');
 		sizeRow('File node height', 'Initial height (px) for new file nodes. 50–5000.', 'defaultFileNodeHeight');
+
+		new Setting(containerEl).setName('Split by headings & auto-resize').setHeading();
+
+		new Setting(containerEl)
+			.setName('Auto-resize leaf nodes on split')
+			.setDesc(
+				'Automatically fit leaf node heights to their content and rearrange the tree after splitting by headings.'
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.autoResizeOnSplit)
+					.onChange(async (value) => {
+						this.plugin.settings.autoResizeOnSplit = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		const MIN_AUTO_RESIZE_HEIGHT = 100;
+		const MAX_AUTO_RESIZE_HEIGHT = 5000;
+
+		new Setting(containerEl)
+			.setName('Max auto-resize height')
+			.setDesc('Maximum height (px) for any bottom-edge auto-fit (double-click or split), even with auto-resize on split off. Taller content scrolls. 100–5000.')
+			.addText((text) =>
+				text
+					.setValue(String(this.plugin.settings.maxAutoResizeHeight))
+					.onChange(async (raw) => {
+						const n = Number.parseInt(raw, 10);
+						if (!Number.isFinite(n)) return;
+						if (n < MIN_AUTO_RESIZE_HEIGHT || n > MAX_AUTO_RESIZE_HEIGHT) return;
+						this.plugin.settings.maxAutoResizeHeight = n;
+						await this.plugin.saveSettings();
+					})
+			);
 	}
 }
