@@ -14,7 +14,7 @@ import {
 	Vault,
 	Notice
 } from 'obsidian';
-import { CanvasEdgeData, CanvasNodeData, NodeSide, CanvasData } from "obsidian/canvas";
+import { CanvasEdgeData, CanvasNodeData, CanvasData } from "obsidian/canvas";
 import { around } from "monkey-around";
 import { Canvas, CanvasEdge, CanvasNode, CanvasView, Position, Size } from 'Canvas';
 import { CanvasExploder } from './src/CanvasExploder';
@@ -111,7 +111,6 @@ export default class EnhancedCanvas extends Plugin {
 	private isMetadataClicked = false;
 	settings: EnhancedCanvasSettings;
 
-	public canvasStackInterval: number | null = null;
 	public autoHeightUninstaller: (() => void) | null = null;
 
 	/**
@@ -149,7 +148,8 @@ export default class EnhancedCanvas extends Plugin {
 				if (targetNode && targetNode !== sourceNode) {
 					const edgeKey = `${sourceNode.id}->${targetNode.id}`;
 					if (!existingEdgesMap.has(edgeKey)) {
-						const newEdge = this.createEdge(sourceNode, targetNode);
+						// No sides: Canvas picks the nearest ones itself on import.
+						const newEdge: CanvasEdgeData = { id: randomId(), fromNode: sourceNode.id, toNode: targetNode.id };
 						newEdges.push(newEdge);
 						existingEdgesMap.set(edgeKey, newEdge);
 					}
@@ -176,24 +176,13 @@ export default class EnhancedCanvas extends Plugin {
 
 		const selectedNodeIds = new Set(selectedNodes.map((node) => node.id));
 
-		const nodeById = new Map<string, CanvasNodeData>();
-		for (const node of currentData.nodes) {
-			nodeById.set(node.id, node);
-		}
-
+		// Edge.setData recomputes any missing side with Canvas's own nearest-side rule.
 		let didUpdateEdges = false;
 		currentData.edges.forEach((edge: CanvasEdgeData) => {
 			if (selectedNodeIds.has(edge.fromNode) && selectedNodeIds.has(edge.toNode)) {
-				const fromNode = nodeById.get(edge.fromNode);
-				const toNode = nodeById.get(edge.toNode);
-				if (fromNode && toNode) {
-					const updatedEdge = this.createEdge(fromNode, toNode);
-					if (edge.fromSide !== updatedEdge.fromSide || edge.toSide !== updatedEdge.toSide) {
-						edge.fromSide = updatedEdge.fromSide;
-						edge.toSide = updatedEdge.toSide;
-						didUpdateEdges = true;
-					}
-				}
+				delete edge.fromSide;
+				delete edge.toSide;
+				didUpdateEdges = true;
 			}
 		});
 
@@ -488,11 +477,8 @@ export default class EnhancedCanvas extends Plugin {
 
 	/** Applies or removes the body CSS class that gates the optional visual styles. */
 	toggleCSSClass(enabled: boolean) {
-		if (enabled) {
-			activeDocument.body.classList.add('enhanced-canvas-enabled');
-		} else {
-			activeDocument.body.classList.remove('enhanced-canvas-enabled');
-		}
+		// Main window only: popouts mirror its body classes.
+		document.body.toggleClass('enhanced-canvas-enabled', enabled);
 	}
 
 	/**
@@ -553,55 +539,41 @@ export default class EnhancedCanvas extends Plugin {
 		}
 
 		/**
-		 * Configures a monitoring routine to force Canvas views to recalculate their layout
-		 * during "Stacked Tabs" sliding transitions, ensuring proper rendering when
-		 * standard resize triggers are insufficient.
+		 * Canvas caches its on-screen rect and only refreshes it in onResize. Stacked
+		 * tabs slide by scrolling their tab container, which moves the canvas without
+		 * resizing it, so pointer coordinates drift. Re-run onResize on that scroll
+		 * (the same event Obsidian uses to lay out stacked tabs).
 		 */
+		let stopStackWatch: (() => void) | null = null;
+		this.register(() => stopStackWatch?.());
 		this.registerEvent(
 			this.app.workspace.on('active-leaf-change', (leaf) => {
-				if (this.canvasStackInterval) {
-					window.clearInterval(this.canvasStackInterval);
-					this.canvasStackInterval = null;
-				}
+				stopStackWatch?.();
+				stopStackWatch = null;
 
-				if (!leaf) return;
+				const view = leaf?.view;
+				if (!view || view.getViewType() !== 'canvas' || !leaf.parent?.isStacked) return;
 
-				const isStacked = !!activeDocument.querySelector('.workspace-tabs.mod-stacked');
-				if (!isStacked) return;
+				view.onResize();
+				const settle = window.setTimeout(() => view.onResize(), 200); // after the slide-in transition
 
-				const view = leaf.view;
-				if (view.getViewType() !== 'canvas') return;
-
-				if (typeof view.onResize === 'function') {
-					view.onResize();
-				}
-				
-				window.setTimeout(() => {
-					if (typeof view.onResize === 'function') view.onResize();
-				}, 200);
-
-				let lastLeft = view.containerEl.getBoundingClientRect().left;
-
-				this.canvasStackInterval = window.setInterval(() => {
-					if (!view || !view.containerEl) {
-						if (this.canvasStackInterval !== null) {
-							window.clearInterval(this.canvasStackInterval);
-							this.canvasStackInterval = null;
-						}
-						return;
-					}
-
-					const rect = view.containerEl.getBoundingClientRect();
-
-					if (Math.abs(rect.left - lastLeft) > 2) {
-						if (typeof view.onResize === 'function') {
-							view.onResize();
-						}
-
-						lastLeft = rect.left;
-					}
-				}, 200);
-				this.registerInterval(this.canvasStackInterval);
+				const scroller = view.containerEl.closest('.workspace-tab-container');
+				if (!scroller) { stopStackWatch = () => window.clearTimeout(settle); return; }
+				const win = scroller.win;
+				let frame = 0;
+				const onScroll = () => {
+					if (frame) return;
+					frame = win.requestAnimationFrame(() => {
+						frame = 0;
+						view.onResize();
+					});
+				};
+				scroller.addEventListener('scroll', onScroll, { passive: true });
+				stopStackWatch = () => {
+					window.clearTimeout(settle);
+					scroller.removeEventListener('scroll', onScroll);
+					if (frame) win.cancelAnimationFrame(frame);
+				};
 			})
 		);
 	}
@@ -941,8 +913,9 @@ export default class EnhancedCanvas extends Plugin {
 				if (targetNode?.type === 'file') edgeToNodesFilePathSet.add(targetNode.file);
 			}
 
-			const toLink = (path: string, file: TFile) =>
-				this.app.fileManager.generateMarkdownLink(file, path).replace(/^!(\[\[.*\]\])$/, '$1');
+			// sourcePath is the note the link is written into, matching syncAllCanvasProperties.
+			const toLink = (file: TFile) =>
+				this.app.fileManager.generateMarkdownLink(file, fromFile.path).replace(/^!(\[\[.*\]\])$/, '$1');
 
 			const linksToRemove: string[] = [];
 			fromNodeLinks.forEach(filePath => {
@@ -950,7 +923,7 @@ export default class EnhancedCanvas extends Plugin {
 				if (filePath === canvasFile.path) return;
 				const targetFile = this.app.vault.getFileByPath(filePath);
 				if (!targetFile) return;
-				linksToRemove.push(toLink(filePath, targetFile));
+				linksToRemove.push(toLink(targetFile));
 			});
 
 			// Only add the link when the edge is still present in the canvas data —
@@ -958,7 +931,7 @@ export default class EnhancedCanvas extends Plugin {
 			let linkToAdd: string | null = null;
 			if (toNode.filePath && fromNode.filePath !== toNode.filePath && edgeToNodesFilePathSet.has(toNode.filePath)) {
 				const targetFile = this.app.vault.getFileByPath(toNode.filePath);
-				if (targetFile) linkToAdd = toLink(toNode.filePath, targetFile);
+				if (targetFile) linkToAdd = toLink(targetFile);
 			}
 
 			// Early skip via the metadata cache so a clean canvas open issues no
@@ -1035,11 +1008,11 @@ export default class EnhancedCanvas extends Plugin {
 			const file = this.app.vault.getFileByPath(toFilePath);
 			if (!file) return;
 
-			let link = this.app.fileManager.generateMarkdownLink(file, toFilePath);
-			link = link.replace(/^!(\[\[.*\]\])$/, '$1'); // for image links
-
 			const fromFile = this.app.vault.getFileByPath(fromFilePath);
 			if (!fromFile) return;
+
+			let link = this.app.fileManager.generateMarkdownLink(file, fromFilePath);
+			link = link.replace(/^!(\[\[.*\]\])$/, '$1'); // for image links
 
 			const { edges, nodes } = edge.canvas.getData();
 			const sameFileNodeIds = new Set(
@@ -1178,26 +1151,19 @@ export default class EnhancedCanvas extends Plugin {
 	}
 
 	registerCanvasExploder() {
-        // For File Nodes - use file-menu event
-        this.registerEvent(
-            this.app.workspace.on("file-menu", (menu: Menu) => {
-                this.exploder.checkAndAddMenu(menu, "Split by headings");
-            })
-        );
-
+        // Right-click while editing a card.
         this.registerEvent(
             this.app.workspace.on("editor-menu", (menu: Menu) => {
                 this.exploder.checkAndAddMenu(menu, "Split by headings");
             })
         );
 
-        // For Text Nodes (no file-menu) - official canvas event
+        // Right-click on a file or text node. Not file-menu: that also fires in the
+        // file explorer and would act on whatever canvas node happens to be selected.
         this.registerEvent(
             // @ts-ignore -- canvas:node-menu isn't in Obsidian's public event typings
             this.app.workspace.on("canvas:node-menu", (menu: Menu, node: CanvasNode) => {
-                if (node.text !== undefined && !node.file) {
-                    this.exploder.addTextNodeMenu(menu, node);
-                }
+                this.exploder.addNodeMenu(menu, node);
             })
         );
 	}
@@ -1211,18 +1177,19 @@ export default class EnhancedCanvas extends Plugin {
 	patchCanvasNodeAutoHeight(): boolean {
         if (this.autoHeightUninstaller) return false;
 
-        const canvasView = this.app.workspace.getLeavesOfType("canvas")
-            .find(l => (l.view as CanvasView)?.canvas?.nodes?.size)?.view;
-        if (!canvasView) return false;
+        // Needs a file or text node: both extend the markdown-node class that owns the
+        // real onResizeDblclick/blur. Link and group nodes sit on other branches, and
+        // patching their parent would leave markdown nodes unpatched.
+        let markdownNode: CanvasNode | undefined;
+        for (const leaf of this.app.workspace.getLeavesOfType("canvas")) {
+            const nodes = (leaf.view as CanvasView)?.canvas?.nodes;
+            if (!nodes) continue;
+            markdownNode = Array.from(nodes.values()).find(n => n.filePath !== undefined || n.text !== undefined);
+            if (markdownNode) break;
+        }
+        if (!markdownNode) return false;
 
-        const canvas = (canvasView as CanvasView).canvas;
-        if (!canvas) return false;
-
-        const anyNode = canvas.nodes.values().next().value;
-        if (!anyNode) return false;
-
-        const anyNodeConstructor = anyNode.constructor;
-        const baseNodePrototype = Object.getPrototypeOf(anyNodeConstructor.prototype);
+        const baseNodePrototype = Object.getPrototypeOf(markdownNode.constructor.prototype);
 
         type PatchFn = (originalMethod: (...args: unknown[]) => unknown) => (...args: unknown[]) => unknown;
         const methodsToPatch: Record<string, PatchFn> = {};
@@ -1363,55 +1330,13 @@ export default class EnhancedCanvas extends Plugin {
 		apply();
 	}
 
-	createEdge(
-		node1: Pick<CanvasNodeData, 'id' | 'x' | 'y' | 'width' | 'height'>,
-		node2: Pick<CanvasNodeData, 'id' | 'x' | 'y' | 'width' | 'height'>,
-	) {
-		const node1CenterX = node1.x + node1.width / 2;
-		const node1CenterY = node1.y + node1.height / 2;
-		const node2CenterX = node2.x + node2.width / 2;
-		const node2CenterY = node2.y + node2.height / 2;
-
-		const angle = Math.atan2(node2CenterY - node1CenterY, node2CenterX - node1CenterX) * 180 / Math.PI;
-		const normalizedAngle = angle < 0 ? angle + 360 : angle;
-		
-		let fromSide: NodeSide;
-		let toSide: NodeSide;
-		
-		if (normalizedAngle >= 315 || normalizedAngle < 45) {
-			fromSide = 'right';
-			toSide = 'left';
-		} else if (normalizedAngle >= 45 && normalizedAngle < 135) {
-			fromSide = 'bottom';
-			toSide = 'top';
-		} else if (normalizedAngle >= 135 && normalizedAngle < 225) {
-			fromSide = 'left';
-			toSide = 'right';
-		} else {
-			fromSide = 'top';
-			toSide = 'bottom';
-		}
-	
-		const edgeData: CanvasEdgeData = {
-			id: randomId(),
-			fromSide: fromSide,
-			fromNode: node1.id,
-			toSide: toSide,
-			toNode: node2.id
-		};
-	
-		return edgeData;
-	}
-
 	/**
 	 * Performs a comprehensive cleanup on all markdown notes when the plugin
 	 * is unloaded, ensuring any custom properties or data managed by this
 	 * plugin are removed from the vault.
 	 */
 	onunload() {
-		// canvasStackInterval is registered via registerInterval, so Obsidian
-		// clears it on unload.
-		activeDocument.body.classList.remove('enhanced-canvas-enabled');
+		this.toggleCSSClass(false);
 
 		this.sendToCanvas.clearSelectedCanvas(false);
 		void this.cleanupCanvasProperties();

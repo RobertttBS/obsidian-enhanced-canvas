@@ -130,8 +130,8 @@ export class SendToCanvas {
                 await this.plugin.app.vault.modify(canvasFile, updatedContent);
             }
 
-            const internalLink = `[[${canvasFile.name}]]`;
-            await this.plugin.updateFrontmatter(targetFile, internalLink, 'add', 'canvas');
+            // Basename-matched and idempotent; for an open canvas the addNode patch already queued the same write.
+            this.plugin.addProperty({ file: targetFile.path }, canvasFile);
 
             new Notice(`Added ${targetFile.basename} to Canvas: ${canvasFile.basename}`);
         } catch (e) {

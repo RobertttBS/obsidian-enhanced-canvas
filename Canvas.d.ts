@@ -8,6 +8,10 @@ declare module "obsidian" {
     getBacklinksForFile(file: TFile): { data: Map<string, unknown[]> }
     getTags(): Record<string, number>
   }
+  interface WorkspaceParent {
+    /** True for a tab group in "Stacked tabs" mode. */
+    isStacked?: boolean
+  }
 }
 
 export interface Size {
@@ -74,6 +78,8 @@ export interface CanvasNode {
   file?: TFile
   /** Path string for file-backed nodes; mirrors CanvasNodeData.file. */
   filePath?: string
+  /** Heading/block subpath of a file node ("" when it shows the whole file). */
+  subpath?: string
   /** Body text for text nodes; undefined for non-text nodes. */
   text?: string
 

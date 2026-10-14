@@ -14,11 +14,27 @@ app's asar and pretty-printed). Findings were identical in both versions. Line n
 - C: `cachedRead` in the three read-only spots, `isClearing` reset via `try/finally`,
   default node size listens to `layout-change` only.
 
+**Done in the second pass (2026-10-15, 1.14.4)** — `tsc` green, not yet reloaded:
+- Auto-height patch picks a file/text node (they extend the markdown-node class that
+  owns `onResizeDblclick`/`blur`); a link/group node first in `canvas.nodes` used to
+  patch the wrong prototype and silently disable auto-height.
+- Edge-sync links use the *source note* as `generateMarkdownLink`'s `sourcePath`
+  everywhere (startup sweep already did; the live sync used the target's own path, which
+  differs under the "relative path" link format).
+- `SendToCanvas` writes via `addProperty` (basename-matched) instead of exact-string
+  `updateFrontmatter`, which duplicated rewritten `[[folder/X.canvas|X.canvas]]` links.
+- "Split by headings" for file nodes moved from `file-menu` (also fired in the file
+  explorer) to `canvas:node-menu`; whole-file markdown nodes only (images/PDFs skipped).
+- Tag import selects via `canvas.select` (was `selection.add`, no selected styling).
+- CSS class toggled on main `document.body`; popouts mirror it.
+- Edge sides left to Canvas (`Edge.setData` computes missing sides, aspect-ratio
+  aware); `createEdge` removed.
+- B4 done: stacked tabs refresh `canvas.onResize` on the tab container's `scroll`
+  (rAF-throttled, `leaf.parent.isStacked`) instead of 200 ms polling.
+
 **Not done** (decided to skip for now, revisit only if the symptom shows up):
 - B1 edge flush: only matters on canvases with hundreds of edges at open time; touches
   the debounce / real-frontmatter invariants, so risk > payoff.
-- B4 stacked-tabs polling: only affects Stacked Tabs users; needs per-document `scroll`
-  listeners and hasn't been tested against real Stacked Tabs.
 - `SendToCanvas` closed-canvas write (`JSON.stringify(…, 2)` format, non-atomic
   read+modify): needs a read/write restructure into `vault.process`.
 - `CanvasExploder` fixed 250 ms wait.

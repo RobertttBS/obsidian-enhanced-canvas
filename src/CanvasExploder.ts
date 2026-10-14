@@ -66,22 +66,24 @@ export class CanvasExploder {
     }
 
     /**
-     * Adds the "Split Card by Headings" menu item for text nodes.
-     * Called from main.ts when a text node context menu is shown.
+     * Adds "Split by headings" to a node's context menu (canvas:node-menu).
+     * File nodes that already target a subpath are skipped, as before (Obsidian's
+     * own file-menu only fires for whole-file nodes).
      */
-    addTextNodeMenu(menu: Menu, node: CanvasNode) {
-        const activeView = this.plugin.app.workspace.getActiveViewOfType(ItemView);
-        if (!activeView || activeView.getViewType() !== "canvas") return;
+    addNodeMenu(menu: Menu, node: CanvasNode) {
+        const canvas = node.canvas;
+        if (!canvas || canvas.readonly) return;
 
-        const canvas = (activeView as CanvasView).canvas;
-        if (!canvas) return;
+        // Only markdown files have headings; images/PDFs are file nodes too.
+        const explode = node.file
+            ? (node.file.extension === 'md' && !node.subpath ? () => this.explodeFileNode(canvas, node) : null)
+            : (node.text !== undefined ? () => this.explodeTextNode(canvas, node) : null);
+        if (!explode) return;
 
         menu.addItem((item) => {
             item
                 .setTitle("Split by headings")
-                .onClick(() => {
-                    void this.explodeTextNode(canvas, node);
-                });
+                .onClick(explode);
         });
     }
 

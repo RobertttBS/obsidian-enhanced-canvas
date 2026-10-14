@@ -191,7 +191,7 @@ export class AdvancedTagSuggestModal extends Modal {
         this.canvas.deselectAll();
 
         for (const node of nodes) {
-            this.canvas.selection.add(node);
+            this.canvas.select(node);
         }
     }
 
