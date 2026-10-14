@@ -669,9 +669,9 @@ export default class EnhancedCanvas extends Plugin {
 			for (const [sourcePath] of backLinks.data.entries()) {
 				const sourceFile = this.app.vault.getFileByPath(sourcePath);
 				if (!sourceFile || sourceFile.extension !== 'md') continue;
-				// Cache gate: skip notes whose frontmatter doesn't link to this file (avoids a YAML rewrite).
-				const links = this.app.metadataCache.getFileCache(sourceFile)?.frontmatterLinks;
-				if (!links?.some(l => this.app.metadataCache.getFirstLinkpathDest(l.link.split('#')[0], sourcePath) === file)) continue;
+				// Gate on the raw frontmatter block (the cache omits `![[x]]` embeds); avoids a YAML rewrite.
+				const fm = (await this.app.vault.cachedRead(sourceFile)).match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1];
+				if (!fm || !(linkRegexBasename.test(fm) || linkRegexFullName.test(fm))) continue;
 
 				await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter) => {
 					if (!frontmatter) return;
@@ -1229,6 +1229,7 @@ export default class EnhancedCanvas extends Plugin {
 
         if (baseNodePrototype.onResizeDblclick) {
             methodsToPatch.onResizeDblclick = (originalMethod) => {
+                // eslint-disable-next-line @typescript-eslint/no-this-alias -- `this` inside the patched function is the node
                 const plugin = this;
                 return function(this: CanvasNodeWithFlag, ...args: unknown[]) {
                     const [, direction] = args;

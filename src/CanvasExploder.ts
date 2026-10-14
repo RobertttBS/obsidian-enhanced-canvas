@@ -305,7 +305,7 @@ export class CanvasExploder {
 		canvas.zoomToSelection();
 
 		if (this.plugin.settings.autoResizeOnSplit) {
-			void this.realignTreeAfterAutoResize(canvas, originalNode.y, createdNodeMeta, newNodesData);
+			this.realignTreeAfterAutoResize(canvas, originalNode.y, createdNodeMeta, newNodesData).catch(console.error);
 		}
 
 		return newNodesData.length;

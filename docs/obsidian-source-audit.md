@@ -10,7 +10,7 @@ app's asar and pretty-printed). Findings were identical in both versions. Line n
 - A2: text-card menu now uses the `canvas:node-menu` event (one `@ts-ignore`, the event
   isn't in Obsidian's public typings).
 - B2: `renameProperty` early-returns when basenames match or the cache lacks the old key.
-- B3: `deleteFile` only processes sources whose cached `frontmatterLinks` resolve to the deleted file (frontmatter embeds `![[x]]` are not cached, so they are no longer stripped).
+- B3: `deleteFile` only processes sources whose raw frontmatter block (via `cachedRead`) matches the link regex, so `![[x]]` embeds are still stripped.
 - C: `cachedRead` in the three read-only spots, `isClearing` reset via `try/finally`,
   default node size listens to `layout-change` only.
 
