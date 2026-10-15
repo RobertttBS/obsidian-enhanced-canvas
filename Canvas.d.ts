@@ -6,7 +6,10 @@ export type { AllCanvasNodeData, CanvasData, CanvasEdgeData, CanvasNodeData } fr
 declare module "obsidian" {
   interface MetadataCache {
     getBacklinksForFile(file: TFile): { data: Map<string, unknown[]> }
+    /** Includes parent tags of nested tags; skips "Excluded files". */
     getTags(): Record<string, number>
+    /** True if the path matches Settings → Files and links → Excluded files. */
+    isUserIgnored?(path: string): boolean
   }
   interface WorkspaceParent {
     /** True for a tab group in "Stacked tabs" mode. */

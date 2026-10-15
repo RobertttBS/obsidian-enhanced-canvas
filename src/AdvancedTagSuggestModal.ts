@@ -101,26 +101,10 @@ export class AdvancedTagSuggestModal extends Modal {
      * Retrieves all tags from the metadata cache.
      * Note: getTags() can be stale-on-open if the cache hasn't updated recently,
      * but it's the most efficient way to get a list of all existing tags.
+     * It already includes parent tags of nested tags (e.g. #a for #a/b).
      */
     private getTags(): string[] {
-        const tagsMap = this.app.metadataCache.getTags();
-        const tags = new Set<string>();
-
-        for (const tag of Object.keys(tagsMap)) {
-            tags.add(tag);
-            this.addParentTags(tag, tags);
-        }
-
-        return Array.from(tags).sort((a, b) => a.localeCompare(b));
-    }
-
-    private addParentTags(tag: string, tags: Set<string>): void {
-        const parts = tag.split("/");
-        if (parts.length <= 1) return;
-
-        for (let depth = 1; depth < parts.length; depth++) {
-            tags.add(parts.slice(0, depth).join("/"));
-        }
+        return Object.keys(this.app.metadataCache.getTags()).sort((a, b) => a.localeCompare(b));
     }
 
     private executeImport() {
@@ -135,8 +119,10 @@ export class AdvancedTagSuggestModal extends Modal {
             return;
         }
 
+        const cache = this.app.metadataCache;
+        // Skip "Excluded files", matching getTags() and Obsidian's search.
         const matchingFiles = this.app.vault.getMarkdownFiles()
-            .filter(file => matchesTagQuery(file, query, this.app.metadataCache))
+            .filter(file => !cache.isUserIgnored?.(file.path) && matchesTagQuery(file, query, cache))
             .sort((a, b) => a.path.localeCompare(b.path));
 
         if (matchingFiles.length === 0) {
