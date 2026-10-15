@@ -196,11 +196,14 @@ export default class EnhancedCanvas extends Plugin {
 		const selectedNodes = Array.from(canvas.selection) as CanvasNode[];
 		const selectedNodeIds = new Set(selectedNodes.map((node) => node.id));
 		const currentData = canvas.getData();
+		const edgeCount = currentData.edges.length;
 
 		currentData.edges = currentData.edges.filter((edge: CanvasEdgeData) => {
 			return !(selectedNodeIds.has(edge.fromNode) && selectedNodeIds.has(edge.toNode));
 		});
-	
+		// Nothing removed: skip the empty undo entry and save.
+		if (currentData.edges.length === edgeCount) return;
+
 		canvas.setData(currentData);
 		canvas.requestSave(false);
 	}
@@ -859,6 +862,7 @@ export default class EnhancedCanvas extends Plugin {
 					const canvas = (activeLeaf as CanvasView).canvas;
 					if (!canvas) return;
 
+					canvas.deselectAll();
 					for (const value of canvas.nodes.values()) {
 						if (value?.filePath === prevFile) {
 							canvas.select(value);

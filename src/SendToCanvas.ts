@@ -124,9 +124,10 @@ export class SendToCanvas {
         try {
             if (canvasView && canvasView.canvas) {
                 canvasView.canvas.setData(canvasData);
-                canvasView.canvas.requestSave();
+                // setData already pushed the undo snapshot.
+                canvasView.canvas.requestSave(false);
             } else {
-                const updatedContent = JSON.stringify(canvasData, null, 2);
+                const updatedContent = JSON.stringify(canvasData, null, '\t'); // Obsidian's own canvas indentation
                 await this.plugin.app.vault.modify(canvasFile, updatedContent);
             }
 
