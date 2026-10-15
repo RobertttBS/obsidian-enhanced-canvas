@@ -120,3 +120,8 @@ Hides the metadata container in markdown embeds inside Canvas nodes.
    Updates show `whatsNew` + `featureGuide`; first install shows `featureGuide`;
    the "Show feature guide" command reopens the update view.
 3. Commit as `update manifest.json to <version>`.
+4. Push `master` (ask first).
+5. Publish (ask first; it ships to every user): `npm run build` (production
+   `main.js`, no sourcemap — the dev build must not ship), then
+   `gh release create <version> main.js manifest.json styles.css --title <version> --notes "<what's new>"`.
+   The tag is the bare version (no `v`) and must equal `manifest.json`'s `version`.
