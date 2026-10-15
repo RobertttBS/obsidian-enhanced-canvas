@@ -1,21 +1,18 @@
 import { App, Modal, MarkdownRenderer, ButtonComponent, Component } from "obsidian";
 import EnhancedCanvas from "../main";
-import { releaseNotesContent, firstInstallContent } from "./releaseNotesData";
-import { isVersionNewer } from "./utils";
+import { whatsNew, featureGuide } from "./releaseNotesData";
 
 export class ReleaseNotesModal extends Modal {
     private plugin: EnhancedCanvas;
     private version: string;
     private isNewInstall: boolean;
-    private previousVersion: string;
     private renderComponent = new Component();
 
-    constructor(app: App, plugin: EnhancedCanvas, version: string, isNewInstall: boolean, previousVersion = "0.0.0") {
+    constructor(app: App, plugin: EnhancedCanvas, version: string, isNewInstall: boolean) {
         super(app);
         this.plugin = plugin;
         this.version = version;
         this.isNewInstall = isNewInstall;
-        this.previousVersion = previousVersion;
     }
 
     onOpen() {
@@ -36,24 +33,7 @@ export class ReleaseNotesModal extends Modal {
     async renderContent() {
         const { contentEl } = this;
 
-        let markdownText = "";
-        if (this.isNewInstall) {
-            markdownText = firstInstallContent;
-        } else {
-            const notes: string[] = [];
-            const versions = Object.keys(releaseNotesContent).sort((a, b) => isVersionNewer(a, b) ? -1 : 1);
-            
-            for (const v of versions) {
-                // Many versions share one cumulative changelog; show it only once.
-                if (isVersionNewer(v, this.previousVersion) && !isVersionNewer(v, this.version) && !notes.includes(releaseNotesContent[v])) {
-                    notes.push(releaseNotesContent[v]);
-                }
-            }
-            
-            markdownText = notes.length > 0 
-                ? notes.join("\n\n---\n\n")
-                : "Thank you for updating! This update includes bug fixes.";
-        }
+        const markdownText = this.isNewInstall ? featureGuide : `${whatsNew}\n---\n${featureGuide}`;
 
         await MarkdownRenderer.render(
             this.app,

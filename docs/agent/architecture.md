@@ -101,7 +101,8 @@ safe.
   in `main.ts`.
 - `utils.ts` — `isVersionNewer` (semver), `randomId` (uses `crypto.getRandomValues`
   — prefer over `Math.random()`).
-- `ReleaseNotesModal.ts` + `releaseNotesData.ts` — first-run / version-bump modal,
+- `ReleaseNotesModal.ts` + `releaseNotesData.ts` — first-run / version-bump modal
+  (what's new + feature guide, also opened by the "Show feature guide" command),
   gated by `showReleaseNotes` / `previousRelease`.
 
 ## CSS
@@ -113,8 +114,9 @@ Hides the metadata container in markdown embeds inside Canvas nodes.
 ## Release process
 
 1. Bump `version` in `manifest.json`.
-2. In `src/releaseNotesData.ts`: prepend a callout to the current notes string, and
-   map the new version to it in `releaseNotesContent`. Keep each callout to one or
-   two short lines — Refactor: `> [!success] Refactor in <v>`; Feature:
-   `> [!note]`/`> [!tip]`; Bug fix: `> [!bug] Fixed in <v>`.
+2. In `src/releaseNotesData.ts`: replace `whatsNew` with this release's user-facing
+   features (skip fixes and refactors). When a feature ships, add an entry to
+   `featureGuide`: what it does, where to find it (menu/command), related settings.
+   Updates show `whatsNew` + `featureGuide`; first install shows `featureGuide`;
+   the "Show feature guide" command reopens the update view.
 3. Commit as `update manifest.json to <version>`.

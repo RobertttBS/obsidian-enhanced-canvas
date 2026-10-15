@@ -591,8 +591,7 @@ export default class EnhancedCanvas extends Plugin {
                         this.app,
                         this,
                         currentVersion,
-                        isNewInstall,
-                        previousVersion
+                        isNewInstall
                     ).open();
                 }
             }
@@ -779,6 +778,14 @@ export default class EnhancedCanvas extends Plugin {
             name: "Send to Selected Canvas",
             callback: () => {
                 this.sendToCanvas.handleSendToSelectedCanvas();
+            },
+        });
+
+        this.addCommand({
+            id: "show-feature-guide",
+            name: "Show feature guide",
+            callback: () => {
+                new ReleaseNotesModal(this.app, this, this.manifest.version, false).open();
             },
         });
 

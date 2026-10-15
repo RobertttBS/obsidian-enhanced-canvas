@@ -1,71 +1,48 @@
-export const firstInstallContent = `
-Beyond the original "Property Link" and "Auto Focus" features, recent updates add:
+// Shown after an update, above the feature guide. Replace it each release.
+export const whatsNew = `
+## What's new
 
-### ✨ Split by Headings & Add Notes by Tag
-
-- **Split by headings**: right-click a file or text node in Canvas to break it into a tree of nodes, one per heading.
-- **Add notes by tag...**: right-click an empty spot on the canvas to bulk-import every note matching a tag query.
-
-### ✨ Send Note to Canvas
-
-The **"Send to Canvas"** command adds the current note to a Canvas of your choice and writes a "canvas" property to the note, so you can jump back to the board later. That Canvas then becomes the selected one, and **"Send to Selected Canvas"** adds other notes to it without picking the file again.
-
-### ✨ Auto-Resize Node
-
-Double-click a node's bottom edge to turn on auto-resize: its height then keeps fitting the content as you change the width or edit the text.
-
-[View detailed demo at github](https://github.com/RobertttBS/obsidian-enhanced-canvas)
+- **Split by headings** can stop at a heading level you choose. Turn on *Choose heading level on split* in settings.
+- Cards created by **Split by headings** auto-resize to fit their content.
 `;
 
-export const fixCursorShiftIssueInStackTabsCanvas = `
-> [!bug] Fixed in 1.0.30
-> Deleting a folder no longer throws an error, and the notes inside it are cleaned up properly.
-> Moving or renaming a canvas no longer leaves stale or duplicate links in note properties.
+// Shown on first install and after every update. Add an entry when a feature ships.
+export const featureGuide = `
+## Features
 
-> [!bug] Fixed in 1.0.29
-> Auto-resize and drag-to-create nodes now work in pinned Canvas tabs that haven't been opened yet (Windows).
+### Canvas properties
+Add a note to a Canvas and it gets a \`canvas\` property linking back to the board. Connect two notes with an edge and the target is linked in a property named after the Canvas. Renaming or deleting files keeps these properties up to date.
+- **Try it:** drag a note into a Canvas, connect it to another note, then open the note's properties.
+- **Settings:** *Enable Frontmatter Synchronization* (turning it off removes every property this plugin added).
 
-> [!success] Refactor in 1.0.26–1.0.28
-> Faster startup sync, fewer redundant frontmatter writes, and more robust property cleanup.
+### Focus node from links
+Click a Canvas link in a note's properties, backlinks, or search results, and the Canvas opens zoomed to that note's node.
+- **Try it:** click the \`canvas\` property of a note that's on a Canvas.
 
-> [!note] Feature in 1.0.25
-> "Add notes by tag..." supports multi-tag queries (AND, OR, exclude) with suggestions.
+### Split by headings
+Break a note or text card into a tree of cards, one per heading.
+- **Where:** right-click a file or text node → **Split by headings**.
+- **Settings:** *Auto-resize leaf nodes on split*, *Choose heading level on split*, *Max auto-resize height*.
 
-> [!note] Feature in 1.0.24
-> Set the default width and height for new nodes in the Enhanced Canvas settings.
+### Add notes by tag
+Bulk-import every note matching a tag query (supports AND, OR, and exclude).
+- **Where:** right-click an empty spot on the Canvas → **Add notes by tag...**
 
-> [!note] Feature in 1.0.23
-> New "Add notes by tag..." right-click menu option to bulk-import notes by tag.
+### Send to Canvas
+Add the current note to a Canvas of your choice. That Canvas is remembered, so later notes can go straight to it.
+- **Commands:** *Send to Canvas*, *Send to Selected Canvas*, *Clear selected Canvas file*.
 
-> [!bug] Fixed in 1.0.22
-> Properties now sync for pinned Canvas tabs on Windows 11.
+### Auto-resize node
+Double-click a node's bottom edge, and its height follows the content as you edit the text or change the width. Dragging the bottom edge turns it off.
 
-> [!note] Feature in 1.0.21
-> Canvas core now supports backlinks, so "Sync Frontmatter" (and the plugin's CSS) can be turned off in the Enhanced Canvas settings.
+### Edge commands
+Search "edges" in the command palette to draw edges from the links in your notes, re-route them, or delete them.
 
-> [!note] Feature in 1.0.20
-> "Focus" now works for Linked Mentions.
+### Hide properties in Canvas nodes
+Hides the properties panel inside Canvas nodes and embedded notes.
+- **Settings:** *Enable Custom Visuals & CSS*.
 
-> [!note] Feature in 1.0.19
-> "Split by headings" now works for Card Nodes.
+Reopen this guide anytime with the **Show feature guide** command.
 
-> [!bug] Fixed in 1.0.18
-> Fixes the cursor position shift in Canvas when "stacked tabs" is enabled (a bug in the Canvas core plugin).
+[Details on GitHub](https://github.com/RobertttBS/obsidian-enhanced-canvas)
 `;
-
-export const releaseNotesContent: Record<string, string> = {
-    "1.0.30": fixCursorShiftIssueInStackTabsCanvas,
-    "1.0.29": fixCursorShiftIssueInStackTabsCanvas,
-    "1.0.28": fixCursorShiftIssueInStackTabsCanvas,
-    "1.0.27": fixCursorShiftIssueInStackTabsCanvas,
-    "1.0.26": fixCursorShiftIssueInStackTabsCanvas,
-    "1.0.25": fixCursorShiftIssueInStackTabsCanvas,
-    "1.0.24": fixCursorShiftIssueInStackTabsCanvas,
-    "1.0.23": fixCursorShiftIssueInStackTabsCanvas,
-    "1.0.22": fixCursorShiftIssueInStackTabsCanvas,
-    "1.0.21": fixCursorShiftIssueInStackTabsCanvas,
-    "1.0.20": fixCursorShiftIssueInStackTabsCanvas,
-    "1.0.19": fixCursorShiftIssueInStackTabsCanvas,
-    "1.0.18": fixCursorShiftIssueInStackTabsCanvas,
-    "1.0.17": firstInstallContent
-};
