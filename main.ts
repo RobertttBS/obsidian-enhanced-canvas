@@ -1493,6 +1493,18 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 					})
 			);
 
+		new Setting(containerEl)
+			.setName('Choose heading level on split')
+			.setDesc('Ask which heading level to split down to. Deeper headings stay inside their parent card.')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.chooseHeadingLevelOnSplit)
+					.onChange(async (value) => {
+						this.plugin.settings.chooseHeadingLevelOnSplit = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
 		const MIN_AUTO_RESIZE_HEIGHT = 100;
 		const MAX_AUTO_RESIZE_HEIGHT = 5000;
 

@@ -90,7 +90,8 @@ safe.
 ## `src/` modules
 
 - `CanvasExploder.ts` — file/text node → heading-tree of connected nodes. Supports
-  optional auto-resizing leaf cards and realigning tree vertically. Layout constants at top.
+  optional auto-resizing leaf cards and realigning tree vertically, and (setting
+  `chooseHeadingLevelOnSplit`) a `SuggestModal` to cap the split depth. Layout constants at top.
 - `CanvasTagImport.ts` + `AdvancedTagSuggestModal.ts` — import tagged notes into a
   canvas. Tag completion uses Obsidian's `AbstractInputSuggest`, completing the word
   under the cursor.

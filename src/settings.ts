@@ -10,6 +10,7 @@ export interface EnhancedCanvasSettings {
     defaultFileNodeHeight: number;
 
     autoResizeOnSplit: boolean;
+    chooseHeadingLevelOnSplit: boolean;
     maxAutoResizeHeight: number;
 }
 
@@ -25,5 +26,6 @@ export const DEFAULT_SETTINGS: EnhancedCanvasSettings = {
     defaultFileNodeHeight: 400,
 
     autoResizeOnSplit: true,
+    chooseHeadingLevelOnSplit: false,
     maxAutoResizeHeight: 1000,
 };

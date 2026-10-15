@@ -1,7 +1,10 @@
 import {
+    App,
+    CachedMetadata,
     Menu,
     ItemView,
-    Notice
+    Notice,
+    SuggestModal
 } from 'obsidian';
 import { AllCanvasNodeData, CanvasEdgeData, CanvasNodeData } from "obsidian/canvas";
 
@@ -16,6 +19,32 @@ const DEFAULT_WIDTH = 400;
 const MAX_HEIGHT = 600;
 const GAP_Y = 20;
 const GAP_X = 20;
+
+/** Picks the deepest heading level to split down to (Infinity = all levels). */
+class HeadingLevelModal extends SuggestModal<number> {
+    constructor(app: App, private levels: number[], private onPick: (maxLevel: number) => void) {
+        super(app);
+        this.setPlaceholder("Split down to heading level…");
+    }
+
+    getSuggestions(query: string): number[] {
+        // The deepest level present equals "all levels", so it's offered only as that.
+        const options = [Infinity, ...this.levels.slice(0, -1)];
+        return options.filter((l) => this.label(l).toLowerCase().includes(query.toLowerCase()));
+    }
+
+    label(level: number): string {
+        return level === Infinity ? `All levels (H${this.levels[this.levels.length - 1]})` : `H${level}`;
+    }
+
+    renderSuggestion(level: number, el: HTMLElement) {
+        el.setText(this.label(level));
+    }
+
+    onChooseSuggestion(level: number) {
+        this.onPick(level);
+    }
+}
 
 /**
  * Manages the interactive decomposition of file nodes, enabling the visualization of 
@@ -45,9 +74,7 @@ export class CanvasExploder {
                         menu.addItem((item) => {
                             item
                                 .setTitle(title)
-                                .onClick(() => {
-                                    void this.explodeFileNode(canvas, node);
-                                });
+                                .onClick(() => this.split(canvas, node));
                         });
                     }
                     // Text Node (for editor-menu when editing)
@@ -55,9 +82,7 @@ export class CanvasExploder {
                         menu.addItem((item) => {
                             item
                                 .setTitle(title)
-                                .onClick(() => {
-                                    void this.explodeTextNode(canvas, node);
-                                });
+                                .onClick(() => this.split(canvas, node));
                         });
                     }
                 }
@@ -75,16 +100,32 @@ export class CanvasExploder {
         if (!canvas || canvas.readonly) return;
 
         // Only markdown files have headings; images/PDFs are file nodes too.
-        const explode = node.file
-            ? (node.file.extension === 'md' && !node.subpath ? () => this.explodeFileNode(canvas, node) : null)
-            : (node.text !== undefined ? () => this.explodeTextNode(canvas, node) : null);
-        if (!explode) return;
+        if (node.file ? node.file.extension !== 'md' || node.subpath : node.text === undefined) return;
 
         menu.addItem((item) => {
             item
                 .setTitle("Split by headings")
-                .onClick(explode);
+                .onClick(() => this.split(canvas, node));
         });
+    }
+
+    /** Splits a file/text node, first asking for the heading level when the setting is on. */
+    split(canvas: Canvas, node: CanvasNode) {
+        const explode = (max: number) => node.file
+            ? this.explodeFileNode(canvas, node, max)
+            : this.explodeTextNode(canvas, node, max);
+        if (!this.plugin.settings.chooseHeadingLevelOnSplit) return explode(Infinity);
+
+        const cache = node.file ? this.plugin.app.metadataCache.getFileCache(node.file) : null;
+        const sectionsAt = (max: number) => cache
+            ? this.fileSections(cache, max)
+            : this.parseMarkdownHeadings(node.text ?? '', max);
+        const distinct = [...new Set(sectionsAt(Infinity).map((s) => s.level))].sort((a, b) => a - b);
+        // Only offer levels that yield 2+ cards; with <2 such levels there's nothing
+        // to choose, and explode handles the no-headings notice.
+        const levels = distinct.filter((l) => sectionsAt(l).length >= 2);
+        if (levels.length < 2) return explode(Infinity);
+        new HeadingLevelModal(this.plugin.app, levels, explode).open();
     }
 
     sanitizeHeading(rawHeading: string): string {
@@ -98,7 +139,7 @@ export class CanvasExploder {
     /**
      * Parses raw markdown text into structured sections based on headings.
      */
-    parseMarkdownHeadings(rawText: string): { level: number, content: string }[] {
+    parseMarkdownHeadings(rawText: string, maxLevel = Infinity): { level: number, content: string }[] {
         // Split by newlines to process line by line
         const lines = rawText.split(/\r?\n/);
         const sections: { level: number, content: string }[] = [];
@@ -112,7 +153,8 @@ export class CanvasExploder {
         for (const line of lines) {
             const match = line.match(headingRegex);
 
-            if (match) {
+            // Headings deeper than maxLevel stay as content of the current section.
+            if (match && match[1].length <= maxLevel) {
                 // If we have an existing section, push it to results
                 if (currentSection) {
                     sections.push({
@@ -155,7 +197,7 @@ export class CanvasExploder {
 	 * Deconstructs a single file node into a hierarchical tree of connected nodes representing its internal headings,
 	 * replacing the original node to visualize the document's structure directly on the canvas.
 	 */
-	explodeFileNode(canvas: Canvas, originalNode: CanvasNode) {
+	explodeFileNode(canvas: Canvas, originalNode: CanvasNode, maxLevel = Infinity) {
 		const targetFile = originalNode.file;
 		if (!targetFile) return;
 
@@ -165,14 +207,10 @@ export class CanvasExploder {
 			return;
 		}
 
-		const sections: { level: number, heading?: string }[] =
-			cache.headings.map((h) => ({ level: h.level, heading: h.heading }));
-
-		// Content before the first heading (frontmatter excluded) gets its own node,
-		// mirroring parseMarkdownHeadings.
-		const firstHeadingLine = cache.headings[0].position.start.line;
-		if (cache.sections?.some((s) => s.type !== 'yaml' && s.position.start.line < firstHeadingLine)) {
-			sections.unshift({ level: sections[0].level });
+		const sections = this.fileSections(cache, maxLevel);
+		if (sections.length < 2 && maxLevel !== Infinity) {
+			new Notice("Only one card at this heading level, nothing to split.");
+			return;
 		}
 
 		const createdCount = this.buildSectionTree(
@@ -191,6 +229,23 @@ export class CanvasExploder {
 		);
 
 		new Notice(`Explosion complete, created ${createdCount} nodes.`);
+	}
+
+	/** File-node sections: headings <= maxLevel, plus a preamble entry (no heading) if content precedes them. */
+	private fileSections(cache: CachedMetadata, maxLevel: number): { level: number, heading?: string }[] {
+		// A heading subpath embeds its deeper subheadings too, so dropping them loses nothing.
+		const sections: { level: number, heading?: string }[] = (cache.headings ?? [])
+			.filter((h) => h.level <= maxLevel)
+			.map((h) => ({ level: h.level, heading: h.heading }));
+		if (sections.length === 0) return sections;
+
+		// Content (or deeper headings) before the first kept heading, frontmatter
+		// excluded, gets its own node, mirroring parseMarkdownHeadings.
+		const firstHeadingLine = cache.headings!.find((h) => h.level <= maxLevel)!.position.start.line;
+		if (cache.sections?.some((s) => s.type !== 'yaml' && s.position.start.line < firstHeadingLine)) {
+			sections.unshift({ level: sections[0].level });
+		}
+		return sections;
 	}
 
 	/**
@@ -457,11 +512,15 @@ export class CanvasExploder {
 	 * Deconstructs a single text node into a hierarchical tree of connected nodes representing its internal headings,
 	 * replacing the original node to visualize the card's structure directly on the canvas.
 	 */
-	explodeTextNode(canvas: Canvas, originalNode: CanvasNode) {
-		const sections = this.parseMarkdownHeadings(originalNode.text ?? '');
+	explodeTextNode(canvas: Canvas, originalNode: CanvasNode, maxLevel = Infinity) {
+		const sections = this.parseMarkdownHeadings(originalNode.text ?? '', maxLevel);
 
 		if (sections.length === 0) {
 			new Notice("No headings found to split.");
+			return;
+		}
+		if (sections.length < 2 && maxLevel !== Infinity) {
+			new Notice("Only one card at this heading level, nothing to split.");
 			return;
 		}
 
