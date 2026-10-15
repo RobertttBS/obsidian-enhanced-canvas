@@ -8,7 +8,18 @@
 
 **Split Node by Headings** instantly deconstructs a single node into a hierarchical tree based on its headings. You can try this by right-clicking on a file (text) node and selecting "Split by headings" in Canvas.
 
+-   **Choose the heading level**: turn on *Choose heading level on split* in settings, and the plugin asks which level to split down to (e.g. H2). Deeper headings stay inside their parent card.
+-   **Cards fit their content**: with *Auto-resize leaf nodes on split* on, each new card's height fits its text and the tree is re-laid out. *Max auto-resize height* caps how tall a card can grow; longer content scrolls.
+
 ![SplitNode](./Attachments/split.gif)
+
+### Add Notes by Tag
+
+Right-click an empty spot on the Canvas and choose **"Add notes by tag..."** to add every note matching a tag query at once. Tags autocomplete as you type.
+
+-   Space means AND: `#project #active`
+-   `OR` means OR: `#book OR #article`
+-   `-` excludes: `#project -#archived`
 
 ### Send Note to Canvas
 
@@ -42,22 +53,11 @@ Based on this demo:
 
 **Note 2**: If you delete or rename a .canvas or Markdown file, all associated properties will also be updated.
 
-### Hide The Frontmatter by Default
+**Note 3**: To stop the plugin from writing these properties, turn off *Enable Frontmatter Synchronization* in settings. Turning it off removes every property the plugin added.
 
-> In version after 1.0.12, the frontmatter (properties) in Canvas nodes is hidden by default.
+### Hide Properties in Canvas Nodes
 
-> To view or edit properties in a Canvas node, comment out or remove the code below in `.obsidian/plugins/obsidian-enhanced-canvas/style.css`.
-
-```
-.markdown-embed .metadata-container,
-.markdown-embed-content .metadata-container {
-display: none !important;
-}
-
-.mod-inside-iframe.is-live-preview .metadata-container {
-display: none !important;
-}
-```
+The properties panel inside Canvas nodes and embedded notes is hidden. To show it again, turn off *Enable Custom Visuals & CSS* in settings.
 
 ## Commands
 
@@ -75,6 +75,12 @@ display: none !important;
 
 -   **Remove the property of all nodes in current Canvas**
     -   Removes properties from all nodes in the current Canvas
+
+-   **Send to Canvas** / **Send to Selected Canvas** / **Clear selected Canvas file**
+    -   See [Send Note to Canvas](#send-note-to-canvas)
+
+-   **Show feature guide**
+    -   Opens an in-app guide to every feature, with where to find it and which settings control it
 
 ### Demo
 
