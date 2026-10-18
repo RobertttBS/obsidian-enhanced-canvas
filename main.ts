@@ -20,6 +20,7 @@ import { Canvas, CanvasEdge, CanvasNode, CanvasView, Position, Size } from 'Canv
 import { CanvasExploder } from './src/CanvasExploder';
 import { SendToCanvas } from './src/SendToCanvas';
 import { CanvasTagImport } from './src/CanvasTagImport';
+import { CanvasFind } from './src/CanvasFind';
 import { EnhancedCanvasSettings, DEFAULT_SETTINGS } from "./src/settings";
 import { isVersionNewer, randomId } from "./src/utils";
 import { ReleaseNotesModal } from "./src/ReleaseNotesModal";
@@ -531,6 +532,7 @@ export default class EnhancedCanvas extends Plugin {
 		this.registerFocusCanvas();
 		this.registerCanvasExploder();
 		this.canvasTagImport.register();
+		new CanvasFind(this).register();
 		this.registerCanvasNodeAutoHeightPatcher();
 		this.registerCanvasDefaultNodeSize();
 
