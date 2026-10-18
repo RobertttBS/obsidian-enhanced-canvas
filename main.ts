@@ -1209,8 +1209,6 @@ export default class EnhancedCanvas extends Plugin {
 
         if (baseNodePrototype.onResizeDblclick) {
             methodsToPatch.onResizeDblclick = (originalMethod) => {
-                // eslint-disable-next-line @typescript-eslint/no-this-alias -- `this` inside the patched function is the node
-                const plugin = this;
                 return function(this: CanvasNodeWithFlag, ...args: unknown[]) {
                     const [, direction] = args;
 
@@ -1221,17 +1219,8 @@ export default class EnhancedCanvas extends Plugin {
                         }
                         this.autoHeightEnabled = true;
                     }
-                    const heightBefore = this.height;
-                    const result = originalMethod.apply(this, args);
-                    const maxHeight = plugin.settings.maxAutoResizeHeight;
-                    // Only clamp when the native fit actually ran (it no-ops on unmounted content).
-                    if (direction === "bottom" && maxHeight && this.height !== heightBefore && this.height > maxHeight) {
-                        // Go through moveAndResize so bbox, edges and render stay in sync.
-                        this.moveAndResize({ x: this.x, y: this.y, width: this.width, height: maxHeight });
-                        // With history: replaces the native fit's pending (unclamped) undo snapshot.
-                        this.canvas?.requestSave?.();
-                    }
-                    return result;
+                    // Unclamped: maxAutoResizeHeight only applies to split (CanvasExploder).
+                    return originalMethod.apply(this, args);
                 };
             };
         }
@@ -1283,6 +1272,8 @@ export default class EnhancedCanvas extends Plugin {
 
 					if (this.autoHeightEnabled) {
 						window.setTimeout(() => {
+							// Re-check: split may switch this off for capped leaves within the delay.
+							if (!this.autoHeightEnabled) return;
 							if (typeof this.onResizeDblclick === 'function') {
 								const mockEvent = {
 									preventDefault: () => {},
@@ -1523,7 +1514,7 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Max auto-resize height')
-			.setDesc('Maximum height (px) for any bottom-edge auto-fit (double-click or split), even with auto-resize on split off. Taller content scrolls. 100–5000.')
+			.setDesc('Maximum height (px) for leaf nodes auto-resized on split. Taller content scrolls, and capped nodes stop auto-fitting after edits. Double-click auto-fit is not capped. 100–5000.')
 			.addText((text) =>
 				text
 					.setValue(String(this.plugin.settings.maxAutoResizeHeight))

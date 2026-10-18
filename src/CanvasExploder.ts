@@ -397,7 +397,7 @@ export class CanvasExploder {
 
 	/**
 	 * Fits leaf nodes to their content via auto-resize and restacks the tree vertically
-	 * based on each node's resulting height (clamped by maxAutoResizeHeight).
+	 * based on each node's resulting height (clamped by maxAutoResizeHeight; capped leaves get no auto-fit).
 	 */
 	private async realignTreeAfterAutoResize(
 		canvas: Canvas,
@@ -448,6 +448,8 @@ export class CanvasExploder {
 		let currentY = baseY;
 		const nodeYMap = new Map<string, number>();
 		const nodeHeightMap = new Map<string, number>();
+		// Leaves capped at maxHeight: no auto-fit afterwards, or the next blur would grow them past the cap.
+		const clampedIds = new Set<string>();
 
 		for (const meta of createdNodes) {
 			const liveNode = canvas.nodes.get(meta.id);
@@ -459,6 +461,7 @@ export class CanvasExploder {
 					? liveNode.height
 					: (liveNode?.nodeEl?.offsetHeight || LEAF_HEIGHT);
 				nodeHeight = Math.min(rawHeight, maxHeight);
+				if (rawHeight > maxHeight) clampedIds.add(meta.id);
 			}
 
 			nodeHeightMap.set(meta.id, nodeHeight);
@@ -487,12 +490,12 @@ export class CanvasExploder {
 			canvas.requestSave(false);
 		}
 
-		// 4. Ensure autoHeightEnabled persists on live leaf nodes after setData
+		// 4. Set autoHeightEnabled on live leaf nodes after setData (off for capped ones)
 		for (const meta of createdNodes) {
 			if (!meta.isParent) {
 				const liveNode = canvas.nodes.get(meta.id);
 				if (liveNode) {
-					liveNode.autoHeightEnabled = true;
+					liveNode.autoHeightEnabled = !clampedIds.has(meta.id);
 				}
 			}
 		}
