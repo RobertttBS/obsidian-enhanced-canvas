@@ -4,6 +4,14 @@
 
 ## ✨New Feature✨
 
+### Find in Canvas
+
+Run **"Find in canvas"** from the command palette and type a word or a `[[link]]`. Every card that contains the word, or links to that note, is outlined and the rest are dimmed; matched text is highlighted and the view zooms to fit the results. Select text in a card and right-click → **Find in canvas** to search for it directly. Click an empty spot on the Canvas to clear.
+
+-   Searches text cards, note cards (including their content), group labels, and web links.
+-   Node colors and the `.canvas` file are never changed.
+-   Change the highlight color with a CSS snippet: `body { --ec-find-color: <color>; }`
+
 ### Split Node by Headings
 
 **Split Node by Headings** instantly deconstructs a single node into a hierarchical tree based on its headings. You can try this by right-clicking on a file (text) node and selecting "Split by headings" in Canvas.
@@ -78,6 +86,9 @@ The properties panel inside Canvas nodes and embedded notes is hidden. To show i
 
 -   **Send to Canvas** / **Send to Selected Canvas** / **Clear selected Canvas file**
     -   See [Send Note to Canvas](#send-note-to-canvas)
+
+-   **Find in canvas (selected text or link)** / **Clear find highlights**
+    -   See [Find in Canvas](#find-in-canvas)
 
 -   **Show feature guide**
     -   Opens an in-app guide to every feature, with where to find it and which settings control it
