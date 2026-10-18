@@ -22,6 +22,13 @@ export interface Size {
   height: number
 }
 
+export interface BBox {
+  minX: number
+  minY: number
+  maxX: number
+  maxY: number
+}
+
 export interface Position {
   x: number
   y: number
@@ -39,10 +46,15 @@ export interface Canvas {
 
   readonly: boolean
 
+  /** Root element of the canvas; pointer events whose target is it hit empty canvas. */
+  wrapperEl: HTMLElement
+
   selection: Set<CanvasNode>
   deselectAll(): void
   select(node: CanvasNode): void
   zoomToSelection(): void
+  /** Fits the viewport to a canvas-space box (1.1× padding, zoom capped at 1). */
+  zoomToBbox(bbox: BBox): void
 
   createFileNode(options: { [key: string]: unknown }): CanvasNode
 
@@ -107,6 +119,7 @@ export interface CanvasNode {
   _autoHeightTimer?: number | null
   onResizeDblclick?(event: unknown, direction: string): void
   moveAndResize(bbox: Position & Size): void
+  getBBox(): BBox
 }
 
 export interface CanvasEdge {

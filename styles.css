@@ -43,3 +43,26 @@ If your plugin does not need CSS, delete this file.
 .advanced-tag-input-container input {
     width: 100%;
 }
+
+body {
+    --ec-find-color: rgb(255, 193, 7); /* golden yellow; override in a snippet */
+}
+
+/* Find in canvas: dim non-matches, outline matches. Class-only, so node colors are untouched. */
+.ec-find-active .canvas-node:not(.ec-find-hit),
+.ec-find-active .canvas-edges,
+.ec-find-active .canvas-path-label-wrapper {
+    opacity: 0.25;
+    transition: opacity 0.15s ease;
+}
+
+.ec-find-active .canvas-node.ec-find-hit .canvas-node-container {
+    outline: 3px solid var(--ec-find-color);
+    outline-offset: 2px;
+}
+
+/* Find in canvas: VS Code-style marks on the matched text (CSS Custom Highlight API). */
+::highlight(ec-find) {
+    background-color: rgba(255, 193, 7, 0.55);
+    color: var(--text-normal);
+}

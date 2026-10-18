@@ -15,7 +15,7 @@ against Canvas internals — ESLint allows it).
 
 Features register from `onload()`: the `register*` methods plus
 `canvasTagImport.register()` — plugin commands, canvas auto-link, file-manager
-patches, focus-canvas, exploder, tag import, node auto-height, default node size. `onload` then runs `syncAllCanvasProperties`; `onunload` strips the
+patches, focus-canvas, exploder, tag import, find in canvas (`new CanvasFind(this).register()`), node auto-height, default node size. `onload` then runs `syncAllCanvasProperties`; `onunload` strips the
 properties. Get the live method line numbers with:
 
 ```
@@ -95,6 +95,13 @@ safe.
 - `CanvasTagImport.ts` + `AdvancedTagSuggestModal.ts` — import tagged notes into a
   canvas. Tag completion uses Obsidian's `AbstractInputSuggest`, completing the word
   under the cursor.
+- `CanvasFind.ts` — "Find in canvas" command + editor-menu item: highlights nodes
+  containing a word or linking to a `[[note]]` (links resolved via
+  `getFirstLinkpathDest`), dims the rest, `zoomToBbox` to fit. Uses only
+  `ec-find-hit` / `ec-find-active` classes — never `node.color`, never writes the file.
+  Matched text is marked via the CSS Custom Highlight API (`::highlight(ec-find)`, no
+  DOM edits); a `MutationObserver` on hit nodes repaints as content lazily mounts.
+  A click (not a drag) on empty canvas (`e.target === canvas.wrapperEl`) clears the find.
 - `SendToCanvas.ts` — "Send to Canvas" via `FuzzySuggestModal`; `selectedCanvas` is
   in-memory only.
 - `settings.ts` — `EnhancedCanvasSettings` + `DEFAULT_SETTINGS`. Settings UI lives
@@ -109,7 +116,8 @@ safe.
 
 `styles.css` ships with the plugin. Rules live behind body class
 `enhanced-canvas-enabled`, toggled by `toggleCSSClass` from `settings.enableCustomCSS`.
-Hides the metadata container in markdown embeds inside Canvas nodes.
+Hides the metadata container in markdown embeds inside Canvas nodes. The
+`ec-find-*` rules (find in canvas) are unscoped — only `CanvasFind` adds those classes.
 
 ## Release process
 
