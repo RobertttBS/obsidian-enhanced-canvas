@@ -2,8 +2,7 @@
 export const whatsNew = `
 ## What's new
 
-- **Split by headings** can stop at a heading level you choose. Turn on *Choose heading level on split* in settings.
-- Cards created by **Split by headings** auto-resize to fit their content.
+- **Find in canvas**: search a word or a \`[[link]]\` to highlight every matching card, dim the rest, and zoom to fit. Run *Find in canvas* from the command palette, or right-click selected text in a card. Click an empty spot to clear.
 `;
 
 // Shown on first install and after every update. Add an entry when a feature ships.
@@ -27,6 +26,11 @@ Break a note or text card into a tree of cards, one per heading.
 ### Add notes by tag
 Bulk-import every note matching a tag query (supports AND, OR, and exclude).
 - **Where:** right-click an empty spot on the Canvas → **Add notes by tag...**
+
+### Find in canvas
+Search a word or a \`[[link]]\` across the Canvas. Matching cards are outlined, the rest dimmed, matched text highlighted, and the view zooms to fit. Node colors are never changed.
+- **Where:** command *Find in canvas (selected text or link)*, or right-click selected text in a card → **Find in canvas**.
+- **Clear:** click an empty spot on the Canvas, or run *Clear find highlights*.
 
 ### Send to Canvas
 Add the current note to a Canvas of your choice. That Canvas is remembered, so later notes can go straight to it.
