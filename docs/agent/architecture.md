@@ -95,7 +95,8 @@ safe.
 - `CanvasTagImport.ts` + `AdvancedTagSuggestModal.ts` — import tagged notes into a
   canvas. Tag completion uses Obsidian's `AbstractInputSuggest`, completing the word
   under the cursor.
-- `CanvasFind.ts` — "Find in canvas" command + editor-menu item: highlights nodes
+- `CanvasFind.ts` — "Find in canvas" command (default hotkey Mod+F, shared with core
+  "Search current file") + editor-menu item: highlights nodes
   containing a word or linking to a `[[note]]` (links resolved via
   `getFirstLinkpathDest`), dims the rest, `zoomToBbox` to fit. Uses only
   `ec-find-hit` / `ec-find-active` classes — never `node.color`, never writes the file.

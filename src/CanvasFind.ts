@@ -70,6 +70,8 @@ export class CanvasFind {
         plugin.addCommand({
             id: 'find-in-canvas',
             name: 'Find in canvas (selected text or link)',
+            // Same key as core "Search current file"; checkCallback limits it to canvas views.
+            hotkeys: [{ modifiers: ['Mod'], key: 'f' }],
             checkCallback: (checking) => {
                 const canvas = this.activeCanvas();
                 if (!canvas) return false;

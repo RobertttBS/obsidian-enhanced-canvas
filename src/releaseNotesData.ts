@@ -2,7 +2,7 @@
 export const whatsNew = `
 ## What's new
 
-- **Find in canvas**: search a word or a \`[[link]]\` to highlight every matching card, dim the rest, and zoom to fit. Run *Find in canvas* from the command palette, or right-click selected text in a card. Click an empty spot to clear.
+- **Find in canvas**: search a word or a \`[[link]]\` to highlight every matching card, dim the rest, and zoom to fit. Press Cmd/Ctrl+F (change it in Settings → Hotkeys), run *Find in canvas* from the command palette, or right-click selected text in a card. Click an empty spot to clear.
 `;
 
 // Shown on first install and after every update. Add an entry when a feature ships.
@@ -29,8 +29,9 @@ Bulk-import every note matching a tag query (supports AND, OR, and exclude).
 
 ### Find in canvas
 Search a word or a \`[[link]]\` across the Canvas. Matching cards are outlined, the rest dimmed, matched text highlighted, and the view zooms to fit. Node colors are never changed.
-- **Where:** command *Find in canvas (selected text or link)*, or right-click selected text in a card → **Find in canvas**.
+- **Where:** Cmd/Ctrl+F in a Canvas, command *Find in canvas (selected text or link)*, or right-click selected text in a card → **Find in canvas**.
 - **Clear:** click an empty spot on the Canvas, or run *Clear find highlights*.
+- **Hotkey:** Cmd/Ctrl+F by default; change it in Settings → Hotkeys.
 
 ### Send to Canvas
 Add the current note to a Canvas of your choice. That Canvas is remembered, so later notes can go straight to it.
