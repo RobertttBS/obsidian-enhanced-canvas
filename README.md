@@ -6,9 +6,9 @@
 
 ### Find in Canvas
 
-Press **Cmd+F** (Ctrl+F on Windows) in a Canvas, or run **"Find in canvas"** from the command palette, and type a word or a `[[link]]`. Every card that contains the word, or links to that note, is outlined and the rest are dimmed; matched text is highlighted and the view zooms to fit the results. Select text in a card and right-click → **Find in canvas** to search for it directly. Click an empty spot on the Canvas to clear.
+Press **Cmd+F** (Ctrl+F on Windows), the core *Search current file* hotkey, in a Canvas, or run **"Find in canvas"** from the command palette, and type a word or a `[[link]]`. Every card that contains the word, or links to that note, is outlined and the rest are dimmed; matched text is highlighted and the view zooms to fit the results. Select text in a card and right-click → **Find in canvas** to search for it directly. Click an empty spot on the Canvas to clear.
 
--   Change the hotkey in Settings → Hotkeys.
+-   While editing a card, Cmd/Ctrl+F still searches that card. Change the key via *Search current file* in Settings → Hotkeys, or bind *Find in canvas* separately.
 -   Searches text cards, note cards (including their content), group labels, and web links.
 -   Node colors and the `.canvas` file are never changed.
 -   Change the highlight color with a CSS snippet: `body { --ec-find-color: <color>; }`

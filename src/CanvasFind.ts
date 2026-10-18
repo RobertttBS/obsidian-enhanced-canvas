@@ -1,4 +1,5 @@
 import { App, ItemView, Menu, Modal, Notice, Setting, TFile } from 'obsidian';
+import { around } from 'monkey-around';
 
 import EnhancedCanvas from '../main';
 import { Canvas, CanvasNode, CanvasView } from '../Canvas';
@@ -70,17 +71,26 @@ export class CanvasFind {
         plugin.addCommand({
             id: 'find-in-canvas',
             name: 'Find in canvas (selected text or link)',
-            // Same key as core "Search current file"; checkCallback limits it to canvas views.
-            hotkeys: [{ modifiers: ['Mod'], key: 'f' }],
             checkCallback: (checking) => {
                 const canvas = this.activeCanvas();
                 if (!canvas) return false;
-                if (checking) return true;
-                const selection = plugin.app.workspace.activeEditor?.editor?.getSelection().trim();
-                if (selection) void this.find(canvas, selection);
-                else new FindQueryModal(plugin.app, (q) => void this.find(canvas, q)).open();
+                if (!checking) this.open(canvas);
                 return true;
             },
+        });
+
+        // Core "Search current file" (Mod+F, Edit → Find) calls the active editor's
+        // showSearch(), else the view's. Canvas has none, so give it one: editing a
+        // card keeps markdown search, the canvas itself gets find. No hotkey conflict.
+        plugin.registerLazyPatcher(() => {
+            const view = plugin.app.workspace.getLeavesOfType('canvas')
+                .find((l) => (l.view as CanvasView)?.canvas != null)?.view as CanvasView | undefined;
+            if (!view) return false;
+            const find = this;
+            plugin.register(around(view.constructor.prototype, {
+                showSearch: () => function (this: CanvasView) { if (this.canvas) find.open(this.canvas); },
+            }));
+            return true;
         });
 
         plugin.addCommand({
@@ -106,6 +116,12 @@ export class CanvasFind {
                     .onClick(() => void this.find(canvas, selection)));
             })
         );
+    }
+
+    private open(canvas: Canvas) {
+        const selection = this.plugin.app.workspace.activeEditor?.editor?.getSelection().trim();
+        if (selection) void this.find(canvas, selection);
+        else new FindQueryModal(this.plugin.app, (q) => void this.find(canvas, q)).open();
     }
 
     private activeCanvas(): Canvas | null {
