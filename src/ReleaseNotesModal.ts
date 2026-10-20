@@ -44,8 +44,6 @@ export class ReleaseNotesModal extends Modal {
         );
 
         const buttonContainer = contentEl.createDiv({ cls: "release-notes-button-container" });
-        buttonContainer.style.marginTop = "20px";
-        buttonContainer.style.textAlign = "right";
 
         new ButtonComponent(buttonContainer)
             .setButtonText("Got it")

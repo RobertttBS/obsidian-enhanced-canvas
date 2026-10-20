@@ -15,13 +15,19 @@ If your plugin does not need CSS, delete this file.
 }
 
 /* Hide metadata container in embeds (reading view) */
-.enhanced-canvas-enabled .markdown-embed .metadata-container, 
-.enhanced-canvas-enabled .markdown-embed-content .metadata-container { 
-    display: none !important; 
+/* body. prefix out-ranks core .metadata-container rules without !important */
+body.enhanced-canvas-enabled .markdown-embed .metadata-container,
+body.enhanced-canvas-enabled .markdown-embed-content .metadata-container { 
+    display: none; 
 }
 
-.enhanced-canvas-enabled .mod-inside-iframe.is-live-preview .metadata-container {
-    display: none !important;
+body.enhanced-canvas-enabled .mod-inside-iframe.is-live-preview .metadata-container {
+    display: none;
+}
+
+.release-notes-button-container {
+    margin-top: 20px;
+    text-align: right;
 }
 
 .advanced-tag-input-container {

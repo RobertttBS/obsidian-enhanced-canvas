@@ -67,7 +67,7 @@ export class CanvasExploder {
                 const selection = canvas.selection;
 
                 if (selection.size === 1) {
-                    const node = selection.values().next().value as CanvasNode | undefined;
+                    const node = selection.values().next().value;
 
                     // File Node
                     if (node && node.file) {

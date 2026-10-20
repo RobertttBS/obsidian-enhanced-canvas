@@ -86,9 +86,9 @@ export class CanvasFind {
             const view = plugin.app.workspace.getLeavesOfType('canvas')
                 .find((l) => (l.view as CanvasView)?.canvas != null)?.view as CanvasView | undefined;
             if (!view) return false;
-            const find = this;
+            const openFind = (canvas: Canvas) => this.open(canvas);
             plugin.register(around(view.constructor.prototype, {
-                showSearch: () => function (this: CanvasView) { if (this.canvas) find.open(this.canvas); },
+                showSearch: () => function (this: CanvasView) { if (this.canvas) openFind(this.canvas); },
             }));
             return true;
         });

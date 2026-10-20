@@ -37,13 +37,12 @@ export class CanvasTagImport {
         if (!canvas?.constructor?.prototype?.showCreationMenu) return false;
 
         const plugin = this.plugin;
-        // eslint-disable-next-line @typescript-eslint/no-this-alias -- alias needed: `this` inside the around() patch rebinds to the Canvas instance, so the CanvasTagImport reference must be captured in an outer variable
-        const tagImport = this;
+        const addMenuItem = (menu: Menu, c: Canvas, position: Position) => this.addMenuItem(menu, c, position);
         const uninstall = around(canvas.constructor.prototype, {
             showCreationMenu: (next: (menu: Menu, position: Position, ...args: unknown[]) => unknown) => {
                 return function(this: Canvas, menu: Menu, position: Position, ...args: unknown[]) {
                     const result = next.call(this, menu, position, ...args);
-                    tagImport.addMenuItem(menu, this, position);
+                    addMenuItem(menu, this, position);
                     return result;
                 };
             }

@@ -120,7 +120,7 @@ export default class EnhancedCanvas extends Plugin {
 	 * currently missing on the canvas.
 	 */
 	createMissingEdgesFromLinks(canvas: Canvas) {
-		const selectedNodes = Array.from(canvas.selection) as CanvasNode[];
+		const selectedNodes = Array.from(canvas.selection);
 		const fileNodes = selectedNodes.filter((node) => !!node?.filePath);
 		const resolvedLinks = this.app.metadataCache.resolvedLinks;
 		const currentData = canvas.getData();
@@ -170,7 +170,7 @@ export default class EnhancedCanvas extends Plugin {
 	 * current selection to ensure optimal visual alignment and routing.
 	 */
 	optimizeEdgesBetweenSelectedNodes(canvas: Canvas) {
-		const selectedNodes = Array.from(canvas.selection) as CanvasNode[];
+		const selectedNodes = Array.from(canvas.selection);
 		if (selectedNodes.length < 2) return;
 
 		const currentData = canvas.getData();
@@ -194,7 +194,7 @@ export default class EnhancedCanvas extends Plugin {
 	}
 
 	deleteEdges(canvas: Canvas) {
-		const selectedNodes = Array.from(canvas.selection) as CanvasNode[];
+		const selectedNodes = Array.from(canvas.selection);
 		const selectedNodeIds = new Set(selectedNodes.map((node) => node.id));
 		const currentData = canvas.getData();
 		const edgeCount = currentData.edges.length;
@@ -242,7 +242,7 @@ export default class EnhancedCanvas extends Plugin {
 	/**
 	 * For JSON nodes only, which are stored in the canvas file, not the canvas node in Obsidian.
 	 */
-	removeProperty(node: JsonNodeRef, canvasFile: TFile) {
+	async removeProperty(node: JsonNodeRef, canvasFile: TFile): Promise<void> {
 		if (!this.settings.enableFrontmatter) return;
 		if (!node.file) return;
 		const file = this.app.vault.getFileByPath(node.file); // node is JSON node, not canvas node
@@ -253,9 +253,9 @@ export default class EnhancedCanvas extends Plugin {
 
 		// Skip the write when the cached frontmatter has nothing to remove.
 		const cached = this.app.metadataCache.getFileCache(file)?.frontmatter;
-		if (!cached || (!(basename in cached) && !frontmatterValueToArray(cached.canvas).some(isCanvasLink))) return;
+		if (!cached || (!Object.prototype.hasOwnProperty.call(cached, basename) && !frontmatterValueToArray(cached.canvas).some(isCanvasLink))) return;
 
-		return this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+		await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
 
 			delete frontmatter[basename];
@@ -279,7 +279,8 @@ export default class EnhancedCanvas extends Plugin {
 		const newBaseName = newName.endsWith('.canvas') ? newName.slice(0, -7) : newName;
 		// Folder moves keep the basename; the cache only gates whether to write.
 		if (oldBaseName === newBaseName) return;
-		if (!this.app.metadataCache.getFileCache(file)?.frontmatter?.hasOwnProperty(oldBaseName)) return;
+		const cached = this.app.metadataCache.getFileCache(file)?.frontmatter;
+		if (!cached || !Object.prototype.hasOwnProperty.call(cached, oldBaseName)) return;
 	
 		void this.app.fileManager.processFrontMatter(file, (frontmatter) => {
 			if (!frontmatter) return;
@@ -303,9 +304,9 @@ export default class EnhancedCanvas extends Plugin {
 	async removeAllProperty(canvas: Canvas, canvasData: CanvasData) {
 		if (!this.settings.enableFrontmatter) return;
 		const nodes = canvasData.nodes;
-		await Promise.all(nodes.map(node => {
+		await Promise.all(nodes.map(async (node) => {
 			if (!node?.file) return;
-			return this.removeProperty(node, canvas.view.file);
+			await this.removeProperty(node, canvas.view.file);
 		}));
 	}
 
@@ -852,7 +853,7 @@ export default class EnhancedCanvas extends Plugin {
 
 		this.registerEvent(
 			this.app.workspace.on('active-leaf-change', () => {
-				Promise.resolve().then(async () => {
+				void Promise.resolve().then(() => {
 					if (this.isMetadataClicked == false || !clickedSourceFile) return;
 					// get current active leaf
 					const activeLeaf = this.app.workspace.getActiveViewOfType(ItemView);
@@ -1391,6 +1392,27 @@ export default class EnhancedCanvas extends Plugin {
 	}
 }
 
+type DimensionSettingKey =
+	| 'defaultTextNodeWidth'
+	| 'defaultTextNodeHeight'
+	| 'defaultFileNodeWidth'
+	| 'defaultFileNodeHeight';
+
+// Subset of Obsidian 1.13's SettingDefinitionItem (installed typings are 1.12),
+// so display() can render the same list on older versions.
+type SettingDef = {
+	name: string;
+	desc: string;
+	render?: (setting: Setting) => void;
+	control?: { type: 'toggle'; key: 'autoResizeOnSplit' | 'chooseHeadingLevelOnSplit' };
+};
+type SettingGroupDef = { type: 'group'; heading: string; items: SettingDef[] };
+
+const MIN_NODE_DIMENSION = 50;
+const MAX_NODE_DIMENSION = 5000;
+const MIN_AUTO_RESIZE_HEIGHT = 100;
+const MAX_AUTO_RESIZE_HEIGHT = 5000;
+
 /** Settings tab UI for Enhanced Canvas. */
 class EnhancedCanvasSettingTab extends PluginSettingTab {
 	plugin: EnhancedCanvas;
@@ -1400,131 +1422,161 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
+	private bindFrontmatterToggle = (setting: Setting) => {
+		setting.addToggle((toggle) =>
+			toggle
+				.setValue(this.plugin.settings.enableFrontmatter)
+				.onChange(async (value) => {
+					if (!value) {
+						// Disable first so live canvas handlers can't re-add
+						// properties mid-sweep; the sweep ignores the setting.
+						this.plugin.settings.enableFrontmatter = false;
+						await this.plugin.saveSettings();
+
+						const failedFiles = await this.plugin.cleanupCanvasProperties();
+						if (failedFiles.length > 0) {
+							new Notice(`Failed to clean up properties for ${failedFiles.length} notes. Check console.`);
+							this.plugin.settings.enableFrontmatter = true;
+							await this.plugin.saveSettings();
+							toggle.setValue(true);
+						}
+						return;
+					}
+
+					this.plugin.settings.enableFrontmatter = value;
+					await this.plugin.saveSettings();
+				})
+		);
+	};
+
+	private bindCustomCSSToggle = (setting: Setting) => {
+		setting.addToggle((toggle) =>
+			toggle
+				.setValue(this.plugin.settings.enableCustomCSS)
+				.onChange(async (value) => {
+					this.plugin.settings.enableCustomCSS = value;
+					await this.plugin.saveSettings();
+					this.plugin.toggleCSSClass(value);
+				})
+		);
+	};
+
+	private bindDimensionInput = (key: DimensionSettingKey) => (setting: Setting) => {
+		setting.addText((text) =>
+			text
+				.setValue(String(this.plugin.settings[key]))
+				.onChange(async (raw) => {
+					const n = Number.parseInt(raw, 10);
+					if (!Number.isFinite(n)) return;
+					if (n < MIN_NODE_DIMENSION || n > MAX_NODE_DIMENSION) return;
+					this.plugin.settings[key] = n;
+					await this.plugin.saveSettings();
+					this.plugin.applyDefaultNodeSizeToAllOpenCanvases();
+				})
+		);
+	};
+
+	private bindMaxAutoResizeHeight = (setting: Setting) => {
+		setting.addText((text) =>
+			text
+				.setValue(String(this.plugin.settings.maxAutoResizeHeight))
+				.onChange(async (raw) => {
+					const n = Number.parseInt(raw, 10);
+					if (!Number.isFinite(n)) return;
+					if (n < MIN_AUTO_RESIZE_HEIGHT || n > MAX_AUTO_RESIZE_HEIGHT) return;
+					this.plugin.settings.maxAutoResizeHeight = n;
+					await this.plugin.saveSettings();
+				})
+		);
+	};
+
+	// Obsidian 1.13.0+: declarative settings definitions (enables settings search).
+	getSettingDefinitions(): (SettingDef | SettingGroupDef)[] {
+		return [
+			{
+				name: 'Enable Frontmatter Synchronization',
+				desc: 'When enabled, canvas nodes and edges are mapped to file metadata (properties). ',
+				render: this.bindFrontmatterToggle,
+			},
+			{
+				name: 'Enable Custom Visuals & CSS',
+				desc: 'When enabled, hide the metadata panel (properties) inside Canvas Node (and embedded notes and iframe previews).',
+				render: this.bindCustomCSSToggle,
+			},
+			{
+				type: 'group',
+				heading: 'Default node size',
+				items: [
+					{
+						name: 'Text node width',
+						desc: 'Initial width (px) for new text cards. 50–5000.',
+						render: this.bindDimensionInput('defaultTextNodeWidth'),
+					},
+					{
+						name: 'Text node height',
+						desc: 'Initial height (px) for new text cards. 50–5000.',
+						render: this.bindDimensionInput('defaultTextNodeHeight'),
+					},
+					{
+						name: 'File node width',
+						desc: 'Initial width (px) for new file nodes. 50–5000.',
+						render: this.bindDimensionInput('defaultFileNodeWidth'),
+					},
+					{
+						name: 'File node height',
+						desc: 'Initial height (px) for new file nodes. 50–5000.',
+						render: this.bindDimensionInput('defaultFileNodeHeight'),
+					},
+				],
+			},
+			{
+				type: 'group',
+				heading: 'Split by headings & auto-resize',
+				items: [
+					{
+						name: 'Auto-resize leaf nodes on split',
+						desc: 'Automatically fit leaf node heights to their content and rearrange the tree after splitting by headings.',
+						control: { type: 'toggle', key: 'autoResizeOnSplit' },
+					},
+					{
+						name: 'Choose heading level on split',
+						desc: 'Ask which heading level to split down to. Deeper headings stay inside their parent card.',
+						control: { type: 'toggle', key: 'chooseHeadingLevelOnSplit' },
+					},
+					{
+						name: 'Max auto-resize height',
+						desc: 'Maximum height (px) for leaf nodes auto-resized on split. Taller content scrolls, and capped nodes stop auto-fitting after edits. Double-click auto-fit is not capped. 100–5000.',
+						render: this.bindMaxAutoResizeHeight,
+					},
+				],
+			},
+		];
+	}
+
+	// Obsidian < 1.13.0 fallback: renders the same definitions imperatively.
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		new Setting(containerEl)
-			.setName('Enable Frontmatter Synchronization')
-			.setDesc(
-				'When enabled, canvas nodes and edges are mapped to file metadata (properties). '
-			)
-			.addToggle(toggle =>
+		const add = (def: SettingDef) => {
+			const setting = new Setting(containerEl).setName(def.name).setDesc(def.desc);
+			def.render?.(setting);
+			const key = def.control?.key;
+			if (!key) return;
+			setting.addToggle((toggle) =>
 				toggle
-					.setValue(this.plugin.settings.enableFrontmatter)
+					.setValue(this.plugin.settings[key])
 					.onChange(async (value) => {
-						if (!value) {
-							// Disable first so live canvas handlers can't re-add
-							// properties mid-sweep; the sweep ignores the setting.
-							this.plugin.settings.enableFrontmatter = false;
-							await this.plugin.saveSettings();
-
-							const failedFiles = await this.plugin.cleanupCanvasProperties();
-							if (failedFiles.length > 0) {
-								new Notice(`Failed to clean up properties for ${failedFiles.length} notes. Check console.`);
-								this.plugin.settings.enableFrontmatter = true;
-								await this.plugin.saveSettings();
-								toggle.setValue(true);
-							}
-							return;
-						}
-
-						this.plugin.settings.enableFrontmatter = value;
+						this.plugin.settings[key] = value;
 						await this.plugin.saveSettings();
 					})
 			);
-
-		new Setting(containerEl)
-			.setName('Enable Custom Visuals & CSS')
-			.setDesc(
-				'When enabled, hide the metadata panel (properties) inside Canvas Node (and embedded notes and iframe previews).'
-			)
-			.addToggle(toggle =>
-				toggle
-					.setValue(this.plugin.settings.enableCustomCSS)
-					.onChange(async (value) => {
-						this.plugin.settings.enableCustomCSS = value;
-						await this.plugin.saveSettings();
-						this.plugin.toggleCSSClass(value);
-					})
-			);
-
-		const MIN_NODE_DIMENSION = 50;
-		const MAX_NODE_DIMENSION = 5000;
-
-		new Setting(containerEl).setName('Default node size').setHeading();
-
-		const sizeRow = (
-			name: string,
-			desc: string,
-			key: 'defaultTextNodeWidth' | 'defaultTextNodeHeight' | 'defaultFileNodeWidth' | 'defaultFileNodeHeight',
-		) => {
-			new Setting(containerEl)
-				.setName(name)
-				.setDesc(desc)
-				.addText((text) =>
-					text
-						.setValue(String(this.plugin.settings[key]))
-						.onChange(async (raw) => {
-							const n = Number.parseInt(raw, 10);
-							if (!Number.isFinite(n)) return;
-							if (n < MIN_NODE_DIMENSION || n > MAX_NODE_DIMENSION) return;
-							this.plugin.settings[key] = n;
-							await this.plugin.saveSettings();
-							this.plugin.applyDefaultNodeSizeToAllOpenCanvases();
-						})
-				);
 		};
 
-		sizeRow('Text node width',  'Initial width (px) for new text cards. 50–5000.',  'defaultTextNodeWidth');
-		sizeRow('Text node height', 'Initial height (px) for new text cards. 50–5000.', 'defaultTextNodeHeight');
-		sizeRow('File node width',  'Initial width (px) for new file nodes. 50–5000.',  'defaultFileNodeWidth');
-		sizeRow('File node height', 'Initial height (px) for new file nodes. 50–5000.', 'defaultFileNodeHeight');
-
-		new Setting(containerEl).setName('Split by headings & auto-resize').setHeading();
-
-		new Setting(containerEl)
-			.setName('Auto-resize leaf nodes on split')
-			.setDesc(
-				'Automatically fit leaf node heights to their content and rearrange the tree after splitting by headings.'
-			)
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.autoResizeOnSplit)
-					.onChange(async (value) => {
-						this.plugin.settings.autoResizeOnSplit = value;
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName('Choose heading level on split')
-			.setDesc('Ask which heading level to split down to. Deeper headings stay inside their parent card.')
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.chooseHeadingLevelOnSplit)
-					.onChange(async (value) => {
-						this.plugin.settings.chooseHeadingLevelOnSplit = value;
-						await this.plugin.saveSettings();
-					})
-			);
-
-		const MIN_AUTO_RESIZE_HEIGHT = 100;
-		const MAX_AUTO_RESIZE_HEIGHT = 5000;
-
-		new Setting(containerEl)
-			.setName('Max auto-resize height')
-			.setDesc('Maximum height (px) for leaf nodes auto-resized on split. Taller content scrolls, and capped nodes stop auto-fitting after edits. Double-click auto-fit is not capped. 100–5000.')
-			.addText((text) =>
-				text
-					.setValue(String(this.plugin.settings.maxAutoResizeHeight))
-					.onChange(async (raw) => {
-						const n = Number.parseInt(raw, 10);
-						if (!Number.isFinite(n)) return;
-						if (n < MIN_AUTO_RESIZE_HEIGHT || n > MAX_AUTO_RESIZE_HEIGHT) return;
-						this.plugin.settings.maxAutoResizeHeight = n;
-						await this.plugin.saveSettings();
-					})
-			);
+		for (const item of this.getSettingDefinitions()) {
+			if (!('items' in item)) { add(item); continue; }
+			new Setting(containerEl).setName(item.heading).setHeading();
+			item.items.forEach(add);
+		}
 	}
 }
