@@ -24,6 +24,7 @@ import { CanvasFind } from './src/CanvasFind';
 import { EnhancedCanvasSettings, DEFAULT_SETTINGS } from "./src/settings";
 import { isVersionNewer, randomId } from "./src/utils";
 import { ReleaseNotesModal } from "./src/ReleaseNotesModal";
+import { registerCalloutImageResize } from "./src/CalloutImageResize";
 
 interface CanvasNodeWithFlag extends CanvasNode {
     _autoHeightTimer?: number | null;
@@ -536,6 +537,7 @@ export default class EnhancedCanvas extends Plugin {
 		new CanvasFind(this).register();
 		this.registerCanvasNodeAutoHeightPatcher();
 		this.registerCanvasDefaultNodeSize();
+		registerCalloutImageResize(this);
 
 		try {
 			await this.syncAllCanvasProperties();

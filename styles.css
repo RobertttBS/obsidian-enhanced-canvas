@@ -72,3 +72,9 @@ body {
     background-color: rgba(255, 193, 7, 0.55);
     color: var(--text-normal);
 }
+
+/* Callout image resize corner (src/CalloutImageResize.ts); core positions it against .image-wrapper */
+.cm-callout .enhanced-canvas-callout-image {
+    position: relative;
+    display: inline-block;
+}

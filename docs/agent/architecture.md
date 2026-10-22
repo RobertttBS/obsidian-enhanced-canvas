@@ -15,7 +15,7 @@ against Canvas internals — ESLint allows it).
 
 Features register from `onload()`: the `register*` methods plus
 `canvasTagImport.register()` — plugin commands, canvas auto-link, file-manager
-patches, focus-canvas, exploder, tag import, find in canvas (`new CanvasFind(this).register()`), node auto-height, default node size. `onload` then runs `syncAllCanvasProperties`; `onunload` strips the
+patches, focus-canvas, exploder, tag import, find in canvas (`new CanvasFind(this).register()`), node auto-height, default node size, callout image resize (`registerCalloutImageResize(this)`). `onload` then runs `syncAllCanvasProperties`; `onunload` strips the
 properties. Get the live method line numbers with:
 
 ```
@@ -104,6 +104,13 @@ safe.
   Matched text is marked via the CSS Custom Highlight API (`::highlight(ec-find)`, no
   DOM edits); a `MutationObserver` on hit nodes repaints as content lazily mounts.
   A click (not a drag) on empty canvas (`e.target === canvas.wrapperEl`) clears the find.
+- `CalloutImageResize.ts` — workaround for core (1.14.4): images inside a Live Preview
+  callout widget (`.cm-callout`) get no resize corner, and any click selects the callout
+  source. A markdown post-processor tags image `.internal-embed`s with `interactive-child`
+  (core's click handler skips those) and adds a `.image-resize-corner` on hover; on drag end
+  it rewrites `|width` in the source, matching DOM image ↔ source embed by order (bails if
+  counts differ). Applies to all markdown editors, not just canvas; desktop only. Remove
+  when core supports it.
 - `SendToCanvas.ts` — "Send to Canvas" via `FuzzySuggestModal`; `selectedCanvas` is
   in-memory only.
 - `settings.ts` — `EnhancedCanvasSettings` + `DEFAULT_SETTINGS`. Settings UI lives
@@ -119,7 +126,8 @@ safe.
 `styles.css` ships with the plugin. Rules live behind body class
 `enhanced-canvas-enabled`, toggled by `toggleCSSClass` from `settings.enableCustomCSS`.
 Hides the metadata container in markdown embeds inside Canvas nodes. The
-`ec-find-*` rules (find in canvas) are unscoped — only `CanvasFind` adds those classes.
+`ec-find-*` rules (find in canvas) are unscoped — only `CanvasFind` adds those classes. `.enhanced-canvas-callout-image` (unscoped) positions
+the callout image resize corner.
 
 ## Release process
 
