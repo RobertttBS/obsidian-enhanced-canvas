@@ -3,6 +3,7 @@ export const whatsNew = `
 ## What's new
 
 - **Find in canvas**: search a word or a \`[[link]]\` to highlight every matching card, dim the rest, and zoom to fit. Press Cmd/Ctrl+F (the *Search current file* hotkey) in a Canvas, run *Find in canvas* from the command palette, or right-click selected text in a card. Click an empty spot to clear.
+- **Images in callouts**: in Live Preview you can now drag an image's corner to resize it inside a callout, and clicking the image no longer switches the callout to source.
 `;
 
 // Shown on first install and after every update. Add an entry when a feature ships.
