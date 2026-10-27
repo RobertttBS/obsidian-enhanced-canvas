@@ -77,11 +77,6 @@ function canvasLinkBasename(link: string): string {
 	return base.endsWith('.canvas') ? base.slice(0, -'.canvas'.length) : base;
 }
 
-/** Escapes regex metacharacters so file names can be embedded in a RegExp. */
-function escapeRegExp(text: string): string {
-	return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 /**
  * processFrontMatter serializes keys in object insertion order, so a per-canvas
  * property created before the `canvas` property (e.g. by an edge sync racing the
@@ -637,32 +632,33 @@ export default class EnhancedCanvas extends Plugin {
 		}
 
 		const deleteFile = async (file: TFile) => {
+			if (!this.settings.enableFrontmatter) return;
 			if ((file as TFile & { deleted?: boolean }).deleted === true) return;
 
 			const backLinks = this.app.metadataCache.getBacklinksForFile(file);
 			if (!backLinks || !backLinks.data) return;
 
-			const linkRegexBasename = new RegExp(`\\[\\[${escapeRegExp(file.basename)}(\\|.*)?\\]\\]`);
-			const linkRegexFullName = new RegExp(`\\[\\[${escapeRegExp(file.name)}(\\|.*)?\\]\\]`);
+			// Resolve links like Obsidian does, so `[[folder/Name]]` matches and a
+			// same-basename file in another folder does not.
+			const linksToFile = (text: string, sourcePath: string) =>
+				Array.from(text.matchAll(/\[\[([^\]|#]+)/g)).some(m =>
+					this.app.metadataCache.getFirstLinkpathDest(m[1].trim(), sourcePath) === file);
 
 			for (const [sourcePath] of backLinks.data.entries()) {
 				const sourceFile = this.app.vault.getFileByPath(sourcePath);
 				if (!sourceFile || sourceFile.extension !== 'md') continue;
 				// Gate on the raw frontmatter block (the cache omits `![[x]]` embeds); avoids a YAML rewrite.
 				const fm = (await this.app.vault.cachedRead(sourceFile)).match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1];
-				if (!fm || !(linkRegexBasename.test(fm) || linkRegexFullName.test(fm))) continue;
+				if (!fm || !linksToFile(fm, sourcePath)) continue;
 
 				await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter) => {
 					if (!frontmatter) return;
 
-					Object.keys(frontmatter).forEach(key => {
-						if (Array.isArray(frontmatter[key])) {
-							frontmatter[key] = frontmatter[key].filter((item: unknown) => {
-								if (typeof item !== 'string') return true;
-
-								return !(linkRegexBasename.test(item) || linkRegexFullName.test(item));
-							});
-						}
+					// Only the plugin's per-canvas keys; user list properties are not ours to edit.
+					const canvasKeys = new Set(frontmatterValueToArray(frontmatter.canvas).map(canvasLinkBasename));
+					canvasKeys.forEach(key => {
+						if (!frontmatterValueToArray(frontmatter[key]).some(link => linksToFile(link, sourcePath))) return;
+						writeLinkSet(frontmatter, key, (links) => links.filter(link => !linksToFile(link, sourcePath)));
 					});
 				});
 			}
