@@ -21,6 +21,7 @@ import { CanvasExploder } from './src/CanvasExploder';
 import { SendToCanvas } from './src/SendToCanvas';
 import { CanvasTagImport } from './src/CanvasTagImport';
 import { CanvasFind } from './src/CanvasFind';
+import { ImageTextSearch } from './src/ImageTextSearch';
 import { EnhancedCanvasSettings, DEFAULT_SETTINGS } from "./src/settings";
 import { isVersionNewer, randomId } from "./src/utils";
 import { ReleaseNotesModal } from "./src/ReleaseNotesModal";
@@ -105,6 +106,7 @@ export default class EnhancedCanvas extends Plugin {
 	public exploder: CanvasExploder;
 	public sendToCanvas: SendToCanvas;
 	public canvasTagImport: CanvasTagImport;
+	public imageText: ImageTextSearch;
 	private isMetadataClicked = false;
 	settings: EnhancedCanvasSettings;
 
@@ -519,6 +521,7 @@ export default class EnhancedCanvas extends Plugin {
 		this.exploder = new CanvasExploder(this);
 		this.sendToCanvas = new SendToCanvas(this);
 		this.canvasTagImport = new CanvasTagImport(this);
+		this.imageText = new ImageTextSearch(this);
 
 		this.addSettingTab(new EnhancedCanvasSettingTab(this.app, this));
 		this.toggleCSSClass(this.settings.enableCustomCSS);
@@ -530,6 +533,7 @@ export default class EnhancedCanvas extends Plugin {
 		this.registerCanvasExploder();
 		this.canvasTagImport.register();
 		new CanvasFind(this).register();
+		this.imageText.register();
 		this.registerCanvasNodeAutoHeightPatcher();
 		this.registerCanvasDefaultNodeSize();
 		registerCalloutImageResize(this);
@@ -1474,6 +1478,19 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 		);
 	};
 
+	private bindImageTextToggle = (setting: Setting) => {
+		setting.addToggle((toggle) =>
+			toggle
+				.setValue(this.plugin.settings.enableImageTextSearch)
+				.onChange(async (value) => {
+					this.plugin.settings.enableImageTextSearch = value;
+					await this.plugin.saveSettings();
+					if (value) await this.plugin.imageText.enable();
+					else this.plugin.imageText.disable();
+				})
+		);
+	};
+
 	private bindMaxAutoResizeHeight = (setting: Setting) => {
 		setting.addText((text) =>
 			text
@@ -1548,6 +1565,12 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 					},
 				],
 			},
+			// macOS only: OCR runs through the system's Vision framework.
+			...(ImageTextSearch.supported ? [{
+				name: 'Search text in images (macOS)',
+				desc: 'Reads the text in every vault image with macOS\'s built-in OCR (runs the system osascript, on-device). Adds a "Search text in images" command and lets Find in canvas match image cards. The index is stored in the plugin folder; no notes are created. The first run takes a few minutes for large vaults.',
+				render: this.bindImageTextToggle,
+			}] : []),
 		];
 	}
 

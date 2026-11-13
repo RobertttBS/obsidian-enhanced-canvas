@@ -34,6 +34,11 @@ Search a word or a \`[[link]]\` across the Canvas. Matching cards are outlined, 
 - **Clear:** click an empty spot on the Canvas, or run *Clear find highlights*.
 - **Hotkey:** whatever *Search current file* uses (Cmd/Ctrl+F by default); while editing a card it still searches that card. Or bind *Find in canvas* in Settings → Hotkeys.
 
+### Search text in images (macOS)
+Reads the text in every vault image with macOS's built-in OCR, on-device. Search all images, or let Find in canvas match image cards; matching text is boxed on the image.
+- **Where:** command *Search text in images* or the ribbon icon; *Find in canvas* for image cards.
+- **Settings:** *Search text in images (macOS)* (off by default; the first run takes a few minutes).
+
 ### Send to Canvas
 Add the current note to a Canvas of your choice. That Canvas is remembered, so later notes can go straight to it.
 - **Commands:** *Send to Canvas*, *Send to Selected Canvas*, *Clear selected Canvas file*.

@@ -12,6 +12,8 @@ export interface EnhancedCanvasSettings {
     autoResizeOnSplit: boolean;
     chooseHeadingLevelOnSplit: boolean;
     maxAutoResizeHeight: number;
+
+    enableImageTextSearch: boolean;
 }
 
 export const DEFAULT_SETTINGS: EnhancedCanvasSettings = {
@@ -28,4 +30,6 @@ export const DEFAULT_SETTINGS: EnhancedCanvasSettings = {
     autoResizeOnSplit: true,
     chooseHeadingLevelOnSplit: false,
     maxAutoResizeHeight: 1000,
+
+    enableImageTextSearch: false,
 };

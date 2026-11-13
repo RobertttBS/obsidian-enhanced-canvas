@@ -3,6 +3,7 @@ import { around } from 'monkey-around';
 
 import EnhancedCanvas from '../main';
 import { Canvas, CanvasNode, CanvasView } from '../Canvas';
+import { OcrLine, drawOcrBoxes } from './ImageTextSearch';
 
 // Classes only; node.color and the .canvas file are never touched.
 const HIT_CLASS = 'ec-find-hit';
@@ -22,6 +23,8 @@ interface FindSession {
     win: HighlightWindow;
     // Off-screen nodes are detached, so querySelectorAll on the view would miss them.
     hits: CanvasNode[];
+    // Image cards matched by their OCR text (Search text in images), with the matching lines.
+    ocr: Map<CanvasNode, OcrLine[]>;
     observer: MutationObserver;
     ranges: Range[];
     frame: number;
@@ -135,6 +138,7 @@ export class CanvasFind {
         if (!session) return;
         this.sessions.delete(canvas);
         session.hits.forEach((n) => n.nodeEl.removeClass(HIT_CLASS));
+        session.ocr.forEach((_, n) => n.nodeEl.querySelectorAll('.ec-ocr-box').forEach((b) => b.remove()));
         session.observer.disconnect();
         session.offClick();
         session.win.cancelAnimationFrame(session.frame);
@@ -148,7 +152,7 @@ export class CanvasFind {
      * mounts lazily (off-screen, async file render), so repaint on DOM changes.
      * A plain click on the empty canvas ends the find.
      */
-    private startSession(canvas: Canvas, hits: CanvasNode[], target: TFile | null, needle: string, sourcePath: string) {
+    private startSession(canvas: Canvas, hits: CanvasNode[], ocr: Map<CanvasNode, OcrLine[]>, target: TFile | null, needle: string, sourcePath: string) {
         const win = canvas.view.containerEl.win as HighlightWindow;
         const registry = win.CSS.highlights;
         let hl = registry?.get(HIGHLIGHT_NAME);
@@ -168,7 +172,7 @@ export class CanvasFind {
         wrapper.addEventListener('click', onClick);
 
         const session: FindSession = {
-            win, hits, ranges: [], frame: 0,
+            win, hits, ocr, ranges: [], frame: 0,
             observer: new MutationObserver(() => {
                 if (!session.frame) session.frame = win.requestAnimationFrame(paint);
             }),
@@ -181,6 +185,12 @@ export class CanvasFind {
         const paint = () => {
             session.frame = 0;
             if (!hl) return;
+            // Image text has no DOM text to highlight: box it over the image instead.
+            // Drawn once per mount, so the mutation it causes doesn't repaint forever.
+            session.ocr.forEach((lines, node) => {
+                const content = node.nodeEl.querySelector<HTMLElement>('.image-embed');
+                if (content && !content.querySelector('.ec-ocr-box')) drawOcrBoxes(content, lines);
+            });
             session.ranges.forEach((r) => hl?.delete(r));
             session.ranges = [];
             const doc = win.document;
@@ -227,6 +237,7 @@ export class CanvasFind {
 
         // Walk the JSON nodes: here node.file is a path string, not a TFile.
         const hitIds: string[] = [];
+        const ocrLines = new Map<string, OcrLine[]>();
         for (const data of canvas.getData().nodes) {
             let hit = false;
             if (data.type === 'text') {
@@ -241,8 +252,11 @@ export class CanvasFind {
                     const refs = [...(cache?.links ?? []), ...(cache?.embeds ?? []), ...(cache?.frontmatterLinks ?? [])];
                     hit = file === target || refs.some((r) => metadataCache.getFirstLinkpathDest(r.link.split('#')[0], file.path) === target);
                 } else {
+                    const lines = this.plugin.imageText.linesMatching(file.path, query);
+                    if (lines.length) ocrLines.set(data.id, lines);
                     hit = file.basename.toLowerCase().includes(needle)
-                        || (file.extension === 'md' && (await vault.cachedRead(file)).toLowerCase().includes(needle));
+                        || (file.extension === 'md' && (await vault.cachedRead(file)).toLowerCase().includes(needle))
+                        || lines.length > 0;
                 }
             } else if (data.type === 'group') {
                 hit = !target && (data.label ?? '').toLowerCase().includes(needle);
@@ -262,7 +276,8 @@ export class CanvasFind {
 
         canvas.view.containerEl.addClass(ACTIVE_CLASS);
         for (const node of hits) node.nodeEl.addClass(HIT_CLASS);
-        this.startSession(canvas, hits, target, needle, sourcePath);
+        const ocr = new Map(hits.filter((n) => ocrLines.has(n.id)).map((n) => [n, ocrLines.get(n.id) as OcrLine[]]));
+        this.startSession(canvas, hits, ocr, target, needle, sourcePath);
 
         const boxes = hits.map((n) => n.getBBox());
         canvas.zoomToBbox({

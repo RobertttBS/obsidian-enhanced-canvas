@@ -78,3 +78,55 @@ body {
     position: relative;
     display: inline-block;
 }
+
+/* Search text in images (src/ImageTextSearch.ts): boxes over OCR matches, in the modal and on canvas image cards */
+.ec-ocr-box {
+    position: absolute;
+    background-color: rgba(255, 193, 7, 0.4);
+    outline: 2px solid var(--ec-find-color);
+    border-radius: 2px;
+    pointer-events: none;
+}
+
+.ec-ocr-result {
+    display: flex;
+    gap: var(--size-4-3);
+    align-items: flex-start;
+}
+
+.ec-ocr-thumb {
+    position: relative;
+    flex: none;
+    width: 220px;
+}
+
+.ec-ocr-thumb img {
+    display: block;
+    width: 100%;
+    border-radius: var(--radius-s);
+}
+
+.ec-ocr-meta {
+    min-width: 0;
+    font-size: var(--font-ui-small);
+}
+
+.ec-ocr-name {
+    font-weight: var(--font-semibold);
+    word-break: break-all;
+}
+
+.ec-ocr-line {
+    margin-top: var(--size-2-1);
+    color: var(--text-muted);
+}
+
+.ec-ocr-line mark {
+    background-color: rgba(255, 193, 7, 0.55);
+    color: inherit;
+}
+
+.ec-ocr-notes {
+    margin-top: var(--size-4-1);
+    color: var(--text-faint);
+}

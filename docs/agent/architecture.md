@@ -15,7 +15,7 @@ against Canvas internals — ESLint allows it).
 
 Features register from `onload()`: the `register*` methods plus
 `canvasTagImport.register()` — plugin commands, canvas auto-link, file-manager
-patches, focus-canvas, exploder, tag import, find in canvas (`new CanvasFind(this).register()`), node auto-height, default node size, callout image resize (`registerCalloutImageResize(this)`). `onload` then runs `syncAllCanvasProperties`; `onunload` strips the
+patches, focus-canvas, exploder, tag import, find in canvas (`new CanvasFind(this).register()`), image text search (`this.imageText.register()`, a no-op unless `enableImageTextSearch`), node auto-height, default node size, callout image resize (`registerCalloutImageResize(this)`). `onload` then runs `syncAllCanvasProperties`; `onunload` strips the
 properties. Get the live method line numbers with:
 
 ```
@@ -104,6 +104,23 @@ safe.
   Matched text is marked via the CSS Custom Highlight API (`::highlight(ec-find)`, no
   DOM edits); a `MutationObserver` on hit nodes repaints as content lazily mounts.
   A click (not a drag) on empty canvas (`e.target === canvas.wrapperEl`) clears the find.
+  Image file nodes also match by OCR text (`plugin.imageText.linesMatching`, [] when that
+  feature is off); their matches are the one DOM edit: `.ec-ocr-box` divs appended to the
+  node's `.image-embed`, drawn once per mount (so the observer doesn't loop), removed on clear.
+- `ImageTextSearch.ts` — optional, setting `enableImageTextSearch` (default off), macOS
+  desktop only (`ImageTextSearch.supported`; the setting is hidden elsewhere). OCRs every
+  vault image by spawning the system `osascript -l JavaScript` with an inline JXA script
+  that calls Vision.framework — no binary ships. `child_process` is `require`d inside
+  `ocr()` only, so mobile never loads it (keep it that way: a top-level import breaks
+  mobile). Index `{path: {m: mtime, l: [[text,x,y,w,h]]}}` lives in
+  `<plugin dir>/ocr-index.json`, never in `data.json` (it's MBs). Rescans images whose
+  mtime changed, 50 per osascript run; vault events keep it current. Each scan first
+  prunes entries whose image is gone. A failed run is retried one image at a time;
+  images that still fail go in the in-memory `failed` map with their mtime (skipped
+  until the file changes, never indexed as empty). Index writes go through `save()`, which serializes and
+  coalesces them — never call `adapter.write` on the index directly. `disable()` removes
+  the command, ribbon and listeners and kills the process but keeps the index. Also owns
+  the vault-wide "Search text in images" `SuggestModal`.
 - `CalloutImageResize.ts` — workaround for core (1.14.4): images inside a Live Preview
   callout widget (`.cm-callout`) get no resize corner, and any click selects the callout
   source. A markdown post-processor tags image `.internal-embed`s with `interactive-child`
@@ -126,7 +143,7 @@ safe.
 `styles.css` ships with the plugin. Rules live behind body class
 `enhanced-canvas-enabled`, toggled by `toggleCSSClass` from `settings.enableCustomCSS`.
 Hides the metadata container in markdown embeds inside Canvas nodes. The
-`ec-find-*` rules (find in canvas) are unscoped — only `CanvasFind` adds those classes. `.enhanced-canvas-callout-image` (unscoped) positions
+`ec-find-*` rules (find in canvas) and `ec-ocr-*` rules (image text search) are unscoped — only `CanvasFind` / `ImageTextSearch` add those classes. `.enhanced-canvas-callout-image` (unscoped) positions
 the callout image resize corner.
 
 ## Release process

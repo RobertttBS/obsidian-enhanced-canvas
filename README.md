@@ -12,6 +12,16 @@ Press **Cmd+F** (Ctrl+F on Windows), the core *Search current file* hotkey, in a
 -   Searches text cards, note cards (including their content), group labels, and web links.
 -   Node colors and the `.canvas` file are never changed.
 -   Change the highlight color with a CSS snippet: `body { --ec-find-color: <color>; }`
+-   With *Search text in images* on, image cards whose text matches are found too, and the matching text is boxed on the image.
+
+### Search Text in Images (macOS)
+
+Turn on *Search text in images (macOS)* in settings, and the plugin reads the text in every image in your vault with macOS's built-in OCR (the Vision framework, on-device). Then:
+
+-   Run **"Search text in images"** (or click the ribbon icon) to search all images. Results show the image with the matching text boxed and the notes that embed it; choose one to open that note at the image.
+-   **Find in canvas** also matches image cards by their text.
+
+The first run takes a few minutes for a large vault (about 0.3 s per image); after that only new or changed images are read. The index is stored in the plugin folder (`ocr-index.json`), so no notes are added to your vault. The plugin runs the system's `osascript` to call the Vision framework; nothing is downloaded and nothing leaves your Mac. Off by default; not available on Windows, Linux, or mobile.
 
 ### Split Node by Headings
 
@@ -90,6 +100,9 @@ The properties panel inside Canvas nodes and embedded notes is hidden. To show i
 
 -   **Find in canvas (selected text or link)** / **Clear find highlights**
     -   See [Find in Canvas](#find-in-canvas)
+
+-   **Search text in images** (macOS, when enabled)
+    -   See [Search Text in Images](#search-text-in-images-macos)
 
 -   **Show feature guide**
     -   Opens an in-app guide to every feature, with where to find it and which settings control it
