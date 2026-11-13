@@ -22,6 +22,7 @@ Turn on *Search text in images (macOS)* in settings, and the plugin reads the te
 -   Run **"Search text in images"** (or click the ribbon icon) to search all images. It uses the same syntax as Find in canvas (words, `OR`, `"phrase"`). Results are numbered, sorted by the number of matching lines, and the total count is shown on top. They show the image with the matching text boxed and the notes that embed it; choose one to open that note at the image (a Canvas zooms to the image card).
 -   Run **"Rebuild image text index"** to read every image again, for example after an image couldn't be read. Images in *Settings → Files and links → Excluded files* are skipped.
 -   **Find in canvas** also matches image cards by their text.
+-   Turn on *Show image results in Search* to see matching images in core Search (search in all files) next to your notes, with the same query syntax as notes, and a thumbnail under each image's name. Add `-file:.md -file:.canvas` to the query to show only images. The ribbon icon and command stay, for the boxed view.
 
 The first run takes a few minutes for a large vault (about 0.3 s per image); after that only new or changed images are read. The index is stored in the plugin folder (`ocr-index.json`), so no notes are added to your vault. The plugin runs the system's `osascript` to call the Vision framework; nothing is downloaded and nothing leaves your Mac. Off by default.
 

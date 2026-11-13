@@ -128,7 +128,12 @@ safe.
   the command, ribbon and listeners and kills the process but keeps the index. Also owns
   the vault-wide "Search text in images" `SuggestModal`: same query syntax, scans the whole
   index for the total, sorts by matching lines, shows 50 numbered results; a canvas backlink
-  opens zoomed to the image card.
+  opens zoomed to the image card. Setting `imageTextInCoreSearch` (`setCoreSearch()` reruns
+  open searches for it; the patcher reruns them once patched, since a search may run first): core Search reads only `.md`/`.canvas` content, so a lazy
+  patcher wraps undocumented internals (checked on 1.15.1) — the search view's `startSearch`,
+  its result list's `addResult`, and, from the first query instance, the query prototype's
+  `match` — handing an image's OCR text in as if it were a note (`Object.create(file)` with
+  `extension: 'md'`); the `addResult` wrapper also inserts an `.ec-search-thumb` `<img>` after the result's `selfEl` (core has no image preview). Patches are always on; the hooks no-op unless the feature and setting are.
 - `CalloutImageResize.ts` — workaround for core (1.14.4): images inside a Live Preview
   callout widget (`.cm-callout`) get no resize corner, and any click selects the callout
   source. A markdown post-processor tags image `.internal-embed`s with `interactive-child`

@@ -38,7 +38,7 @@ Search words or a \`[[link]]\` across the Canvas: \`a b\` needs both words, \`a 
 Reads the text in every vault image with macOS's built-in OCR, on-device. Search all images, or let Find in canvas match image cards; matching text is boxed on the image.
 - **Where:** command *Search text in images* or the ribbon icon; *Find in canvas* for image cards. Same search syntax as Find in canvas; results are numbered, with the total count on top.
 - **Rebuild:** command *Rebuild image text index* reads every image again. Images in *Excluded files* are skipped.
-- **Settings:** *Search text in images (macOS)* (off by default; the first run takes a few minutes).
+- **Settings:** *Search text in images (macOS)* (off by default; the first run takes a few minutes). *Show image results in Search* puts matching images, with thumbnails, in core Search next to your notes (add \`-file:.md -file:.canvas\` for images only); the ribbon icon stays.
 - **Other devices:** reading images needs a Mac; on Windows, Linux, and mobile the same setting searches the index synced from your Mac.
 
 ### Send to Canvas

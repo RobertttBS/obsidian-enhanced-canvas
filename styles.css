@@ -116,6 +116,18 @@ body {
     border-radius: var(--radius-s);
 }
 
+.ec-search-thumb {
+    display: block;
+    max-width: calc(100% - 24px);
+    max-height: 120px;
+    margin: 2px 0 4px 24px;
+    border-radius: var(--radius-s);
+}
+
+.search-result.is-collapsed .ec-search-thumb {
+    display: none;
+}
+
 .ec-ocr-meta {
     min-width: 0;
     font-size: var(--font-ui-small);

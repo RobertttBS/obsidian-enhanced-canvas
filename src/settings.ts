@@ -14,6 +14,7 @@ export interface EnhancedCanvasSettings {
     maxAutoResizeHeight: number;
 
     enableImageTextSearch: boolean;
+    imageTextInCoreSearch: boolean;
 }
 
 export const DEFAULT_SETTINGS: EnhancedCanvasSettings = {
@@ -32,4 +33,5 @@ export const DEFAULT_SETTINGS: EnhancedCanvasSettings = {
     maxAutoResizeHeight: 1000,
 
     enableImageTextSearch: false,
+    imageTextInCoreSearch: false,
 };

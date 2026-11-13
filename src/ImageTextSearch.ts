@@ -1,5 +1,6 @@
 import { EventRef, FileSystemAdapter, Notice, Platform, SuggestModal, TAbstractFile, TFile } from 'obsidian';
 import type { ChildProcess } from 'child_process';
+import { around } from 'monkey-around';
 
 import EnhancedCanvas from '../main';
 import type { CanvasView } from '../Canvas';
@@ -74,7 +75,83 @@ export class ImageTextSearch {
 
     register() {
         this.plugin.register(() => this.disable());
+        // Patched always; the hooks do nothing unless the feature and imageTextInCoreSearch are on.
+        this.plugin.registerLazyPatcher(() => this.patchCoreSearch());
         if (this.plugin.settings.enableImageTextSearch) void this.enable();
+    }
+
+    private get inCoreSearch() { return this.enabled && this.plugin.settings.imageTextInCoreSearch; }
+
+    private open = () => void this.refresh().then(() => { if (this.enabled) new ImageTextModal(this).open(); });
+
+    /** Reruns open core searches, so image results follow imageTextInCoreSearch. */
+    setCoreSearch() {
+        for (const leaf of this.plugin.app.workspace.getLeavesOfType('search')) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const view = leaf.view as any;
+            if (!view.getQuery?.()) continue;
+            view.searchQuery = null; // else the same query only rechecks files the last run matched
+            view.startSearch?.();
+        }
+    }
+
+    /**
+     * Core Search reads only .md/.canvas content, so images match by filename alone. Undocumented
+     * internals (checked on 1.15.1): the query's match(file, content) gets an image's OCR text as
+     * if it were a note, and the result list's addResult gets it too, to render the matched lines.
+     * Missing methods → no patch, Search works as before.
+     */
+    private patchCoreSearch() {
+        // A deferred (not yet shown) leaf has no startSearch; take the first loaded one.
+        const view = this.plugin.app.workspace.getLeavesOfType('search')
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .map((l) => l.view as any)
+            .find((v) => typeof v?.startSearch === 'function' && typeof v.dom?.addResult === 'function');
+        if (!view) return false;
+        const ocr = (f: TFile) => {
+            const t = this.inCoreSearch && isImageFile(f) ? this.textOf(f.path) : null;
+            return t ? t.lines.map((l) => l[0]).join('\n') : null;
+        };
+        const { plugin } = this;
+        const active = () => this.inCoreSearch;
+        const refresh = () => { if (active()) void this.refresh(); };
+        plugin.register(around(Object.getPrototypeOf(view.dom), {
+            addResult: (next) => function (this: unknown, file: TFile, result: unknown, content: string, ...rest: unknown[]) {
+                const t = ocr(file);
+                const item = next.call(this, file, result, t ?? content, ...rest);
+                // Core shows no image preview; add one between the title and the matched lines.
+                if (t !== null && item?.selfEl instanceof HTMLElement && !item.selfEl.nextElementSibling?.matches('.ec-search-thumb')) {
+                    item.selfEl.after(createEl('img', {
+                        cls: 'ec-search-thumb', attr: { src: plugin.app.vault.getResourcePath(file), loading: 'lazy' },
+                    }));
+                }
+                return item;
+            },
+        }));
+        let queryPatched = false;
+        plugin.register(around(view.constructor.prototype, {
+            startSearch: (next) => function (this: typeof view, ...args: unknown[]) {
+                refresh(); // search-only devices: pick up a synced index for the next search
+                const r = next.apply(this, args);
+                // The query class is reachable only through a query, which the first search creates.
+                const proto = this.searchQuery && Object.getPrototypeOf(this.searchQuery);
+                if (queryPatched || typeof proto?.match !== 'function') return r;
+                queryPatched = true;
+                plugin.register(around(proto, {
+                    match: (m) => function (this: unknown, file: TFile, content: string) {
+                        const t = ocr(file);
+                        return t === null ? m.call(this, file, content)
+                            : m.call(this, Object.create(file, { extension: { value: 'md' } }), t);
+                    },
+                }));
+                if (!active()) return r;
+                this.searchQuery = null; // a repeated query only rechecks the last run's matches
+                return next.apply(this, args); // rerun the first search with the patch
+            },
+        }));
+        // A search that ran before this patch (a deferred tab shown, or startup) has no image results yet.
+        if (active()) this.setCoreSearch();
+        return true;
     }
 
     async enable() {
@@ -86,9 +163,9 @@ export class ImageTextSearch {
         // Turned off while reading (and maybe on again: that later call does the setup).
         if (gen !== this.gen) return;
 
-        const open = () => void this.refresh().then(() => { if (this.enabled) new ImageTextModal(this).open(); });
-        this.plugin.addCommand({ id: COMMAND_ID, name: 'Search text in images', callback: open });
-        this.ribbon = this.plugin.addRibbonIcon('scan-text', 'Search text in images', open);
+        this.plugin.addCommand({ id: COMMAND_ID, name: 'Search text in images', callback: this.open });
+        this.ribbon = this.plugin.addRibbonIcon('scan-text', 'Search text in images', this.open);
+        this.setCoreSearch();
         // Search-only devices never write the index: the indexing Mac owns the file.
         if (!ImageTextSearch.canIndex) return;
         this.plugin.addCommand({ id: REBUILD_ID, name: 'Rebuild image text index', callback: () => void this.rebuild() });
@@ -124,6 +201,7 @@ export class ImageTextSearch {
         this.refs = [];
         this.ribbon?.remove();
         this.ribbon = null;
+        this.setCoreSearch(); // removes image results from open searches
         this.plugin.removeCommand(COMMAND_ID);
         this.plugin.removeCommand(REBUILD_ID);
         this.proc?.kill();
