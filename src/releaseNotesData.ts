@@ -39,6 +39,7 @@ Reads the text in every vault image with macOS's built-in OCR, on-device. Search
 - **Where:** command *Search text in images* or the ribbon icon; *Find in canvas* for image cards. Same search syntax as Find in canvas; results are numbered, with the total count on top.
 - **Rebuild:** command *Rebuild image text index* reads every image again. Images in *Excluded files* are skipped.
 - **Settings:** *Search text in images (macOS)* (off by default; the first run takes a few minutes).
+- **Other devices:** reading images needs a Mac; on Windows, Linux, and mobile the same setting searches the index synced from your Mac.
 
 ### Send to Canvas
 Add the current note to a Canvas of your choice. That Canvas is remembered, so later notes can go straight to it.

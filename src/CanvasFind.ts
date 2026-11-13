@@ -248,6 +248,7 @@ export class CanvasFind {
         // Walk the JSON nodes: here node.file is a path string, not a TFile.
         const hitIds: string[] = [];
         const ocrLines = new Map<string, OcrLine[]>();
+        if (!target) await this.plugin.imageText.refresh(); // link search never reads image text
         for (const data of canvas.getData().nodes) {
             let hit = false;
             if (data.type === 'text') {

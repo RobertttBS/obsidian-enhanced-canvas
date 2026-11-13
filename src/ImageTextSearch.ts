@@ -41,9 +41,9 @@ function run(paths) {
 }`;
 
 /**
- * Optional (macOS desktop only): OCR every vault image into an index kept in the plugin
- * folder (no notes are created), a vault-wide "Search text in images" modal, and
- * image matches for Find in canvas.
+ * Optional: on macOS desktop, OCR every vault image into an index kept in the plugin
+ * folder (no notes are created); on every device, a vault-wide "Search text in images"
+ * modal and image matches for Find in canvas. Other devices only read the synced index.
  */
 export class ImageTextSearch {
     index: OcrIndex = {};
@@ -58,10 +58,12 @@ export class ImageTextSearch {
     private broken = false; // OCR itself failed: no scans until Rebuild, so each change doesn't burn a new batch
     private saving: Promise<void> = Promise.resolve();
     private saveQueued = false;
+    private loadedAt = -1; // mtime of the index file last read
 
     constructor(readonly plugin: EnhancedCanvas) {}
 
-    static get supported() { return Platform.isMacOS && Platform.isDesktopApp; }
+    /** Only macOS desktop reads images; other devices search the index that sync brings over. */
+    static get canIndex() { return Platform.isMacOS && Platform.isDesktopApp; }
 
     get isEnabled() { return this.enabled; }
 
@@ -76,19 +78,19 @@ export class ImageTextSearch {
     }
 
     async enable() {
-        if (this.enabled || !ImageTextSearch.supported) return;
+        if (this.enabled) return;
         this.enabled = true;
         const { app } = this.plugin;
         const gen = this.gen;
-        let index: OcrIndex = {};
-        try { index = JSON.parse(await app.vault.adapter.read(this.indexPath)); } catch { /* no index yet */ }
+        await this.load();
         // Turned off while reading (and maybe on again: that later call does the setup).
         if (gen !== this.gen) return;
-        this.index = index;
 
-        const open = () => new ImageTextModal(this).open();
+        const open = () => void this.refresh().then(() => { if (this.enabled) new ImageTextModal(this).open(); });
         this.plugin.addCommand({ id: COMMAND_ID, name: 'Search text in images', callback: open });
         this.ribbon = this.plugin.addRibbonIcon('scan-text', 'Search text in images', open);
+        // Search-only devices never write the index: the indexing Mac owns the file.
+        if (!ImageTextSearch.canIndex) return;
         this.plugin.addCommand({ id: REBUILD_ID, name: 'Rebuild image text index', callback: () => void this.rebuild() });
 
         app.workspace.onLayoutReady(() => {
@@ -126,6 +128,24 @@ export class ImageTextSearch {
         this.plugin.removeCommand(REBUILD_ID);
         this.proc?.kill();
         this.proc = null;
+    }
+
+    /** Reads the index file unless it's unchanged since the last read. */
+    private async load() {
+        const { adapter } = this.plugin.app.vault;
+        const gen = this.gen;
+        await this.saving; // else a disable/enable mid-save reads the old file over newer entries
+        try {
+            const m = (await adapter.stat(this.indexPath))?.mtime;
+            if (m === undefined || m === this.loadedAt) return; // no index yet, or already read
+            const index = JSON.parse(await adapter.read(this.indexPath));
+            if (gen === this.gen) { this.index = index; this.loadedAt = m; }
+        } catch { /* unreadable or mid-sync: keep what we have */ }
+    }
+
+    /** On search-only devices, picks up an index file that sync replaced. */
+    async refresh() {
+        if (this.enabled && !ImageTextSearch.canIndex) await this.load();
     }
 
     /** Writes never overlap (that can truncate the file); calls made while one waits share it. */

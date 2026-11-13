@@ -23,7 +23,9 @@ Turn on *Search text in images (macOS)* in settings, and the plugin reads the te
 -   Run **"Rebuild image text index"** to read every image again, for example after an image couldn't be read. Images in *Settings → Files and links → Excluded files* are skipped.
 -   **Find in canvas** also matches image cards by their text.
 
-The first run takes a few minutes for a large vault (about 0.3 s per image); after that only new or changed images are read. The index is stored in the plugin folder (`ocr-index.json`), so no notes are added to your vault. The plugin runs the system's `osascript` to call the Vision framework; nothing is downloaded and nothing leaves your Mac. Off by default; not available on Windows, Linux, or mobile.
+The first run takes a few minutes for a large vault (about 0.3 s per image); after that only new or changed images are read. The index is stored in the plugin folder (`ocr-index.json`), so no notes are added to your vault. The plugin runs the system's `osascript` to call the Vision framework; nothing is downloaded and nothing leaves your Mac. Off by default.
+
+Reading images needs a Mac. On Windows, Linux, iPhone, iPad, or Android, turn on the same setting to search an index built on your Mac and synced to the device (`ocr-index.json` in the plugin folder). These devices don't read images themselves, and results show what the Mac last read.
 
 ### Split Node by Headings
 

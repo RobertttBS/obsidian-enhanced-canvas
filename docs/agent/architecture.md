@@ -107,8 +107,11 @@ safe.
   A file node's name, note text and OCR text (`plugin.imageText.textOf`, null when that
   feature is off) are matched as one text; image matches are the one DOM edit: `.ec-ocr-box` divs appended to the
   node's `.image-embed`, drawn once per mount (so the observer doesn't loop), removed on clear.
-- `ImageTextSearch.ts` — optional, setting `enableImageTextSearch` (default off), macOS
-  desktop only (`ImageTextSearch.supported`; the setting is hidden elsewhere). OCRs every
+- `ImageTextSearch.ts` — optional, setting `enableImageTextSearch` (default off). Indexing is
+  macOS desktop only (`ImageTextSearch.canIndex`); every other device is search-only: it
+  reads the synced index, never writes it, registers no Rebuild command, vault events or scan,
+  and `refresh()` (run before the modal opens and before Find in canvas matches) re-reads the
+  file when its mtime changed. OCRs every
   vault image by spawning the system `osascript -l JavaScript` with an inline JXA script
   that calls Vision.framework — no binary ships. `child_process` is `require`d inside
   `ocr()` only, so mobile never loads it (keep it that way: a top-level import breaks
@@ -121,7 +124,7 @@ safe.
   single retries), OCR itself is broken: `broken` pauses all scans until the
   "Rebuild image text index" command, which also clears the index and `failed`. Images
   matched by Obsidian's *Excluded files* (`metadataCache.isUserIgnored`) are skipped and pruned. Index writes go through `save()`, which serializes and
-  coalesces them — never call `adapter.write` on the index directly. `disable()` removes
+  coalesces them — never call `adapter.write` on the index directly, and never from a search-only device. `disable()` removes
   the command, ribbon and listeners and kills the process but keeps the index. Also owns
   the vault-wide "Search text in images" `SuggestModal`: same query syntax, scans the whole
   index for the total, sorts by matching lines, shows 50 numbered results; a canvas backlink
