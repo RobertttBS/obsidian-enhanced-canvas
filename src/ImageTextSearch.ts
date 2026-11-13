@@ -1,4 +1,4 @@
-import { EventRef, FileSystemAdapter, Notice, Platform, SuggestModal, TAbstractFile, TFile } from 'obsidian';
+import { EventRef, FileSystemAdapter, Notice, Platform, SuggestModal, TAbstractFile, TFile, setIcon } from 'obsidian';
 import type { ChildProcess } from 'child_process';
 import { around } from 'monkey-around';
 
@@ -7,23 +7,40 @@ import type { CanvasView } from '../Canvas';
 import { matchesTextQuery, normalizeText, parseTextQuery, queryTerms } from './utils';
 
 const IMAGE_EXT = /^(png|jpe?g|heic|webp|gif|tiff?|bmp)$/i;
-const BATCH = 50; // images per osascript run; keeps argv short and saves progress often
+const BATCH = 50; // files per osascript run; keeps argv short and saves progress often
 const LIMIT = 50; // results shown in the modal
 const COMMAND_ID = 'search-image-text';
 const REBUILD_ID = 'rebuild-image-text-index';
 
-/** [text, x, y, w, h]: box normalized to the image, origin top-left. */
-export type OcrLine = [string, number, number, number, number];
+/** Image: [text, x, y, w, h], box normalized to the image, origin top-left. PDF: [text, page], page 1-based. */
+export type OcrLine = [string, number, number, number, number] | [string, number];
 type OcrIndex = Record<string, { m: number; l: OcrLine[] }>;
 
 export const isImageFile = (f: TAbstractFile | null): f is TFile => f instanceof TFile && IMAGE_EXT.test(f.extension);
+/** Files in the index: images (OCR) and PDFs (their embedded text layer only; scanned pages stay unsearchable). */
+const isIndexedFile = (f: TAbstractFile | null): f is TFile => isImageFile(f) || (f instanceof TFile && f.extension.toLowerCase() === 'pdf');
 
 // macOS's built-in JavaScript for Automation calls Vision.framework (runs on the Neural
 // Engine). Nothing to ship or install: osascript is on every Mac.
+// A PDF is read with PDFKit instead: its embedded text, no OCR, so a scanned PDF indexes as empty.
 const OCR_SCRIPT = `ObjC.import('Vision');
+ObjC.import('PDFKit');
+function pdf(p) {
+  var doc = $.PDFDocument.alloc.initWithURL($.NSURL.fileURLWithPath(p));
+  if (doc.isNil()) return null; // unreadable
+  if (doc.isLocked) return []; // password-protected: no text to read, and retrying won't change that
+  var lines = [];
+  for (var i = 0; i < doc.pageCount; i++) {
+    var s = doc.pageAtIndex(i).string;
+    if (s.isNil()) continue;
+    s.js.split(/\\r\\n|\\r|\\n/).forEach(function (t) { t = t.trim(); if (t) lines.push([t, i + 1]); });
+  }
+  return lines;
+}
 function run(paths) {
   return JSON.stringify(paths.map(function (p) {
     try {
+      if (/\\.pdf$/i.test(p)) return pdf(p);
       var req = $.VNRecognizeTextRequest.alloc.init;
       req.recognitionLevel = 0; // accurate
       req.usesLanguageCorrection = true;
@@ -109,7 +126,7 @@ export class ImageTextSearch {
             .find((v) => typeof v?.startSearch === 'function' && typeof v.dom?.addResult === 'function');
         if (!view) return false;
         const ocr = (f: TFile) => {
-            const t = this.inCoreSearch && isImageFile(f) ? this.textOf(f.path) : null;
+            const t = this.inCoreSearch && isIndexedFile(f) ? this.textOf(f.path) : null;
             return t ? t.lines.map((l) => l[0]).join('\n') : null;
         };
         const { plugin } = this;
@@ -120,7 +137,7 @@ export class ImageTextSearch {
                 const t = ocr(file);
                 const item = next.call(this, file, result, t ?? content, ...rest);
                 // Core shows no image preview; add one between the title and the matched lines.
-                if (t !== null && item?.selfEl instanceof HTMLElement && !item.selfEl.nextElementSibling?.matches('.ec-search-thumb')) {
+                if (t !== null && isImageFile(file) && item?.selfEl instanceof HTMLElement && !item.selfEl.nextElementSibling?.matches('.ec-search-thumb')) {
                     item.selfEl.after(createEl('img', {
                         cls: 'ec-search-thumb', attr: { src: plugin.app.vault.getResourcePath(file), loading: 'lazy' },
                     }));
@@ -172,7 +189,7 @@ export class ImageTextSearch {
 
         app.workspace.onLayoutReady(() => {
             if (gen !== this.gen) return;
-            const changed = (f: TAbstractFile) => { if (isImageFile(f)) void this.scan(); };
+            const changed = (f: TAbstractFile) => { if (isIndexedFile(f)) void this.scan(); };
             this.refs = [
                 app.vault.on('create', changed),
                 app.vault.on('modify', changed),
@@ -262,17 +279,17 @@ export class ImageTextSearch {
             do {
                 this.rescan = false;
                 const gen = this.gen;
-                const gone = Object.keys(this.index).filter((p) => !isImageFile(vault.getAbstractFileByPath(p)) || excluded(p));
+                const gone = Object.keys(this.index).filter((p) => !isIndexedFile(vault.getAbstractFileByPath(p)) || excluded(p));
                 gone.forEach((p) => delete this.index[p]);
                 if (gone.length) await this.save();
 
-                const todo = vault.getFiles().filter((f) => isImageFile(f) && !excluded(f.path)
+                const todo = vault.getFiles().filter((f) => isIndexedFile(f) && !excluded(f.path)
                     && this.index[f.path]?.m !== f.stat.mtime && this.failed.get(f.path) !== f.stat.mtime);
                 const notice = todo.length > BATCH ? new Notice('', 0) : null;
                 let warned = false;
                 try {
                     for (let i = 0; i < todo.length && gen === this.gen; i += BATCH) {
-                        notice?.setMessage(`Enhanced Canvas: reading text in images ${i} / ${todo.length}`);
+                        notice?.setMessage(`Enhanced Canvas: reading text in images and PDFs ${i} / ${todo.length}`);
                         const batch = todo.slice(i, i + BATCH);
                         // Taken before OCR: an image changed mid-run must still look stale afterwards.
                         const mtimes = batch.map((f) => f.stat.mtime);
@@ -306,7 +323,7 @@ export class ImageTextSearch {
                         await this.save();
                         if (bad && !warned) {
                             warned = true;
-                            new Notice(`Enhanced Canvas: couldn't read text in ${bad} image${bad === 1 ? '' : 's'}. They're retried when changed, or run "Rebuild image text index".`);
+                            new Notice(`Enhanced Canvas: couldn't read text in ${bad} file${bad === 1 ? '' : 's'}. They're retried when changed, or run "Rebuild image text index".`);
                         }
                     }
                 } finally {
@@ -327,7 +344,8 @@ export class ImageTextSearch {
         const gen = this.gen;
         return new Promise((resolve) => {
             const proc = this.proc = spawn('osascript', ['-l', 'JavaScript', '-e', OCR_SCRIPT, ...files.map((f) => adapter.getFullPath(f.path))],
-                { timeout: 20_000 + 2_000 * files.length }); // a hung osascript must not stall indexing forever
+                // A hung osascript must not stall indexing forever. Must be an integer: spawn throws on a fraction. Size term: a 19 MB, 2,720-page PDF reads in ~11 s on an M4.
+                { timeout: 20_000 + 2_000 * files.length + Math.round(files.reduce((t, f) => t + f.stat.size, 0) / 500) });
             let out = '', err = '';
             // Decode as one stream: a CJK character split across two chunks would otherwise be garbled.
             proc.stdout?.setEncoding('utf8');
@@ -374,7 +392,7 @@ export class ImageTextSearch {
             // Joined with \n so a phrase can't span OCR lines: every match then has a line to box.
             const all = norm.join('\n');
             if (!matchesTextQuery(query, (t) => all.includes(t))) continue;
-            if (!isImageFile(vault.getAbstractFileByPath(path))) continue; // deleted, entry not pruned yet
+            if (!isIndexedFile(vault.getAbstractFileByPath(path))) continue; // deleted, entry not pruned yet
             results.push({ path, terms, n: 0, hits: l.filter((_, i) => terms.some((t) => norm[i].includes(t))) });
         }
         results.sort((a, b) => b.hits.length - a.hits.length);
@@ -408,7 +426,9 @@ export class ImageTextSearch {
 
 /** Draws a highlight box over each OCR line on an element laid over the image. */
 export function drawOcrBoxes(container: HTMLElement, lines: OcrLine[]) {
-    for (const [, x, y, w, h] of lines) {
+    for (const l of lines) {
+        if (l.length !== 5) continue; // PDF text has no box
+        const [, x, y, w, h] = l;
         const box = container.createDiv('ec-ocr-box');
         box.setCssStyles({ left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${h * 100}%` });
     }
@@ -423,7 +443,7 @@ class ImageTextModal extends SuggestModal<ImageTextResult> {
     constructor(private search: ImageTextSearch) {
         super(search.plugin.app);
         this.backlinks = search.backlinks();
-        this.setPlaceholder('Search text inside images: words, OR, "exact phrase"');
+        this.setPlaceholder('Search text inside images and PDFs: words, OR, "exact phrase"');
         this.limit = LIMIT;
         this.countEl = this.modalEl.createDiv('ec-ocr-count'); // modal's own document (pop-out windows)
         this.resultContainerEl.before(this.countEl);
@@ -434,7 +454,7 @@ class ImageTextModal extends SuggestModal<ImageTextResult> {
         const count = !query.trim() ? ''
             : total > results.length ? `Showing ${results.length} of ${total} results` : `${total} result${total === 1 ? '' : 's'}`;
         // Before the index is complete, "no results" may just mean "not read yet".
-        const indexing = this.search.isIndexing ? 'Still reading images; results may be incomplete.' : '';
+        const indexing = this.search.isIndexing ? 'Still reading images and PDFs; results may be incomplete.' : '';
         this.countEl.setText([count, indexing].filter(Boolean).join(' · '));
         return results;
     }
@@ -443,18 +463,29 @@ class ImageTextModal extends SuggestModal<ImageTextResult> {
         const file = this.app.vault.getAbstractFileByPath(path) as TFile; // search() keeps only existing images
         const row = el.createDiv('ec-ocr-result');
         const thumb = row.createDiv('ec-ocr-thumb');
-        thumb.createEl('img', { attr: { src: this.app.vault.getResourcePath(file), loading: 'lazy' } });
-        drawOcrBoxes(thumb, hits);
+        if (isImageFile(file)) {
+            thumb.createEl('img', { attr: { src: this.app.vault.getResourcePath(file), loading: 'lazy' } });
+            drawOcrBoxes(thumb, hits);
+        } else setIcon(thumb, 'file-text');
 
         const meta = row.createDiv('ec-ocr-meta');
         meta.createDiv({ cls: 'ec-ocr-name', text: `${n}. ${file.name}` });
-        for (const [text] of hits.slice(0, 3)) markWords(meta.createDiv('ec-ocr-line'), text, terms);
+        for (const l of hits.slice(0, 3)) {
+            const line = meta.createDiv('ec-ocr-line');
+            if (l.length === 2) line.createSpan({ cls: 'ec-ocr-page', text: `p. ${l[1]} ` });
+            markWords(line, l[0], terms);
+        }
         const notes = this.backlinks.get(path);
         if (notes) meta.createDiv({ cls: 'ec-ocr-notes', text: '↳ ' + notes.map((n) => n.split('/').pop()?.replace(/\.md$/, '')).join(', ') });
     }
 
-    /** Opens the note that embeds the image, at the embed's line (a canvas zooms to the image card); else the image itself. */
-    async onChooseSuggestion({ path }: ImageTextResult) {
+    /**
+     * A PDF opens at the page of its first match. An image opens the note that embeds it, at
+     * the embed's line (a canvas zooms to the image card); else the image itself.
+     */
+    async onChooseSuggestion({ path, hits }: ImageTextResult) {
+        const first = hits[0];
+        if (first?.length === 2) return this.app.workspace.openLinkText(`${path}#page=${first[1]}`, '', false);
         const note = this.backlinks.get(path)?.[0];
         const file = this.app.vault.getAbstractFileByPath(note ?? path);
         if (!(file instanceof TFile)) return;

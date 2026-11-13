@@ -1581,13 +1581,13 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 			{
 				name: 'Search text in images (macOS)',
 				desc: ImageTextSearch.canIndex
-					? 'Reads the text in every vault image with macOS\'s built-in OCR (runs the system osascript, on-device). Adds a "Search text in images" command and lets Find in canvas match image cards. The index is stored in the plugin folder; no notes are created. The first run takes a few minutes for large vaults.'
-					: 'Searches the image text index built on a Mac and synced to this device (plugin folder, ocr-index.json). This device doesn\'t read images itself. Adds a "Search text in images" command and lets Find in canvas match image cards.',
+					? 'Reads the text in every vault image with macOS\'s built-in OCR, and the embedded text of every PDF (runs the system osascript, on-device). Adds a "Search text in images" command and lets Find in canvas match image cards. The index is stored in the plugin folder; no notes are created. The first run takes a few minutes for large vaults.'
+					: 'Searches the image text index built on a Mac and synced to this device (plugin folder, ocr-index.json). This device doesn\'t read images or PDFs itself. Adds a "Search text in images" command and lets Find in canvas match image cards.',
 				render: this.bindImageTextToggle,
 			},
 			{
 				name: 'Show image results in Search',
-				desc: 'Needs Search text in images. On: images whose text matches appear in core Search (search in all files) next to your notes, with the same query syntax and a thumbnail. Off: images are searched only with the "Search text in images" ribbon icon or command. Either way, that ribbon icon and command stay, and show the matching text boxed on the image.',
+				desc: 'Needs Search text in images. On: images and PDFs whose text matches appear in core Search (search in all files) next to your notes, with the same query syntax and a thumbnail for images. Off: they are searched only with the "Search text in images" ribbon icon or command. Either way, that ribbon icon and command stay, and show the matching text boxed on the image.',
 				render: this.bindCoreSearchToggle,
 			},
 		];

@@ -115,7 +115,10 @@ safe.
   vault image by spawning the system `osascript -l JavaScript` with an inline JXA script
   that calls Vision.framework — no binary ships. `child_process` is `require`d inside
   `ocr()` only, so mobile never loads it (keep it that way: a top-level import breaks
-  mobile). Index `{path: {m: mtime, l: [[text,x,y,w,h]]}}` lives in
+  mobile). PDFs are indexed too, by the same script with PDFKit: only their embedded text
+  layer (no OCR, so scanned pages stay empty; a password-protected PDF indexes as `[]`),
+  one line per text line as `[text, page]` (1-based) instead of a box. Index
+  `{path: {m: mtime, l: [[text,x,y,w,h] | [text,page]]}}` lives in
   `<plugin dir>/ocr-index.json`, never in `data.json` (it's MBs). Rescans images whose
   mtime changed, 50 per osascript run; vault events keep it current. Each scan first
   prunes entries whose image is gone. A failed run is retried one image at a time;
@@ -128,7 +131,11 @@ safe.
   the command, ribbon and listeners and kills the process but keeps the index. Also owns
   the vault-wide "Search text in images" `SuggestModal`: same query syntax, scans the whole
   index for the total, sorts by matching lines, shows 50 numbered results; a canvas backlink
-  opens zoomed to the image card. Setting `imageTextInCoreSearch` (`setCoreSearch()` reruns
+  opens zoomed to the image card, a PDF opens at its first matching page (`#page=N`).
+  `drawOcrBoxes` skips PDF lines; PDFs get a file icon instead of a thumbnail.
+  ponytail: one index file for images and PDFs; big PDFs make it tens of MB (91 PDFs,
+  340 MB → 21.7 MB of JSON), all rewritten on each save and synced whole. Split PDFs into
+  their own file if that sync cost bites. Setting `imageTextInCoreSearch` (`setCoreSearch()` reruns
   open searches for it; the patcher reruns them once patched, since a search may run first): core Search reads only `.md`/`.canvas` content, so a lazy
   patcher wraps undocumented internals (checked on 1.15.1) — the search view's `startSearch`,
   its result list's `addResult`, and, from the first query instance, the query prototype's

@@ -116,6 +116,19 @@ body {
     border-radius: var(--radius-s);
 }
 
+/* PDF results: a file icon instead of a thumbnail. */
+.ec-ocr-thumb > .svg-icon {
+    display: block;
+    width: 48px;
+    height: 48px;
+    margin: var(--size-4-2) auto;
+    color: var(--text-faint);
+}
+
+.ec-ocr-page {
+    color: var(--text-faint);
+}
+
 .ec-search-thumb {
     display: block;
     max-width: calc(100% - 24px);
