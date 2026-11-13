@@ -98,14 +98,14 @@ safe.
 - `CanvasFind.ts` — "Find in canvas" command + editor-menu item + a `showSearch()` patched
   onto the CanvasView prototype, so core "Search current file" (Mod+F) opens find on a
   canvas (editing a card still gets markdown search). No own hotkey, no conflict. Highlights nodes
-  containing a word or linking to a `[[note]]` (links resolved via
+  matching a query (`parseTextQuery` in `utils.ts`; selected text is one literal phrase) or linking to a `[[note]]` (links resolved via
   `getFirstLinkpathDest`), dims the rest, `zoomToBbox` to fit. Uses only
   `ec-find-hit` / `ec-find-active` classes — never `node.color`, never writes the file.
   Matched text is marked via the CSS Custom Highlight API (`::highlight(ec-find)`, no
   DOM edits); a `MutationObserver` on hit nodes repaints as content lazily mounts.
   A click (not a drag) on empty canvas (`e.target === canvas.wrapperEl`) clears the find.
-  Image file nodes also match by OCR text (`plugin.imageText.linesMatching`, [] when that
-  feature is off); their matches are the one DOM edit: `.ec-ocr-box` divs appended to the
+  A file node's name, note text and OCR text (`plugin.imageText.textOf`, null when that
+  feature is off) are matched as one text; image matches are the one DOM edit: `.ec-ocr-box` divs appended to the
   node's `.image-embed`, drawn once per mount (so the observer doesn't loop), removed on clear.
 - `ImageTextSearch.ts` — optional, setting `enableImageTextSearch` (default off), macOS
   desktop only (`ImageTextSearch.supported`; the setting is hidden elsewhere). OCRs every
@@ -117,10 +117,15 @@ safe.
   mtime changed, 50 per osascript run; vault events keep it current. Each scan first
   prunes entries whose image is gone. A failed run is retried one image at a time;
   images that still fail go in the in-memory `failed` map with their mtime (skipped
-  until the file changes, never indexed as empty). Index writes go through `save()`, which serializes and
+  until the file changes, never indexed as empty). If a whole batch fails (or the first 3
+  single retries), OCR itself is broken: `broken` pauses all scans until the
+  "Rebuild image text index" command, which also clears the index and `failed`. Images
+  matched by Obsidian's *Excluded files* (`metadataCache.isUserIgnored`) are skipped and pruned. Index writes go through `save()`, which serializes and
   coalesces them — never call `adapter.write` on the index directly. `disable()` removes
   the command, ribbon and listeners and kills the process but keeps the index. Also owns
-  the vault-wide "Search text in images" `SuggestModal`.
+  the vault-wide "Search text in images" `SuggestModal`: same query syntax, scans the whole
+  index for the total, sorts by matching lines, shows 50 numbered results; a canvas backlink
+  opens zoomed to the image card.
 - `CalloutImageResize.ts` — workaround for core (1.14.4): images inside a Live Preview
   callout widget (`.cm-callout`) get no resize corner, and any click selects the callout
   source. A markdown post-processor tags image `.internal-embed`s with `interactive-child`
@@ -133,7 +138,9 @@ safe.
 - `settings.ts` — `EnhancedCanvasSettings` + `DEFAULT_SETTINGS`. Settings UI lives
   in `main.ts`.
 - `utils.ts` — `isVersionNewer` (semver), `randomId` (uses `crypto.getRandomValues`
-  — prefer over `Math.random()`).
+  — prefer over `Math.random()`), tag query parsing, and the text query shared by Find in
+  canvas and image search: `parseTextQuery` (Obsidian syntax: words AND, uppercase `OR`,
+  `"phrase"`), `matchesTextQuery`, `queryTerms`, `normalizeText` (NFKC + lowercase).
 - `ReleaseNotesModal.ts` + `releaseNotesData.ts` — first-run / version-bump modal
   (what's new + feature guide, also opened by the "Show feature guide" command),
   gated by `showReleaseNotes` / `previousRelease`.

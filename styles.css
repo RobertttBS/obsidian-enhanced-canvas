@@ -88,6 +88,16 @@ body {
     pointer-events: none;
 }
 
+.ec-ocr-count {
+    padding: var(--size-4-1) var(--size-4-3);
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.ec-ocr-count:empty {
+    display: none;
+}
+
 .ec-ocr-result {
     display: flex;
     gap: var(--size-4-3);

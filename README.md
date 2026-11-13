@@ -9,6 +9,7 @@
 Press **Cmd+F** (Ctrl+F on Windows), the core *Search current file* hotkey, in a Canvas, or run **"Find in canvas"** from the command palette, and type a word or a `[[link]]`. Every card that contains the word, or links to that note, is outlined and the rest are dimmed; matched text is highlighted and the view zooms to fit the results. Select text in a card and right-click → **Find in canvas** to search for it directly. Click an empty spot on the Canvas to clear.
 
 -   While editing a card, Cmd/Ctrl+F still searches that card. Change the key via *Search current file* in Settings → Hotkeys, or bind *Find in canvas* separately.
+-   Type several words to find cards with all of them, `OR` (uppercase) for either one, and `"quotes"` for an exact phrase: `canvas plugin OR "find text"`. Selected text is searched as one phrase.
 -   Searches text cards, note cards (including their content), group labels, and web links.
 -   Node colors and the `.canvas` file are never changed.
 -   Change the highlight color with a CSS snippet: `body { --ec-find-color: <color>; }`
@@ -18,7 +19,8 @@ Press **Cmd+F** (Ctrl+F on Windows), the core *Search current file* hotkey, in a
 
 Turn on *Search text in images (macOS)* in settings, and the plugin reads the text in every image in your vault with macOS's built-in OCR (the Vision framework, on-device). Then:
 
--   Run **"Search text in images"** (or click the ribbon icon) to search all images. Results show the image with the matching text boxed and the notes that embed it; choose one to open that note at the image.
+-   Run **"Search text in images"** (or click the ribbon icon) to search all images. It uses the same syntax as Find in canvas (words, `OR`, `"phrase"`). Results are numbered, sorted by the number of matching lines, and the total count is shown on top. They show the image with the matching text boxed and the notes that embed it; choose one to open that note at the image (a Canvas zooms to the image card).
+-   Run **"Rebuild image text index"** to read every image again, for example after an image couldn't be read. Images in *Settings → Files and links → Excluded files* are skipped.
 -   **Find in canvas** also matches image cards by their text.
 
 The first run takes a few minutes for a large vault (about 0.3 s per image); after that only new or changed images are read. The index is stored in the plugin folder (`ocr-index.json`), so no notes are added to your vault. The plugin runs the system's `osascript` to call the Vision framework; nothing is downloaded and nothing leaves your Mac. Off by default; not available on Windows, Linux, or mobile.

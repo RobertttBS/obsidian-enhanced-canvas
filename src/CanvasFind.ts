@@ -4,6 +4,7 @@ import { around } from 'monkey-around';
 import EnhancedCanvas from '../main';
 import { Canvas, CanvasNode, CanvasView } from '../Canvas';
 import { OcrLine, drawOcrBoxes } from './ImageTextSearch';
+import { matchesTextQuery, normalizeText, parseTextQuery, queryTerms } from './utils';
 
 // Classes only; node.color and the .canvas file are never touched.
 const HIT_CLASS = 'ec-find-hit';
@@ -31,7 +32,7 @@ interface FindSession {
     offClick: () => void;
 }
 
-/** Asks for the word or [[link]] to find. */
+/** Asks for the query or [[link]] to find. */
 class FindQueryModal extends Modal {
     constructor(app: App, private onSubmit: (query: string) => void) {
         super(app);
@@ -42,9 +43,9 @@ class FindQueryModal extends Modal {
         let query = '';
         const submit = () => { this.close(); this.onSubmit(query); };
         new Setting(this.contentEl)
-            .setDesc('A word, or a [[link]] to match every node that links to that note.')
+            .setDesc('Words (all must match), OR between alternatives, "exact phrase", or a [[link]] to match every node that links to that note.')
             .addText((text) => {
-                text.setPlaceholder('word or [[link]]').onChange((v) => (query = v));
+                text.setPlaceholder('words, OR, "phrase" or [[link]]').onChange((v) => (query = v));
                 text.inputEl.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); submit(); }
                 });
@@ -116,14 +117,14 @@ export class CanvasFind {
                 menu.addItem((item) => item
                     .setTitle('Find in canvas')
                     .setIcon('search')
-                    .onClick(() => void this.find(canvas, selection)));
+                    .onClick(() => void this.find(canvas, selection, true)));
             })
         );
     }
 
     private open(canvas: Canvas) {
         const selection = this.plugin.app.workspace.activeEditor?.editor?.getSelection().trim();
-        if (selection) void this.find(canvas, selection);
+        if (selection) void this.find(canvas, selection, true);
         else new FindQueryModal(this.plugin.app, (q) => void this.find(canvas, q)).open();
     }
 
@@ -152,7 +153,7 @@ export class CanvasFind {
      * mounts lazily (off-screen, async file render), so repaint on DOM changes.
      * A plain click on the empty canvas ends the find.
      */
-    private startSession(canvas: Canvas, hits: CanvasNode[], ocr: Map<CanvasNode, OcrLine[]>, target: TFile | null, needle: string, sourcePath: string) {
+    private startSession(canvas: Canvas, hits: CanvasNode[], ocr: Map<CanvasNode, OcrLine[]>, target: TFile | null, terms: string[], sourcePath: string) {
         const win = canvas.view.containerEl.win as HighlightWindow;
         const registry = win.CSS.highlights;
         let hl = registry?.get(HIGHLIGHT_NAME);
@@ -207,13 +208,15 @@ export class CanvasFind {
                 }
                 const walker = doc.createTreeWalker(node.nodeEl, NodeFilter.SHOW_TEXT);
                 for (let text = walker.nextNode() as Text | null; text; text = walker.nextNode() as Text | null) {
-                    // ponytail: toLowerCase can shift offsets for a few Unicode chars (e.g. İ); rare.
-                    const hay = text.data.toLowerCase();
-                    for (let i = hay.indexOf(needle); i !== -1; i = hay.indexOf(needle, i + needle.length)) {
-                        const range = doc.createRange();
-                        range.setStart(text, i);
-                        range.setEnd(text, i + needle.length);
-                        session.ranges.push(range);
+                    // ponytail: assumes normalizing keeps offsets; a few chars (e.g. İ, ligatures) shift the mark.
+                    const hay = normalizeText(text.data);
+                    for (const term of terms) {
+                        for (let i = hay.indexOf(term); i !== -1; i = hay.indexOf(term, i + term.length)) {
+                            const range = doc.createRange();
+                            range.setStart(text, i);
+                            range.setEnd(text, Math.min(i + term.length, text.length));
+                            session.ranges.push(range);
+                        }
                     }
                 }
             }
@@ -225,7 +228,8 @@ export class CanvasFind {
         paint();
     }
 
-    async find(canvas: Canvas, query: string) {
+    /** `literal`: the whole query is one phrase (selected text), not parseTextQuery syntax. */
+    async find(canvas: Canvas, query: string, literal = false) {
         this.clear(canvas);
         query = query.trim();
         if (!query) return;
@@ -233,7 +237,13 @@ export class CanvasFind {
         const { metadataCache, vault } = this.plugin.app;
         const sourcePath = canvas.view.file?.path ?? '';
         const target = this.resolveLink(query, sourcePath);
-        const needle = query.toLowerCase();
+        const parsed = literal ? [[normalizeText(query)]] : parseTextQuery(query);
+        const terms = queryTerms(parsed);
+        if (!target && !terms.length) return;
+        const matches = (...texts: string[]) => {
+            const hay = normalizeText(texts.join('\n'));
+            return matchesTextQuery(parsed, (t) => hay.includes(t));
+        };
 
         // Walk the JSON nodes: here node.file is a path string, not a TFile.
         const hitIds: string[] = [];
@@ -243,7 +253,7 @@ export class CanvasFind {
             if (data.type === 'text') {
                 hit = target
                     ? this.textLinks(data.text).some((l) => this.resolveLink(l, sourcePath) === target)
-                    : data.text.toLowerCase().includes(needle);
+                    : matches(data.text);
             } else if (data.type === 'file') {
                 const file = vault.getAbstractFileByPath(data.file);
                 if (!(file instanceof TFile)) continue;
@@ -252,16 +262,16 @@ export class CanvasFind {
                     const refs = [...(cache?.links ?? []), ...(cache?.embeds ?? []), ...(cache?.frontmatterLinks ?? [])];
                     hit = file === target || refs.some((r) => metadataCache.getFirstLinkpathDest(r.link.split('#')[0], file.path) === target);
                 } else {
-                    const lines = this.plugin.imageText.linesMatching(file.path, query);
+                    // Name, note text and image text count as one text, so terms may match in any of them.
+                    const ocr = this.plugin.imageText.textOf(file.path);
+                    hit = matches(file.basename, file.extension === 'md' ? await vault.cachedRead(file) : '', ocr?.norm.join('\n') ?? '');
+                    const lines = hit && ocr ? ocr.lines.filter((_, i) => terms.some((t) => ocr.norm[i].includes(t))) : [];
                     if (lines.length) ocrLines.set(data.id, lines);
-                    hit = file.basename.toLowerCase().includes(needle)
-                        || (file.extension === 'md' && (await vault.cachedRead(file)).toLowerCase().includes(needle))
-                        || lines.length > 0;
                 }
             } else if (data.type === 'group') {
-                hit = !target && (data.label ?? '').toLowerCase().includes(needle);
+                hit = !target && matches(data.label ?? '');
             } else if (data.type === 'link') {
-                hit = !target && data.url.toLowerCase().includes(needle);
+                hit = !target && matches(data.url);
             }
             if (hit) hitIds.push(data.id);
         }
@@ -270,14 +280,14 @@ export class CanvasFind {
         this.clear(canvas);
         const hits = hitIds.map((id) => canvas.nodes.get(id)).filter((n): n is CanvasNode => n !== undefined);
         if (hits.length === 0) {
-            new Notice(`No nodes contain "${query}".`);
+            new Notice(`No nodes match "${query}".`);
             return;
         }
 
         canvas.view.containerEl.addClass(ACTIVE_CLASS);
         for (const node of hits) node.nodeEl.addClass(HIT_CLASS);
         const ocr = new Map(hits.filter((n) => ocrLines.has(n.id)).map((n) => [n, ocrLines.get(n.id) as OcrLine[]]));
-        this.startSession(canvas, hits, ocr, target, needle, sourcePath);
+        this.startSession(canvas, hits, ocr, target, terms, sourcePath);
 
         const boxes = hits.map((n) => n.getBBox());
         canvas.zoomToBbox({

@@ -2,17 +2,18 @@ import { EventRef, FileSystemAdapter, Notice, Platform, SuggestModal, TAbstractF
 import type { ChildProcess } from 'child_process';
 
 import EnhancedCanvas from '../main';
+import type { CanvasView } from '../Canvas';
+import { matchesTextQuery, normalizeText, parseTextQuery, queryTerms } from './utils';
 
 const IMAGE_EXT = /^(png|jpe?g|heic|webp|gif|tiff?|bmp)$/i;
 const BATCH = 50; // images per osascript run; keeps argv short and saves progress often
+const LIMIT = 50; // results shown in the modal
 const COMMAND_ID = 'search-image-text';
+const REBUILD_ID = 'rebuild-image-text-index';
 
 /** [text, x, y, w, h]: box normalized to the image, origin top-left. */
 export type OcrLine = [string, number, number, number, number];
 type OcrIndex = Record<string, { m: number; l: OcrLine[] }>;
-
-/** Case- and width-insensitive form, so "ＡＢＣ（１）" matches "abc(1)". */
-export const normalizeText = (s: string) => s.normalize('NFKC').toLowerCase();
 
 export const isImageFile = (f: TAbstractFile | null): f is TFile => f instanceof TFile && IMAGE_EXT.test(f.extension);
 
@@ -54,6 +55,7 @@ export class ImageTextSearch {
     private rescan = false;
     private gen = 0; // bumped by disable(), so a scan can tell its osascript was killed on purpose
     private failed = new Map<string, number>(); // path → mtime OCR couldn't read; retried once the file changes
+    private broken = false; // OCR itself failed: no scans until Rebuild, so each change doesn't burn a new batch
     private saving: Promise<void> = Promise.resolve();
     private saveQueued = false;
 
@@ -62,6 +64,9 @@ export class ImageTextSearch {
     static get supported() { return Platform.isMacOS && Platform.isDesktopApp; }
 
     get isEnabled() { return this.enabled; }
+
+    /** True while images are still being read, so a search may miss some. */
+    get isIndexing() { return this.scanning; }
 
     private get indexPath() { return `${this.plugin.manifest.dir}/ocr-index.json`; }
 
@@ -84,6 +89,7 @@ export class ImageTextSearch {
         const open = () => new ImageTextModal(this).open();
         this.plugin.addCommand({ id: COMMAND_ID, name: 'Search text in images', callback: open });
         this.ribbon = this.plugin.addRibbonIcon('scan-text', 'Search text in images', open);
+        this.plugin.addCommand({ id: REBUILD_ID, name: 'Rebuild image text index', callback: () => void this.rebuild() });
 
         app.workspace.onLayoutReady(() => {
             if (gen !== this.gen) return;
@@ -117,6 +123,7 @@ export class ImageTextSearch {
         this.ribbon?.remove();
         this.ribbon = null;
         this.plugin.removeCommand(COMMAND_ID);
+        this.plugin.removeCommand(REBUILD_ID);
         this.proc?.kill();
         this.proc = null;
     }
@@ -131,20 +138,37 @@ export class ImageTextSearch {
         }).catch((e) => console.error('Enhanced Canvas OCR: saving the index failed', e));
     }
 
-    /** OCR every image whose mtime changed since it was indexed; drop entries whose image is gone. */
+    /** Forgets every reading, failures included, and reads all images again. */
+    private async rebuild() {
+        // Abort a running scan: its todo list was built from the old index.
+        this.gen++;
+        this.proc?.kill();
+        this.proc = null;
+        this.index = {};
+        this.failed.clear();
+        this.broken = false;
+        await this.save();
+        new Notice('Enhanced Canvas: rebuilding the image text index…');
+        void this.scan();
+    }
+
+    /** OCR every image whose mtime changed since it was indexed; drop entries whose image is gone or excluded. */
     private async scan() {
+        if (this.broken) return;
         if (this.scanning) { this.rescan = true; return; }
         this.scanning = true;
-        const { vault } = this.plugin.app;
+        const { vault, metadataCache } = this.plugin.app;
+        // Settings → Files and links → Excluded files.
+        const excluded = (p: string) => metadataCache.isUserIgnored?.(p) ?? false;
         try {
             do {
                 this.rescan = false;
                 const gen = this.gen;
-                const gone = Object.keys(this.index).filter((p) => !isImageFile(vault.getAbstractFileByPath(p)));
+                const gone = Object.keys(this.index).filter((p) => !isImageFile(vault.getAbstractFileByPath(p)) || excluded(p));
                 gone.forEach((p) => delete this.index[p]);
                 if (gone.length) await this.save();
 
-                const todo = vault.getFiles().filter((f) => isImageFile(f)
+                const todo = vault.getFiles().filter((f) => isImageFile(f) && !excluded(f.path)
                     && this.index[f.path]?.m !== f.stat.mtime && this.failed.get(f.path) !== f.stat.mtime);
                 const notice = todo.length > BATCH ? new Notice('', 0) : null;
                 let warned = false;
@@ -161,10 +185,19 @@ export class ImageTextSearch {
                             for (const f of batch) {
                                 if (gen !== this.gen) break;
                                 lines.push((await this.ocr([f]))?.[0] ?? null);
+                                // ponytail: the first 3 all failing alone = OCR is broken, not the images; saves up to ~18 min of retries.
+                                // Later failures in a row are not checked: each is retried and marked failed on its own.
+                                if (lines.length === 3 && lines.every((l) => !l)) break;
                             }
                         }
                         if (gen !== this.gen) break; // disabled: osascript was killed, not a failure
 
+                        // Every image failing means OCR itself is broken: pause instead of marking them all failed.
+                        if (batch.length > 1 && batch.every((_, j) => !lines?.[j])) {
+                            this.broken = true;
+                            new Notice('Enhanced Canvas: macOS text recognition isn\'t working, so reading images is paused. Run "Rebuild image text index" to try again.', 0);
+                            break;
+                        }
                         let bad = 0;
                         batch.forEach((f, j) => {
                             const l = lines?.[j];
@@ -175,15 +208,13 @@ export class ImageTextSearch {
                         await this.save();
                         if (bad && !warned) {
                             warned = true;
-                            new Notice(`Enhanced Canvas: couldn't read text in ${bad === batch.length && batch.length > 1 ? 'some images' : `${bad} image${bad === 1 ? '' : 's'}`}. See console.`);
+                            new Notice(`Enhanced Canvas: couldn't read text in ${bad} image${bad === 1 ? '' : 's'}. They're retried when changed, or run "Rebuild image text index".`);
                         }
-                        // ponytail: every image of a batch failing means OCR itself is broken; stop until the next scan.
-                        if (bad === batch.length && batch.length > 1) break;
                     }
                 } finally {
                     notice?.hide();
                 }
-            } while (this.rescan && this.enabled);
+            } while (this.rescan && this.enabled && !this.broken);
         } finally {
             this.scanning = false;
         }
@@ -227,27 +258,31 @@ export class ImageTextSearch {
         return n;
     }
 
-    /** OCR lines of one image that contain `needle`; [] when off or not indexed. */
-    linesMatching(path: string, needle: string): OcrLine[] {
+    /** OCR lines of one image with their normalized text; null when off or not indexed. */
+    textOf(path: string) {
         const l = this.index[path]?.l;
-        if (!this.enabled || !needle || !l) return [];
-        const n = normalizeText(needle), norm = this.norm(l);
-        return l.filter((_, i) => norm[i].includes(n));
+        return this.enabled && l ? { lines: l, norm: this.norm(l) } : null;
     }
 
-    /** Images whose text contains every space-separated word of the query. */
-    search(query: string) {
-        // Longest first, so markWords marks "ab" whole when the query is "a ab".
-        const words = normalizeText(query).split(/\s+/).filter(Boolean).sort((a, b) => b.length - a.length);
-        const results: { path: string; hits: OcrLine[]; words: string[] }[] = [];
-        if (!words.length) return results;
+    /** Images matching the query (parseTextQuery syntax), most matching lines first. */
+    search(input: string) {
+        const query = parseTextQuery(input), terms = queryTerms(query);
+        const { vault } = this.plugin.app;
+        const results: { path: string; hits: OcrLine[]; terms: string[]; n: number }[] = [];
+        if (!terms.length) return { results, total: 0 };
+        // ponytail: linear scan of the whole index for the total; fine for a few thousand images.
         for (const [path, { l }] of Object.entries(this.index)) {
             const norm = this.norm(l);
-            if (!words.every((w) => norm.some((t) => t.includes(w)))) continue;
-            results.push({ path, words, hits: l.filter((_, i) => words.some((w) => norm[i].includes(w))) });
-            if (results.length >= 50) break; // ponytail: linear scan; fine for a few thousand images
+            // Joined with \n so a phrase can't span OCR lines: every match then has a line to box.
+            const all = norm.join('\n');
+            if (!matchesTextQuery(query, (t) => all.includes(t))) continue;
+            if (!isImageFile(vault.getAbstractFileByPath(path))) continue; // deleted, entry not pruned yet
+            results.push({ path, terms, n: 0, hits: l.filter((_, i) => terms.some((t) => norm[i].includes(t))) });
         }
-        return results;
+        results.sort((a, b) => b.hits.length - a.hits.length);
+        const shown = results.slice(0, LIMIT);
+        shown.forEach((r, i) => (r.n = i + 1));
+        return { results: shown, total: results.length };
     }
 
     /** Indexed image path → notes that embed or link it. Walks every link once: build per modal, not per result. */
@@ -281,41 +316,58 @@ export function drawOcrBoxes(container: HTMLElement, lines: OcrLine[]) {
     }
 }
 
-type ImageTextResult = ReturnType<ImageTextSearch['search']>[number];
+type ImageTextResult = ReturnType<ImageTextSearch['search']>['results'][number];
 
 class ImageTextModal extends SuggestModal<ImageTextResult> {
     private backlinks: Map<string, string[]>;
+    private countEl: HTMLElement;
 
     constructor(private search: ImageTextSearch) {
         super(search.plugin.app);
         this.backlinks = search.backlinks();
-        this.setPlaceholder('Search text inside images…');
-        this.limit = 50;
+        this.setPlaceholder('Search text inside images: words, OR, "exact phrase"');
+        this.limit = LIMIT;
+        this.countEl = this.modalEl.createDiv('ec-ocr-count'); // modal's own document (pop-out windows)
+        this.resultContainerEl.before(this.countEl);
     }
 
-    getSuggestions(query: string) { return this.search.search(query); }
+    getSuggestions(query: string) {
+        const { results, total } = this.search.search(query);
+        const count = !query.trim() ? ''
+            : total > results.length ? `Showing ${results.length} of ${total} results` : `${total} result${total === 1 ? '' : 's'}`;
+        // Before the index is complete, "no results" may just mean "not read yet".
+        const indexing = this.search.isIndexing ? 'Still reading images; results may be incomplete.' : '';
+        this.countEl.setText([count, indexing].filter(Boolean).join(' · '));
+        return results;
+    }
 
-    renderSuggestion({ path, hits, words }: ImageTextResult, el: HTMLElement) {
-        const file = this.app.vault.getAbstractFileByPath(path);
-        if (!(file instanceof TFile)) return;
+    renderSuggestion({ path, hits, terms, n }: ImageTextResult, el: HTMLElement) {
+        const file = this.app.vault.getAbstractFileByPath(path) as TFile; // search() keeps only existing images
         const row = el.createDiv('ec-ocr-result');
         const thumb = row.createDiv('ec-ocr-thumb');
         thumb.createEl('img', { attr: { src: this.app.vault.getResourcePath(file), loading: 'lazy' } });
         drawOcrBoxes(thumb, hits);
 
         const meta = row.createDiv('ec-ocr-meta');
-        meta.createDiv({ cls: 'ec-ocr-name', text: file.name });
-        for (const [text] of hits.slice(0, 3)) markWords(meta.createDiv('ec-ocr-line'), text, words);
+        meta.createDiv({ cls: 'ec-ocr-name', text: `${n}. ${file.name}` });
+        for (const [text] of hits.slice(0, 3)) markWords(meta.createDiv('ec-ocr-line'), text, terms);
         const notes = this.backlinks.get(path);
         if (notes) meta.createDiv({ cls: 'ec-ocr-notes', text: '↳ ' + notes.map((n) => n.split('/').pop()?.replace(/\.md$/, '')).join(', ') });
     }
 
-    /** Opens the note that embeds the image, at the embed's line; else the image itself. */
+    /** Opens the note that embeds the image, at the embed's line (a canvas zooms to the image card); else the image itself. */
     async onChooseSuggestion({ path }: ImageTextResult) {
         const note = this.backlinks.get(path)?.[0];
         const file = this.app.vault.getAbstractFileByPath(note ?? path);
         if (!(file instanceof TFile)) return;
-        await this.app.workspace.getLeaf(false).openFile(file, note ? { eState: { line: this.search.refLine(note, path) } } : {});
+        const leaf = this.app.workspace.getLeaf(false);
+        const isCanvas = file.extension === 'canvas';
+        await leaf.openFile(file, note && !isCanvas ? { eState: { line: this.search.refLine(note, path) } } : {});
+        if (!isCanvas) return;
+        const canvas = (leaf.view as CanvasView).canvas;
+        // ponytail: first card showing the image; an image embedded inside a text card isn't found.
+        const node = canvas && [...canvas.nodes.values()].find((n) => n.filePath === path);
+        if (node) canvas.zoomToBbox(node.getBBox());
     }
 }
 

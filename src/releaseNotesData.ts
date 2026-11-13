@@ -29,14 +29,15 @@ Bulk-import every note matching a tag query (supports AND, OR, and exclude).
 - **Where:** right-click an empty spot on the Canvas → **Add notes by tag...**
 
 ### Find in canvas
-Search a word or a \`[[link]]\` across the Canvas. Matching cards are outlined, the rest dimmed, matched text highlighted, and the view zooms to fit. Node colors are never changed.
+Search words or a \`[[link]]\` across the Canvas: \`a b\` needs both words, \`a OR b\` either, \`"a b"\` the exact phrase. Matching cards are outlined, the rest dimmed, matched text highlighted, and the view zooms to fit. Node colors are never changed.
 - **Where:** Cmd/Ctrl+F in a Canvas, command *Find in canvas (selected text or link)*, or right-click selected text in a card → **Find in canvas**.
 - **Clear:** click an empty spot on the Canvas, or run *Clear find highlights*.
 - **Hotkey:** whatever *Search current file* uses (Cmd/Ctrl+F by default); while editing a card it still searches that card. Or bind *Find in canvas* in Settings → Hotkeys.
 
 ### Search text in images (macOS)
 Reads the text in every vault image with macOS's built-in OCR, on-device. Search all images, or let Find in canvas match image cards; matching text is boxed on the image.
-- **Where:** command *Search text in images* or the ribbon icon; *Find in canvas* for image cards.
+- **Where:** command *Search text in images* or the ribbon icon; *Find in canvas* for image cards. Same search syntax as Find in canvas; results are numbered, with the total count on top.
+- **Rebuild:** command *Rebuild image text index* reads every image again. Images in *Excluded files* are skipped.
 - **Settings:** *Search text in images (macOS)* (off by default; the first run takes a few minutes).
 
 ### Send to Canvas

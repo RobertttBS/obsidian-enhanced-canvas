@@ -129,3 +129,29 @@ function matchesGroup(fileTags: string[], group: TagGroup): boolean {
 
     return !anyExcluded;
 }
+
+/** Case- and width-insensitive form, so "ＡＢＣ（１）" matches "abc(1)". */
+export const normalizeText = (s: string) => s.normalize('NFKC').toLowerCase();
+
+/** Text query, normalized. OR of groups; every term of a group must match. */
+export type TextQuery = string[][];
+
+/**
+ * Obsidian search syntax: `a b` = a AND b, `a b OR c` = (a AND b) OR c (`OR` is
+ * uppercase), `"a b"` = exact phrase (an unclosed quote runs to the end).
+ */
+export function parseTextQuery(input: string): TextQuery {
+    const groups: TextQuery = [[]];
+    for (const [, phrase, word] of input.matchAll(/"([^"]*)"?|(\S+)/g)) {
+        if (word === 'OR') { groups.push([]); continue; }
+        const term = normalizeText(phrase ?? word).trim();
+        if (term) groups[groups.length - 1].push(term);
+    }
+    return groups.filter((g) => g.length);
+}
+
+/** True when some group has every term passing `has`. */
+export const matchesTextQuery = (query: TextQuery, has: (term: string) => boolean) => query.some((g) => g.every(has));
+
+/** Every term, longest first, so highlighting marks "ab" whole for "a ab". */
+export const queryTerms = (query: TextQuery) => [...new Set(query.flat())].sort((a, b) => b.length - a.length);
