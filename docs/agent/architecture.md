@@ -111,7 +111,7 @@ safe.
   macOS desktop only (`ImageTextSearch.canIndex`); every other device is search-only: it
   reads the synced index, never writes it, registers no Rebuild command, vault events or scan,
   and `refresh()` (run before the modal opens and before Find in canvas matches) re-reads the
-  file when its mtime changed. OCRs every
+  shard files whose mtime changed. OCRs every
   vault image by spawning the system `osascript -l JavaScript` with an inline JXA script
   that calls Vision.framework — no binary ships. `child_process` is `require`d inside
   `ocr()` only, so mobile never loads it (keep it that way: a top-level import breaks
@@ -119,23 +119,29 @@ safe.
   layer (no OCR, so scanned pages stay empty; a password-protected PDF indexes as `[]`),
   one line per text line as `[text, page]` (1-based) instead of a box. Index
   `{path: {m: mtime, l: [[text,x,y,w,h] | [text,page]]}}` lives in
-  `<plugin dir>/ocr-index.json`, never in `data.json` (it's MBs). Rescans images whose
+  `<plugin dir>/ocr-index/00.json`…`3f.json`, never in `data.json` (it's ~100 MB): 64 shards, a path's
+  shard is `shardOf(path)` (FNV-1a mod 64 — never change it), each file is that shard's part of the
+  index; a missing file is an empty shard. In memory `this.index` stays one merged object. `put()`
+  marks the entry's shard in `dirty`; `save()` rewrites only dirty shards (an empty one as `{}`,
+  never deleted) and puts them back in `dirty` if a write fails. `load()` reads only shards whose
+  mtime changed and are not dirty (unsaved local entries win), and applies them in one step. On the
+  indexing Mac, `migrateLegacy` runs after the shards load, adds only paths the shards lack from an
+  earlier build's single `ocr-index.json`, and deletes it only after every dirty shard is written. Rescans images whose
   mtime changed, 50 per osascript run; vault events keep it current. Each scan first
   prunes entries whose image is gone. A failed run is retried one image at a time;
   images that still fail go in the in-memory `failed` map with their mtime (skipped
   until the file changes, never indexed as empty). If a whole batch fails (or the first 3
   single retries), OCR itself is broken: `broken` pauses all scans until the
   "Rebuild image text index" command, which also clears the index and `failed`. Images
-  matched by Obsidian's *Excluded files* (`metadataCache.isUserIgnored`) are skipped and pruned. Index writes go through `save()`, which serializes and
+  matched by Obsidian's *Excluded files* (`metadataCache.isUserIgnored`) are skipped and pruned. Index changes must go through `put()` and writes through `save()`, which serializes and
   coalesces them — never call `adapter.write` on the index directly, and never from a search-only device. `disable()` removes
   the command, ribbon and listeners and kills the process but keeps the index. Also owns
   the vault-wide "Search text in images" `SuggestModal`: same query syntax, scans the whole
   index for the total, sorts by matching lines, shows 50 numbered results; a canvas backlink
   opens zoomed to the image card, a PDF opens at its first matching page (`#page=N`).
   `drawOcrBoxes` skips PDF lines; PDFs get a file icon instead of a thumbnail.
-  ponytail: one index file for images and PDFs; big PDFs make it tens of MB (91 PDFs,
-  340 MB → 21.7 MB of JSON), all rewritten on each save and synced whole. Split PDFs into
-  their own file if that sync cost bites. Setting `imageTextInCoreSearch` (`setCoreSearch()` reruns
+  Ceiling: one entry is never split, so a single PDF whose entry exceeds 100 MiB (about 45,000
+  pages) still puts its shard over GitHub's file limit. Setting `imageTextInCoreSearch` (`setCoreSearch()` reruns
   open searches for it; the patcher reruns them once patched, since a search may run first): core Search reads only `.md`/`.canvas` content, so a lazy
   patcher wraps undocumented internals (checked on 1.15.1) — the search view's `startSearch`,
   its result list's `addResult`, and, from the first query instance, the query prototype's

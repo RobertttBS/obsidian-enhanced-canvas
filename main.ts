@@ -1582,7 +1582,7 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 				name: 'Search text in images (macOS)',
 				desc: ImageTextSearch.canIndex
 					? 'Reads the text in every vault image with macOS\'s built-in OCR, and the embedded text of every PDF (runs the system osascript, on-device). Adds a "Search text in images" command and lets Find in canvas match image cards. The index is stored in the plugin folder; no notes are created. The first run takes a few minutes for large vaults.'
-					: 'Searches the image text index built on a Mac and synced to this device (plugin folder, ocr-index.json). This device doesn\'t read images or PDFs itself. Adds a "Search text in images" command and lets Find in canvas match image cards.',
+					: 'Searches the image text index built on a Mac and synced to this device (plugin folder, ocr-index folder). This device doesn\'t read images or PDFs itself. Adds a "Search text in images" command and lets Find in canvas match image cards.',
 				render: this.bindImageTextToggle,
 			},
 			{

@@ -11,6 +11,13 @@ const BATCH = 50; // files per osascript run; keeps argv short and saves progres
 const LIMIT = 50; // results shown in the modal
 const COMMAND_ID = 'search-image-text';
 const REBUILD_ID = 'rebuild-image-text-index';
+const SHARDS = 64; // index files; a save rewrites only the shards that changed
+// FNV-1a over UTF-16 code units. Must never change: it decides which file holds a path.
+const shardOf = (path: string) => {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < path.length; i++) h = Math.imul(h ^ path.charCodeAt(i), 0x01000193);
+    return (h >>> 0) % SHARDS;
+};
 
 /** Image: [text, x, y, w, h], box normalized to the image, origin top-left. PDF: [text, page], page 1-based. */
 export type OcrLine = [string, number, number, number, number] | [string, number];
@@ -76,7 +83,8 @@ export class ImageTextSearch {
     private broken = false; // OCR itself failed: no scans until Rebuild, so each change doesn't burn a new batch
     private saving: Promise<void> = Promise.resolve();
     private saveQueued = false;
-    private loadedAt = -1; // mtime of the index file last read
+    private loadedAt: number[] = []; // per shard: mtime of the file last read or written
+    private dirty = new Set<number>(); // shards changed since the last save
 
     constructor(readonly plugin: EnhancedCanvas) {}
 
@@ -88,7 +96,14 @@ export class ImageTextSearch {
     /** True while images are still being read, so a search may miss some. */
     get isIndexing() { return this.scanning; }
 
-    private get indexPath() { return `${this.plugin.manifest.dir}/ocr-index.json`; }
+    private get indexDir() { return `${this.plugin.manifest.dir}/ocr-index`; }
+    private shardPath(s: number) { return `${this.indexDir}/${s.toString(16).padStart(2, '0')}.json`; }
+
+    /** The only way to change one entry: it marks the entry's shard for the next save. */
+    private put(path: string, entry?: OcrIndex[string]) {
+        if (entry) this.index[path] = entry; else delete this.index[path];
+        this.dirty.add(shardOf(path));
+    }
 
     register() {
         this.plugin.register(() => this.disable());
@@ -195,13 +210,13 @@ export class ImageTextSearch {
                 app.vault.on('modify', changed),
                 app.vault.on('delete', (f) => {
                     if (!this.index[f.path]) return;
-                    delete this.index[f.path];
+                    this.put(f.path);
                     void this.save();
                 }),
                 app.vault.on('rename', (f, old) => {
                     if (!this.index[old]) return;
-                    this.index[f.path] = this.index[old];
-                    delete this.index[old];
+                    this.put(f.path, this.index[old]);
+                    this.put(old);
                     void this.save();
                 }),
             ];
@@ -225,17 +240,42 @@ export class ImageTextSearch {
         this.proc = null;
     }
 
-    /** Reads the index file unless it's unchanged since the last read. */
+    /** Reads the shards whose file changed since they were last read. */
     private async load() {
         const { adapter } = this.plugin.app.vault;
         const gen = this.gen;
-        await this.saving; // else a disable/enable mid-save reads the old file over newer entries
+        await this.saving; // else a disable/enable mid-save reads the old files over newer entries
+        const changed: { s: number; m: number; entries: OcrIndex }[] = [];
+        // ponytail: 64 stats per call, one at a time (lower peak memory on phones). Add a manifest file if that is slow.
+        for (let s = 0; s < SHARDS; s++) {
+            try {
+                const m = (await adapter.stat(this.shardPath(s)))?.mtime;
+                // A dirty shard has entries a failed save didn't write; the next save writes them over the file.
+                if (m === undefined || m === this.loadedAt[s] || this.dirty.has(s)) continue; // no file yet, or already read
+                changed.push({ s, m, entries: JSON.parse(await adapter.read(this.shardPath(s))) });
+            } catch { /* unreadable or mid-sync: keep what we have for this shard */ }
+        }
+        if (gen !== this.gen) return;
+        const stale = new Set(changed.map((c) => c.s));
+        if (stale.size) for (const p of Object.keys(this.index)) if (stale.has(shardOf(p))) delete this.index[p];
+        for (const c of changed) { Object.assign(this.index, c.entries); this.loadedAt[c.s] = c.m; }
+        // After the shards: a retry (an earlier migration's save failed) must not overwrite newer entries.
+        if (ImageTextSearch.canIndex) await this.migrateLegacy(gen);
+    }
+
+    /** One-time: moves the single-file index of earlier builds into shards. */
+    private async migrateLegacy(gen: number) {
+        const { adapter } = this.plugin.app.vault;
+        const legacy = `${this.plugin.manifest.dir}/ocr-index.json`;
         try {
-            const m = (await adapter.stat(this.indexPath))?.mtime;
-            if (m === undefined || m === this.loadedAt) return; // no index yet, or already read
-            const index = JSON.parse(await adapter.read(this.indexPath));
-            if (gen === this.gen) { this.index = index; this.loadedAt = m; }
-        } catch { /* unreadable or mid-sync: keep what we have */ }
+            if (!(await adapter.exists(legacy))) return;
+            const index: OcrIndex = JSON.parse(await adapter.read(legacy));
+            if (gen !== this.gen) return;
+            // Adds only paths the shards lack. A path a scan dropped can come back; the next scan drops it again.
+            for (const [p, e] of Object.entries(index)) if (!(p in this.index)) this.put(p, e);
+            await this.save();
+            if (!this.dirty.size) await adapter.remove(legacy); // only once every shard is on disk
+        } catch (e) { console.error('Enhanced Canvas OCR: migrating the old index failed', e); }
     }
 
     /** On search-only devices, picks up an index file that sync replaced. */
@@ -247,10 +287,28 @@ export class ImageTextSearch {
     private save() {
         if (this.saveQueued) return this.saving;
         this.saveQueued = true;
-        return this.saving = this.saving.then(() => {
+        return this.saving = this.saving.then(async () => {
             this.saveQueued = false;
-            return this.plugin.app.vault.adapter.write(this.indexPath, JSON.stringify(this.index));
-        }).catch((e) => console.error('Enhanced Canvas OCR: saving the index failed', e));
+            const { adapter } = this.plugin.app.vault;
+            const shards = [...this.dirty];
+            this.dirty.clear();
+            // Snapshot now (no await before this), so entries changed during the writes go to the next save.
+            const out = new Map<number, OcrIndex>(shards.map((s) => [s, {}]));
+            for (const [p, e] of Object.entries(this.index)) {
+                const o = out.get(shardOf(p));
+                if (o) o[p] = e;
+            }
+            try {
+                if (!(await adapter.exists(this.indexDir))) await adapter.mkdir(this.indexDir);
+                for (const s of shards) {
+                    await adapter.write(this.shardPath(s), JSON.stringify(out.get(s)));
+                    this.loadedAt[s] = (await adapter.stat(this.shardPath(s)))?.mtime ?? -1;
+                }
+            } catch (e) {
+                shards.forEach((s) => this.dirty.add(s)); // rewriting a shard is harmless; losing one is not
+                console.error('Enhanced Canvas OCR: saving the index failed', e);
+            }
+        });
     }
 
     /** Forgets every reading, failures included, and reads all images again. */
@@ -260,6 +318,7 @@ export class ImageTextSearch {
         this.proc?.kill();
         this.proc = null;
         this.index = {};
+        for (let s = 0; s < SHARDS; s++) this.dirty.add(s);
         this.failed.clear();
         this.broken = false;
         await this.save();
@@ -280,7 +339,7 @@ export class ImageTextSearch {
                 this.rescan = false;
                 const gen = this.gen;
                 const gone = Object.keys(this.index).filter((p) => !isIndexedFile(vault.getAbstractFileByPath(p)) || excluded(p));
-                gone.forEach((p) => delete this.index[p]);
+                gone.forEach((p) => this.put(p));
                 if (gone.length) await this.save();
 
                 const todo = vault.getFiles().filter((f) => isIndexedFile(f) && !excluded(f.path)
@@ -318,7 +377,7 @@ export class ImageTextSearch {
                             const l = lines?.[j];
                             if (!l) { this.failed.set(f.path, mtimes[j]); bad++; console.warn('Enhanced Canvas OCR: could not read', f.path); }
                             // Skip a file deleted while it was being read.
-                            else if (vault.getAbstractFileByPath(f.path) === f) this.index[f.path] = { m: mtimes[j], l };
+                            else if (vault.getAbstractFileByPath(f.path) === f) this.put(f.path, { m: mtimes[j], l });
                         });
                         await this.save();
                         if (bad && !warned) {
@@ -389,9 +448,8 @@ export class ImageTextSearch {
         // ponytail: linear scan of the whole index for the total; fine for a few thousand images.
         for (const [path, { l }] of Object.entries(this.index)) {
             const norm = this.norm(l);
-            // Joined with \n so a phrase can't span OCR lines: every match then has a line to box.
-            const all = norm.join('\n');
-            if (!matchesTextQuery(query, (t) => all.includes(t))) continue;
+            // Per line, so a phrase can't span OCR lines: every match then has a line to box.
+            if (!matchesTextQuery(query, (t) => norm.some((n) => n.includes(t)))) continue;
             if (!isIndexedFile(vault.getAbstractFileByPath(path))) continue; // deleted, entry not pruned yet
             results.push({ path, terms, n: 0, hits: l.filter((_, i) => terms.some((t) => norm[i].includes(t))) });
         }
@@ -485,7 +543,12 @@ class ImageTextModal extends SuggestModal<ImageTextResult> {
      */
     async onChooseSuggestion({ path, hits }: ImageTextResult) {
         const first = hits[0];
-        if (first?.length === 2) return this.app.workspace.openLinkText(`${path}#page=${first[1]}`, '', false);
+        if (first?.length === 2) {
+            // Not openLinkText: it splits the path at the first '#', which a file name may contain.
+            const pdf = this.app.vault.getAbstractFileByPath(path);
+            if (pdf instanceof TFile) await this.app.workspace.getLeaf(false).openFile(pdf, { eState: { subpath: `#page=${first[1]}` } });
+            return;
+        }
         const note = this.backlinks.get(path)?.[0];
         const file = this.app.vault.getAbstractFileByPath(note ?? path);
         if (!(file instanceof TFile)) return;
