@@ -107,7 +107,7 @@ safe.
   A file node's name, note text and OCR text (`plugin.imageText.textOf`, null when that
   feature is off) are matched as one text; image matches are the one DOM edit: `.ec-ocr-box` divs appended to the
   node's `.image-embed`, drawn once per mount (so the observer doesn't loop), removed on clear.
-- `ImageTextSearch.ts` — optional, setting `enableImageTextSearch` (default off). Indexing is
+- `ImageTextSearch.ts` — optional, setting `enableImageTextSearch` (default on). Indexing is
   macOS and Windows desktop only (`ImageTextSearch.canIndex`); every other device is search-only: it
   reads the synced index, never writes it, registers no Rebuild command, vault events or scan,
   and `refresh()` (run before the modal opens and before Find in canvas matches) re-reads the

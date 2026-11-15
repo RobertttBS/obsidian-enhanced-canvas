@@ -32,6 +32,6 @@ export const DEFAULT_SETTINGS: EnhancedCanvasSettings = {
     chooseHeadingLevelOnSplit: false,
     maxAutoResizeHeight: 1000,
 
-    enableImageTextSearch: false,
+    enableImageTextSearch: true,
     imageTextInCoreSearch: false,
 };

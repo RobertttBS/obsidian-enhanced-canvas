@@ -7,7 +7,7 @@
 | Feature | What it does | How to use it |
 | --- | --- | --- |
 | [Find in Canvas](#find-in-canvas) | Highlights the cards that contain a word or link to a note | **Cmd/Ctrl+F** in a Canvas |
-| [Search Text in Images and PDFs](#search-text-in-images-and-pdfs) | Searches the text inside images (OCR) and PDFs, on-device | Turn on in settings, then click the ribbon icon |
+| [Search Text in Images and PDFs](#search-text-in-images-and-pdfs) | Searches the text inside images (OCR) and PDFs, on-device | Click the ribbon icon (on by default) |
 | [Split Node by Headings](#split-node-by-headings) | Splits one card into a tree of cards, one per heading | Right-click a card → **Split by headings** |
 | [Add Notes by Tag](#add-notes-by-tag) | Adds every note that matches a tag query | Right-click the Canvas → **Add notes by tag...** |
 | [Send Note to Canvas](#send-note-to-canvas) | Sends the current note to a Canvas | **Send to Canvas** command |
@@ -51,11 +51,11 @@ You can combine them: `canvas plugin OR "find text"`.
 
 ### Search Text in Images and PDFs
 
-Search the text inside every image and PDF in your vault. Everything runs on your device: nothing is downloaded and nothing leaves your computer. Off by default.
+Search the text inside every image and PDF in your vault. Everything runs on your device: nothing is downloaded and nothing leaves your computer. On by default.
 
 **Set up**
 
-Turn on *Search text in images and PDFs* in settings. The plugin then reads the text in your images with the system's built-in OCR, and indexes the embedded text of your PDFs.
+*Search text in images and PDFs* is on by default (turn it off in settings if you don't need it). The plugin reads the text in your images with the system's built-in OCR, and indexes the embedded text of your PDFs.
 
 **Search**
 
