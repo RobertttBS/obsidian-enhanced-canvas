@@ -140,12 +140,12 @@ safe.
   files that still fail (images, or PDFs `readPdf()` can't open) go in the in-memory `failed`
   map with their mtime (skipped until the file changes, never indexed as empty). If every
   image of a batch fails (or the first 3 single retries), OCR itself is broken: `broken`
-  skips images (PDFs keep indexing) until the "Rebuild image text index" command, which
+  skips images (PDFs keep indexing) until the "Rebuild image and PDF text index" command, which
   also clears the index and `failed`. PDF failures never set `broken`. Images
   matched by Obsidian's *Excluded files* (`metadataCache.isUserIgnored`) are skipped and pruned. Index changes must go through `put()` and writes through `save()`, which serializes and
   coalesces them — never call `adapter.write` on the index directly, and never from a search-only device. `disable()` removes
   the command, ribbon and listeners and kills the process but keeps the index. Also owns
-  the vault-wide "Search text in images" `SuggestModal`: same query syntax, scans the whole
+  the vault-wide "Search text in images and PDFs" `SuggestModal`: same query syntax, scans the whole
   index for the total, sorts by matching lines, shows 50 numbered results; a canvas backlink
   opens zoomed to the image card, a PDF opens at its first matching page (`#page=N`).
   `drawOcrBoxes` skips PDF lines; PDFs get a file icon instead of a thumbnail.

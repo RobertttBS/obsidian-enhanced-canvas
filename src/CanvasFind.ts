@@ -24,7 +24,7 @@ interface FindSession {
     win: HighlightWindow;
     // Off-screen nodes are detached, so querySelectorAll on the view would miss them.
     hits: CanvasNode[];
-    // Image cards matched by their OCR text (Search text in images), with the matching lines.
+    // Image cards matched by their OCR text (Search text in images and PDFs), with the matching lines.
     ocr: Map<CanvasNode, OcrLine[]>;
     observer: MutationObserver;
     ranges: Range[];

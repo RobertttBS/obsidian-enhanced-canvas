@@ -55,6 +55,7 @@ function run(paths) {
 // PowerShell 7 can't load WinRT types). Reads the paths as JSON on stdin, writes the same JSON shape as
 // OCR_SCRIPT. Uses the first user-profile language that has an OCR language pack; none → exit 2 (sets `broken`).
 // JSON is written by hand: ConvertTo-Json in 5.1 can wrap arrays in {"value":…,"Count":…}.
+// PowerShell variable names are case-insensitive: $w would overwrite $W, so the word loop uses $wd.
 const WIN_OCR_SCRIPT = `$ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
@@ -68,7 +69,8 @@ if ($null -eq $engine) { [Console]::Error.Write('No OCR language installed (Sett
 $max = [Windows.Media.Ocr.OcrEngine]::MaxImageDimension
 $inv = [Globalization.CultureInfo]::InvariantCulture
 function N($v) { ([double]$v).ToString('R', $inv) }
-$out = foreach ($p in @(ConvertFrom-Json ([Console]::In.ReadToEnd()))) {
+$paths = ConvertFrom-Json ([Console]::In.ReadToEnd()) # assigned first: 5.1 emits the array as one object, so @(...) would nest it
+$out = foreach ($p in $paths) {
   $fs = $null; $b = $null
   try {
     $fs = [IO.File]::OpenRead($p)
@@ -82,7 +84,7 @@ $out = foreach ($p in @(ConvertFrom-Json ([Console]::In.ReadToEnd()))) {
     $W = $b.PixelWidth; $H = $b.PixelHeight
     $ls = foreach ($l in $r.Lines) {
       $x0 = [double]::MaxValue; $y0 = [double]::MaxValue; $x1 = 0.0; $y1 = 0.0
-      foreach ($w in $l.Words) { $q = $w.BoundingRect; $x0 = [Math]::Min($x0, $q.X); $y0 = [Math]::Min($y0, $q.Y); $x1 = [Math]::Max($x1, $q.X + $q.Width); $y1 = [Math]::Max($y1, $q.Y + $q.Height) }
+      foreach ($wd in $l.Words) { $q = $wd.BoundingRect; $x0 = [Math]::Min($x0, $q.X); $y0 = [Math]::Min($y0, $q.Y); $x1 = [Math]::Max($x1, $q.X + $q.Width); $y1 = [Math]::Max($y1, $q.Y + $q.Height) }
       '[' + (ConvertTo-Json ([string]$l.Text)) + ',' + (N ($x0 / $W)) + ',' + (N ($y0 / $H)) + ',' + (N (($x1 - $x0) / $W)) + ',' + (N (($y1 - $y0) / $H)) + ']'
     }
     '[' + ($ls -join ',') + ']'
@@ -94,7 +96,7 @@ const CJK_GAP = /(?<=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-�
 
 /**
  * Optional: on macOS or Windows desktop, OCR every vault image into an index kept in the plugin
- * folder (no notes are created); on every device, a vault-wide "Search text in images"
+ * folder (no notes are created); on every device, a vault-wide "Search text in images and PDFs"
  * modal and image matches for Find in canvas. Other devices only read the synced index.
  */
 export class ImageTextSearch {
@@ -222,12 +224,12 @@ export class ImageTextSearch {
         // Turned off while reading (and maybe on again: that later call does the setup).
         if (gen !== this.gen) return;
 
-        this.plugin.addCommand({ id: COMMAND_ID, name: 'Search text in images', callback: this.open });
-        this.ribbon = this.plugin.addRibbonIcon('scan-text', 'Search text in images', this.open);
+        this.plugin.addCommand({ id: COMMAND_ID, name: 'Search text in images and PDFs', callback: this.open });
+        this.ribbon = this.plugin.addRibbonIcon('scan-text', 'Search text in images and PDFs', this.open);
         this.setCoreSearch();
         // Search-only devices never write the index: the indexing computer owns the file.
         if (!ImageTextSearch.canIndex) return;
-        this.plugin.addCommand({ id: REBUILD_ID, name: 'Rebuild image text index', callback: () => void this.rebuild() });
+        this.plugin.addCommand({ id: REBUILD_ID, name: 'Rebuild image and PDF text index', callback: () => void this.rebuild() });
 
         app.workspace.onLayoutReady(() => {
             if (gen !== this.gen) return;
@@ -349,7 +351,7 @@ export class ImageTextSearch {
         this.failed.clear();
         this.broken = false;
         await this.save();
-        new Notice('Enhanced Canvas: rebuilding the image text index…');
+        new Notice('Enhanced Canvas: rebuilding the image and PDF text index…');
         void this.scan();
     }
 
@@ -393,7 +395,7 @@ export class ImageTextSearch {
                         await this.save();
                         if (bad && !warned) {
                             warned = true;
-                            new Notice(`Enhanced Canvas: couldn't read text in ${bad} file${bad === 1 ? '' : 's'}. They're retried when changed, or run "Rebuild image text index".`);
+                            new Notice(`Enhanced Canvas: couldn't read text in ${bad} file${bad === 1 ? '' : 's'}. They're retried when changed, or run "Rebuild image and PDF text index".`);
                         }
                     }
                 } finally {
@@ -429,7 +431,7 @@ export class ImageTextSearch {
         // ocrImages() also sets broken when Windows has no OCR language, even for a single image.
         if (images.length > 1 && images.every((_, j) => !read?.[j])) this.broken = true;
         if (images.length && this.broken) {
-            new Notice(`Enhanced Canvas: text recognition isn't working, so reading images is paused.${Platform.isWin ? ' Check that an OCR language is installed (Settings → Time & language → Language).' : ''} Run "Rebuild image text index" to try again.`, 0);
+            new Notice(`Enhanced Canvas: text recognition isn't working, so reading images is paused.${Platform.isWin ? ' Check that an OCR language is installed (Settings → Time & language → Language).' : ''} Run "Rebuild image and PDF text index" to try again.`, 0);
         }
         const out: (OcrLine[] | null | undefined)[] = [];
         let k = 0;
@@ -507,6 +509,7 @@ export class ImageTextSearch {
                     if (code === 2 && Platform.isWin) this.broken = true; // no OCR language: every image would fail
                     if (code !== 0) throw new Error(err || `OCR process exited with ${code}`);
                     const read: (OcrLine[] | null)[] = JSON.parse(out);
+                    if (!Array.isArray(read) || read.length !== files.length) throw new Error(`OCR returned ${Array.isArray(read) ? read.length : 'no'} results for ${files.length} images`);
                     if (Platform.isWin) for (const l of read) l?.forEach((x) => (x[0] = x[0].replace(CJK_GAP, '')));
                     resolve(read);
                 } catch (e) {

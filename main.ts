@@ -1400,14 +1400,13 @@ type DimensionSettingKey =
 	| 'defaultFileNodeWidth'
 	| 'defaultFileNodeHeight';
 
-// Subset of Obsidian 1.13's SettingDefinitionItem (installed typings are 1.12),
-// so display() can render the same list on older versions.
-type SettingDef = {
-	name: string;
-	desc: string;
-	render?: (setting: Setting) => void;
-	control?: { type: 'toggle'; key: 'autoResizeOnSplit' | 'chooseHeadingLevelOnSplit' };
-};
+// Subset of Obsidian 1.13's SettingDefinitionItem, so display() can render the
+// same list on older versions. A row has either `render` or `control`, never
+// both — mirrors SettingDefinitionRender | SettingDefinitionControl.
+type SettingDef = { name: string; desc: string } & (
+	| { render: (setting: Setting) => void; control?: never }
+	| { control: { type: 'toggle'; key: 'autoResizeOnSplit' | 'chooseHeadingLevelOnSplit' }; render?: never }
+);
 type SettingGroupDef = { type: 'group'; heading: string; items: SettingDef[] };
 
 const MIN_NODE_DIMENSION = 50;
@@ -1579,15 +1578,15 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 			},
 			// OCR runs only on macOS (Vision) and Windows (Windows.Media.Ocr); other devices search the synced index.
 			{
-				name: 'Search text in images',
+				name: 'Search text in images and PDFs',
 				desc: ImageTextSearch.canIndex
-					? 'Reads the text in every vault image with the system\'s built-in OCR (macOS: Vision through osascript; Windows: Windows.Media.Ocr through PowerShell, needs an OCR language installed), on-device, and the embedded text of every PDF. Adds a "Search text in images" command and lets Find in canvas match image cards. The index is stored in the plugin folder; no notes are created. The first run takes a few minutes for large vaults.'
-					: 'Searches the image text index built on a Mac or Windows PC and synced to this device (plugin folder, ocr-index folder). This device doesn\'t read images or PDFs itself. Adds a "Search text in images" command and lets Find in canvas match image cards.',
+					? 'Reads the text in every vault image with the system\'s built-in OCR (macOS: Vision through osascript; Windows: Windows.Media.Ocr through PowerShell, needs an OCR language installed), on-device, and the embedded text of every PDF. Adds a "Search text in images and PDFs" command and lets Find in canvas match image cards. The index is stored in the plugin folder; no notes are created. The first run takes a few minutes for large vaults.'
+					: 'Searches the image text index built on a Mac or Windows PC and synced to this device (plugin folder, ocr-index folder). This device doesn\'t read images or PDFs itself. Adds a "Search text in images and PDFs" command and lets Find in canvas match image cards.',
 				render: this.bindImageTextToggle,
 			},
 			{
-				name: 'Show image results in Search',
-				desc: 'Needs Search text in images. On: images and PDFs whose text matches appear in core Search (search in all files) next to your notes, with the same query syntax and a thumbnail for images. Off: they are searched only with the "Search text in images" ribbon icon or command. Either way, that ribbon icon and command stay, and show the matching text boxed on the image.',
+				name: 'Show image and PDF results in Search',
+				desc: 'Needs Search text in images and PDFs. On: images and PDFs whose text matches appear in core Search (search in all files) next to your notes, with the same query syntax and a thumbnail for images. Off: they are searched only with the "Search text in images and PDFs" ribbon icon or command. Either way, that ribbon icon and command stay, and show the matching text boxed on the image.',
 				render: this.bindCoreSearchToggle,
 			},
 		];
