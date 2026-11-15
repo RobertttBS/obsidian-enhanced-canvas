@@ -81,6 +81,13 @@ Run **"Search text in images and PDFs"** or click the ribbon icon. The query syn
 -   The index is stored in the `ocr-index` folder inside the plugin folder. No notes are added to your vault.
 -   Large PDFs make the index big (tens of MB for a few hundred MB of PDFs). Add folders you don't need searched to *Excluded files*.
 
+**Password-protected PDFs**
+
+-   After indexing, a notice lists the password-protected PDFs. Click **Unlock…** there, or run **"Unlock password-protected PDFs for text search"**, and enter each PDF's password once.
+-   A password that opens one PDF is tried on the others too.
+-   The password isn't saved. The PDF's text stays in the index, also when you rebuild it, until the PDF changes.
+-   That text is stored unencrypted in the index, which syncs with your vault.
+
 **Platforms**
 
 | Platform                     | What it does                                                                                 |
@@ -94,7 +101,7 @@ Run **"Search text in images and PDFs"** or click the ribbon icon. The query syn
 
 **Limits**
 
--   PDFs: only embedded text is searched. Scanned PDFs without a text layer and password-protected PDFs are not searchable.
+-   PDFs: only embedded text is searched. Scanned PDFs without a text layer are not searchable.
 -   A `"phrase"` can't span lines, so a PDF sentence that breaks at the end of a line isn't found as a phrase.
 -   Windows OCR reads one language: the first Chinese, Japanese or Korean language in *Settings → Time & language → Language* that has an OCR language pack installed (these also read English). Otherwise it uses the first listed language that has one.
 -   Most Windows languages install an OCR pack with the language. If images can't be read, add the language's optical character recognition feature.

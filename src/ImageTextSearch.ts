@@ -1,4 +1,4 @@
-import { EventRef, FileSystemAdapter, Notice, Platform, SuggestModal, TAbstractFile, TFile, loadPdfJs, setIcon } from 'obsidian';
+import { ButtonComponent, EventRef, FileSystemAdapter, Modal, Notice, Platform, Setting, SuggestModal, TAbstractFile, TFile, loadPdfJs, setIcon } from 'obsidian';
 import type { ChildProcess } from 'child_process';
 import { around } from 'monkey-around';
 
@@ -13,6 +13,7 @@ const DEVICE_KEY = 'enhanced-canvas-ocr-device'; // localStorage (per vault, per
 const PAGE = 50; // results the modal shows at first, and adds per "Show more"
 const COMMAND_ID = 'search-image-text';
 const REBUILD_ID = 'rebuild-image-text-index';
+const UNLOCK_ID = 'unlock-pdfs-for-text-search';
 const SHARDS = 64; // index files; a save rewrites only the shards that changed
 // FNV-1a over UTF-16 code units. Must never change: it decides which file holds a path.
 const shardOf = (path: string) => {
@@ -23,7 +24,12 @@ const shardOf = (path: string) => {
 
 /** Image: [text, x, y, w, h], box normalized to the image, origin top-left. PDF: [text, page], page 1-based. */
 export type OcrLine = [string, number, number, number, number] | [string, number];
-type OcrIndex = Record<string, { m: number; l: OcrLine[] }>;
+/**
+ * `pw`: a PDF that needs a password. 'locked' = not read yet (`l` is empty); 'unlocked' = read with a password
+ * the user typed in PdfUnlockModal, which isn't kept anywhere, so Rebuild keeps this entry instead of re-reading it.
+ */
+type OcrEntry = { m: number; l: OcrLine[]; pw?: 'locked' | 'unlocked' };
+type OcrIndex = Record<string, OcrEntry>;
 
 export const isImageFile = (f: TAbstractFile | null): f is TFile => f instanceof TFile && IMAGE_EXT.test(f.extension);
 /** Files in the index: images (OCR) and PDFs (their embedded text layer only; scanned pages stay unsearchable). */
@@ -152,6 +158,7 @@ export class ImageTextSearch {
     private broken = false; // image OCR itself failed: images are skipped until Rebuild, so each change doesn't burn a new batch
     private blockedBy: OcrBlock | null = null; // the known reason for `broken`, shown in the notice
     private silentRuns = 0; // Windows runs in a row that failed with no error text and weren't killed by us: a likely EDR kill
+    private pdfLockChecked = false; // earlier builds indexed a locked PDF as empty: the first scan re-reads empty PDFs once
     private saving: Promise<void> = Promise.resolve();
     private saveQueued = false;
     private loadedAt: number[] = []; // per shard: mtime of the file last read or written
@@ -171,7 +178,7 @@ export class ImageTextSearch {
     private shardPath(s: number) { return `${this.indexDir}/${s.toString(16).padStart(2, '0')}.json`; }
 
     /** The only way to change one entry: it marks the entry's shard for the next save. */
-    private put(path: string, entry?: OcrIndex[string]) {
+    private put(path: string, entry?: OcrEntry) {
         if (entry) this.index[path] = entry; else delete this.index[path];
         this.dirty.add(shardOf(path));
     }
@@ -183,7 +190,7 @@ export class ImageTextSearch {
         if (this.plugin.settings.enableImageTextSearch) void this.enable();
     }
 
-    private get inCoreSearch() { return this.enabled && this.plugin.settings.imageTextInCoreSearch; }
+    get inCoreSearch() { return this.enabled && this.plugin.settings.imageTextInCoreSearch; }
 
     private open = () => void this.refresh().then(() => { if (this.enabled) new ImageTextModal(this).open(); });
 
@@ -273,6 +280,7 @@ export class ImageTextSearch {
         // Search-only devices never write the index: the indexing computer owns the file.
         if (!ImageTextSearch.canIndex) return;
         this.plugin.addCommand({ id: REBUILD_ID, name: 'Rebuild image and PDF text index', callback: () => void this.rebuild() });
+        this.plugin.addCommand({ id: UNLOCK_ID, name: 'Unlock password-protected PDFs for text search', callback: this.openUnlock });
 
         app.workspace.onLayoutReady(() => {
             if (gen !== this.gen) return;
@@ -308,6 +316,7 @@ export class ImageTextSearch {
         this.setCoreSearch(); // removes image results from open searches
         this.plugin.removeCommand(COMMAND_ID);
         this.plugin.removeCommand(REBUILD_ID);
+        this.plugin.removeCommand(UNLOCK_ID);
         this.proc?.kill();
         this.proc = null;
     }
@@ -355,10 +364,11 @@ export class ImageTextSearch {
         const d = this.plugin.app.loadLocalStorage(DEVICE_KEY);
         this.failed = new Map(Object.entries(d?.failed ?? {}).filter((e): e is [string, number] => typeof e[1] === 'number'));
         this.readImage = d?.readImage === true;
+        this.pdfLockChecked = d?.pdfLockChecked === true;
     }
 
     private saveDevice() {
-        this.plugin.app.saveLocalStorage(DEVICE_KEY, { failed: Object.fromEntries(this.failed), readImage: this.readImage });
+        this.plugin.app.saveLocalStorage(DEVICE_KEY, { failed: Object.fromEntries(this.failed), readImage: this.readImage, pdfLockChecked: this.pdfLockChecked });
     }
 
     /** On search-only devices, picks up an index file that sync replaced. */
@@ -394,13 +404,16 @@ export class ImageTextSearch {
         });
     }
 
-    /** Forgets every reading, failures included, and reads all images again. */
+    /**
+     * Forgets every reading, failures included, and reads all images again. Keeps unlocked PDFs: their password
+     * isn't kept, so they couldn't be read again. One changed since is re-read by the scan, and so locked again.
+     */
     private async rebuild() {
         // Abort a running scan: its todo list was built from the old index.
         this.gen++;
         this.proc?.kill();
         this.proc = null;
-        this.index = {};
+        this.index = Object.fromEntries(Object.entries(this.index).filter(([, e]) => e.pw === 'unlocked'));
         for (let s = 0; s < SHARDS; s++) this.dirty.add(s);
         this.failed.clear();
         this.saveDevice();
@@ -419,6 +432,13 @@ export class ImageTextSearch {
         const { vault, metadataCache } = this.plugin.app;
         // Settings → Files and links → Excluded files.
         const excluded = (p: string) => metadataCache.isUserIgnored?.(p) ?? false;
+        const stale = (f: TFile) => {
+            const e = this.index[f.path];
+            // An empty PDF from an earlier build may be a locked one (they were indexed alike): read once more.
+            if (e?.m === f.stat.mtime) return !this.pdfLockChecked && isPdf(f) && !e.l.length && !e.pw;
+            return this.failed.get(f.path) !== f.stat.mtime;
+        };
+        let locked = 0; // PDFs this scan found password-protected
         try {
             do {
                 this.rescan = false;
@@ -430,8 +450,7 @@ export class ImageTextSearch {
                 lost.forEach((p) => this.failed.delete(p));
                 if (lost.length) this.saveDevice();
 
-                const todo = vault.getFiles().filter((f) => isIndexedFile(f) && !excluded(f.path)
-                    && this.index[f.path]?.m !== f.stat.mtime && this.failed.get(f.path) !== f.stat.mtime
+                const todo = vault.getFiles().filter((f) => isIndexedFile(f) && !excluded(f.path) && stale(f)
                     && !(this.broken && !isPdf(f)));
                 const notice = todo.length > BATCH || todo.filter(isPdf).length > PDF_BATCH ? new Notice('', 0) : null;
                 let warned = false;
@@ -450,7 +469,14 @@ export class ImageTextSearch {
                         batch.forEach((f, j) => {
                             const l = lines[j];
                             if (l === undefined) return; // an image skipped while OCR is broken
-                            if (!l) {
+                            if (l === 'locked') {
+                                // Unlocked in PdfUnlockModal while this batch was reading it: keep that text.
+                                const e = this.index[f.path];
+                                if (e?.pw === 'unlocked' && e.m === mtimes[j]) return;
+                                if (vault.getAbstractFileByPath(f.path) !== f) return;
+                                this.put(f.path, { m: mtimes[j], l: [], pw: 'locked' });
+                                locked++;
+                            } else if (!l) {
                                 this.failed.set(f.path, mtimes[j]); bad++;
                                 if (NEEDS_CODEC.test(f.extension)) badCodec++;
                                 console.warn('Enhanced Canvas OCR: could not read', f.path);
@@ -471,17 +497,49 @@ export class ImageTextSearch {
                 } finally {
                     notice?.hide();
                 }
+                if (gen === this.gen && !this.pdfLockChecked) { this.pdfLockChecked = true; this.saveDevice(); }
             } while (this.rescan && this.enabled);
         } finally {
             this.scanning = false;
         }
+        // One notice per scan, never a password prompt: indexing runs in the background, often at startup.
+        if (locked && this.enabled) {
+            const n = this.lockedPdfs().length;
+            if (!n) return;
+            new Notice(createFragment((el) => {
+                el.appendText(`Enhanced Canvas: ${n} PDF${n === 1 ? ' is' : 's are'} password-protected, so ${n === 1 ? 'its' : 'their'} text isn't searchable yet. `);
+                el.createEl('a', { text: 'Unlock…', href: '#' }).addEventListener('click', (e) => { e.preventDefault(); this.openUnlock(); });
+            }), 0);
+        }
+    }
+
+    private openUnlock = () => { if (this.enabled) new PdfUnlockModal(this).open(); };
+
+    /** PDFs waiting for a password; one changed since it was found locked waits for the next scan instead. */
+    lockedPdfs(): TFile[] {
+        const { vault } = this.plugin.app;
+        return Object.entries(this.index).flatMap(([p, e]) => {
+            const f = vault.getAbstractFileByPath(p);
+            return e.pw === 'locked' && f instanceof TFile && e.m === f.stat.mtime ? [f] : [];
+        }).sort((a, b) => a.path.localeCompare(b.path)); // index order is by hash shard
+    }
+
+    /** Reads a locked PDF with `password` into the index. The password is used for this read only and never stored. */
+    async unlockPdf(f: TFile, password: string): Promise<'ok' | 'wrong' | 'failed'> {
+        const m = f.stat.mtime; // before reading, like scan(): a change mid-read must still look stale
+        const l = await this.readPdf(f, this.gen, password);
+        if (l === 'locked') return 'wrong';
+        if (!l || !this.enabled || this.plugin.app.vault.getAbstractFileByPath(f.path) !== f) return 'failed';
+        this.put(f.path, { m, l, pw: 'unlocked' });
+        await this.save();
+        return 'ok';
     }
 
     /**
      * Images through osascript (macOS) or PowerShell (Windows), PDFs through pdf.js; in the order given. null = could not read that file;
-     * undefined = an image skipped because OCR is broken, or anything after `gen` changed.
+     * undefined = an image skipped because OCR is broken, or anything after `gen` changed. 'locked' = a PDF that needs a password.
      */
-    private async ocr(files: TFile[], gen: number): Promise<(OcrLine[] | null | undefined)[]> {
+    private async ocr(files: TFile[], gen: number): Promise<(OcrLine[] | null | undefined | 'locked')[]> {
         const images = this.broken ? [] : files.filter((f) => !isPdf(f));
         let read = images.length ? await this.ocrImages(images) : [];
         // One bad image fails the whole run: retry one by one so it can't block the rest.
@@ -527,7 +585,7 @@ export class ImageTextSearch {
                 : 'See the developer console (Ctrl+Shift+I) for the error.';
             new Notice(`Enhanced Canvas: text recognition in images isn't working, so reading images is paused. ${why} Then run "Rebuild image and PDF text index".`, 0);
         }
-        const out: (OcrLine[] | null | undefined)[] = [];
+        const out: (OcrLine[] | null | undefined | 'locked')[] = [];
         let k = 0;
         for (const f of files) {
             if (gen !== this.gen) break;
@@ -539,14 +597,16 @@ export class ImageTextSearch {
     /**
      * A PDF's embedded text with Obsidian's own pdf.js: no OCR, so a scanned PDF indexes as empty.
      * Measured on 302 PDFs against macOS PDFKit (docs/design-ocr-index-per-device.md): same text, a bit faster.
+     * 'locked' = needs a password (none given, or a wrong one). Only a user password locks: an owner password
+     * (no printing, copying…) opens without one.
      */
-    private async readPdf(f: TFile, gen: number): Promise<OcrLine[] | null> {
+    private async readPdf(f: TFile, gen: number, password?: string): Promise<OcrLine[] | null | 'locked'> {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let doc: any;
         try {
             const pdfjs = await loadPdfJs();
             // Without the CMaps, CJK text in CID fonts (e.g. LaTeX output) comes out mostly empty. Same URL as Obsidian's PDF view.
-            doc = await pdfjs.getDocument({ data: await this.plugin.app.vault.readBinary(f), cMapUrl: '/lib/pdfjs/cmaps/', cMapPacked: true }).promise;
+            doc = await pdfjs.getDocument({ data: await this.plugin.app.vault.readBinary(f), password, cMapUrl: '/lib/pdfjs/cmaps/', cMapPacked: true }).promise;
             const lines: OcrLine[] = [];
             for (let i = 1; i <= doc.numPages; i++) {
                 if (gen !== this.gen) return null; // disabled or rebuilding: the caller drops this batch
@@ -565,7 +625,7 @@ export class ImageTextSearch {
             }
             return lines;
         } catch (e) {
-            if (e?.name === 'PasswordException') return []; // no text to read, and retrying won't change that
+            if (e?.name === 'PasswordException') return 'locked'; // retrying without a password won't change that
             console.error('Enhanced Canvas OCR: reading the PDF failed', f.path, e);
             return null;
         } finally {
@@ -864,6 +924,86 @@ class ImageTextModal extends SuggestModal<ModalRow> {
         // ponytail: first card showing the image; an image embedded inside a text card isn't found.
         const node = canvas && [...canvas.nodes.values()].find((n) => n.filePath === path);
         if (node) canvas.zoomToBbox(node.getBBox());
+    }
+}
+
+/**
+ * One row per locked PDF, each with its own password. A password that opens one is also tried on the rest:
+ * PDFs often share one (bank statements), but that isn't assumed.
+ */
+class PdfUnlockModal extends Modal {
+    private busy = false;
+
+    constructor(private search: ImageTextSearch) {
+        super(search.plugin.app);
+    }
+
+    onOpen() {
+        this.setTitle('Unlock password-protected PDFs');
+        const { contentEl } = this;
+        const files = this.search.lockedPdfs();
+        if (!files.length) {
+            contentEl.createEl('p', { text: 'No password-protected PDFs are waiting to be unlocked.' });
+            return;
+        }
+        contentEl.createEl('p', { text: 'Enter a PDF\'s password once to make its text searchable. A password that opens one PDF is tried on the others too. The password isn\'t saved; the text stays in the index, also through "Rebuild image and PDF text index", until the PDF changes.' });
+        contentEl.createEl('p', { cls: 'mod-warning', text: 'The text of an unlocked PDF is stored unencrypted in the index (plugin folder, ocr-index), which syncs with your vault.' });
+
+        const folder = (f: TFile) => (f.parent && !f.parent.isRoot() ? f.parent.path : '');
+        const pending = new Map<TFile, Setting>();
+        const done = (f: TFile, row: Setting) => {
+            pending.delete(f);
+            row.controlEl.empty();
+            row.setDesc(folder(f)); // clears an earlier "Wrong password."
+            row.descEl.removeClass('mod-warning');
+            row.controlEl.createSpan({ text: '✓ Unlocked' });
+        };
+        for (const f of files) {
+            const row = new Setting(contentEl).setName(f.name).setDesc(folder(f));
+            pending.set(f, row);
+            let input!: HTMLInputElement;
+            let button!: ButtonComponent;
+            const submit = async () => {
+                const pw = input.value;
+                if (!pw || this.busy) return;
+                this.busy = true;
+                for (const r of pending.values()) r.setDisabled(true); // reading a large PDF takes a moment
+                button.setButtonText('Unlocking…');
+                let unlocked = false, failed = false;
+                try {
+                    const r = await this.search.unlockPdf(f, pw);
+                    if (r !== 'ok') {
+                        row.setDesc(r === 'wrong' ? 'Wrong password.' : 'Couldn\'t read this PDF. See the developer console (Ctrl+Shift+I).');
+                        row.descEl.addClass('mod-warning');
+                        failed = true;
+                        return;
+                    }
+                    unlocked = true;
+                    done(f, row);
+                    for (const [other, otherRow] of [...pending]) {
+                        if (await this.search.unlockPdf(other, pw) === 'ok') done(other, otherRow);
+                    }
+                    if (!pending.size) new Notice('Enhanced Canvas: every password-protected PDF is unlocked and searchable.');
+                } finally {
+                    this.busy = false;
+                    for (const r of pending.values()) r.setDisabled(false);
+                    if (pending.has(f)) button.setButtonText('Unlock');
+                    if (failed) input.select(); // after re-enabling: a disabled input can't take focus
+                    if (unlocked && this.search.inCoreSearch) this.search.setCoreSearch(); // open Search shows the new text
+                }
+            };
+            row.addText((t) => {
+                input = t.inputEl;
+                input.type = 'password';
+                t.setPlaceholder('Password');
+                input.addEventListener('keydown', (e) => { if (e.key === 'Enter') void submit(); });
+            });
+            row.addButton((b) => { button = b; b.setButtonText('Unlock').setCta().onClick(() => void submit()); });
+        }
+    }
+
+    onClose() {
+        this.contentEl.empty();
     }
 }
 

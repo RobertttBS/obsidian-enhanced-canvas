@@ -125,13 +125,20 @@ safe.
   spawn ENOENT = missing, other spawn errors / AMSI text on stderr = blocked; the one-by-one retries that pause OCR all exiting nonzero with empty stderr and no signal (an EDR kill), or 3 such runs in a row across scans (`silentRuns`, for one image per run) = stopped. Image paths of 260+ chars go in as `\\?\` / `\\?\UNC\` (`longPath`): PS 5.1 can't open them otherwise without LongPathsEnabled. No binary ships. `child_process` is `require`d inside
   `ocrImages()` only, so mobile never loads it (keep it that way: a top-level import breaks
   mobile). PDFs are indexed too, in-process by `readPdf()` with Obsidian's pdf.js
-  (`loadPdfJs()`): only their embedded text layer (no OCR, so scanned pages stay empty; a
-  password-protected PDF indexes as `[]`), one line per text line (`hasEOL`) as `[text, page]`
+  (`loadPdfJs()`): only their embedded text layer (no OCR, so scanned pages stay empty), one line per text line (`hasEOL`) as `[text, page]`
   (1-based) instead of a box, control characters stripped. `getDocument` must get
   `cMapUrl: '/lib/pdfjs/cmaps/', cMapPacked: true` (Obsidian's own PDF view uses it): without
   it CJK text in CID fonts comes out nearly empty. pdf.js replaced macOS PDFKit after a
-  302-PDF comparison (`docs/design-ocr-index-per-device.md` §4). Index
-  `{path: {m: mtime, l: [[text,x,y,w,h] | [text,page]]}}` lives in
+  302-PDF comparison (`docs/design-ocr-index-per-device.md` §4). A PDF with a user password
+  (`PasswordException`; owner-only passwords open fine) is indexed as `{l: [], pw: 'locked'}`; the scan never
+  prompts, it ends with one notice linking to `PdfUnlockModal` (also the "Unlock password-protected PDFs"
+  command, indexing devices only). There each PDF gets its own password; one that opens a PDF is tried on
+  the rest. `unlockPdf()` reads it with the password and stores `pw: 'unlocked'`; the password is never
+  stored (decided: type it once; text stays). `rebuild()` keeps `unlocked` entries (it couldn't re-read them);
+  a PDF changed since is re-read by the scan and so locked again. The text is plaintext in the synced index —
+  accepted, the modal warns. Earlier builds indexed locked PDFs as plain `[]`: the first scan re-reads empty
+  PDF entries once (`pdfLockChecked`, device-local). Index
+  `{path: {m: mtime, l: [[text,x,y,w,h] | [text,page]], pw?}}` lives in
   `<plugin dir>/ocr-index/00.json`…`3f.json`, never in `data.json` (it's ~100 MB): 64 shards, a path's
   shard is `shardOf(path)` (FNV-1a mod 64 — never change it), each file is that shard's part of the
   index; a missing file is an empty shard. In memory `this.index` stays one merged object. `put()`
@@ -150,7 +157,7 @@ safe.
   batch fails and this device has never read an image (`readImage`; the index can't tell, it may be synced
   from another device), or the first 3 single-retry runs fail as whole runs, OCR itself is broken: `broken`
   skips images (PDFs keep indexing) until the "Rebuild image and PDF text index" command, which
-  also clears the index and `failed`. PDF failures never set `broken`. Images
+  also clears the index (except unlocked PDFs) and `failed`. PDF failures never set `broken`. Images
   matched by Obsidian's *Excluded files* (`metadataCache.isUserIgnored`) are skipped and pruned. Index changes must go through `put()` and writes through `save()`, which serializes and
   coalesces them — never call `adapter.write` on the index directly, and never from a search-only device. `disable()` removes
   the command, ribbon and listeners and kills the process but keeps the index. Also owns
