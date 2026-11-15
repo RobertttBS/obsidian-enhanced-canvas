@@ -2,6 +2,12 @@
 export const whatsNew = `
 ## What's new
 
+- **Search text in images**: turn on *Search text in images and PDFs* in settings and the text in every vault image is read on-device with the system's built-in OCR (macOS or Windows). Run *Search text in images and PDFs* from the command palette or the ribbon icon; matching text is boxed on the image. \`a b\` needs both words, \`a OR b\` either, \`"a b"\` the exact phrase. Off by default; the first run takes a few minutes.
+- **Search text in PDFs**: the same setting indexes the text in your PDFs too. Results show the page number, and choosing one opens the PDF at that page. Scanned PDFs without a text layer aren't searchable yet.
+- **Filter by file type**: the *All*, *Images* and *PDFs* buttons show one file type at a time, each with its number of matches. The button on their right hides thumbnails for a compact list.
+- **Image and PDF cards in Find in canvas**: *Find in canvas* now matches the text inside image and PDF cards.
+- **Results in core Search**: *Show image and PDF results in Search* lists matching images and PDFs in Obsidian's Search next to your notes.
+- **Linux and mobile**: these devices can't read images themselves, but with the setting on they search the index synced from your Mac or Windows PC.
 - **Password-protected PDFs**: after indexing, a notice lists PDFs that need a password. Click **Unlock…** there, or run *Unlock password-protected PDFs for text search*, and enter each password once; a password that opens one PDF is tried on the others. The password isn't saved; the text stays in the index until the PDF changes.
 `;
 
