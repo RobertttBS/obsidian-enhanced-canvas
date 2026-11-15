@@ -1,6 +1,6 @@
 # 設計決策：圖片與 PDF 文字 index 改為每台裝置自己建立
 
-狀態：第 1 步進行中（PDF 改用 pdf.js 已完成；Windows 圖片 OCR 已完成，2026-11-15 在 Windows 11 以腳本驗證，尚未在 Obsidian 內完整驗證）。基準 commit：`bbe6964`（64-shard，只考慮單台 Mac 寫入）。
+狀態：第 1 步已實作（PDF 改用 pdf.js：`1e62a31`；Windows 圖片 OCR：`5bfd901`、`bcd935b`、`9a628a1`。Windows OCR 2026-11-15 在 Windows 11 以腳本驗證，尚未在 Obsidian 內完整驗證）。第 2 步未決定。基準 commit：`bbe6964`（64-shard，只考慮單台 Mac 寫入）。
 決策日期：2026-11-15。
 
 ## 1. 起因
@@ -31,7 +31,7 @@
 | Linux | 不支援 | pdf.js（第 1 步之後） |
 | iPad、iPhone、Android | 不支援（無法執行外部程式；tesseract.js 需要下載語言資料，不採用） | pdf.js（第 1 步之後） |
 
-以上都未驗證。實測項目：
+pdf.js 中文抽字已在 Obsidian 內驗證（見第 4 節）；Windows OCR 只以腳本驗證。仍待實測：
 - Windows OCR 的中文辨識品質。
 - pdf.js 讀大型 PDF（14,777 頁、32.8 MB 文字）的時間與記憶體。
 

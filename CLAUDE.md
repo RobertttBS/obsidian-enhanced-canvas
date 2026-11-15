@@ -28,10 +28,10 @@ Deep detail lives in `docs/agent/`; read the relevant one when you're in that co
 
 - **Two `node` concepts.** JSON node `node.file` = path **string**; live `CanvasNode`
   `node.file` = **TFile** (`node.filePath` is its string). Same name, different type —
-  confirm which you hold before editing anything named `node`. (`main.ts:158-160`)
+  confirm which you hold before editing anything named `node`. (`JsonNodeRef` in `main.ts`)
 - **Never hand-roll a patcher retry.** All prototype patches go through
   `registerLazyPatcher`; it detaches its retry listeners on success. Hand-rolling and
-  leaving them attached re-patches and broke Windows pinned tabs (commit `742eb70`).
+  leaving them attached re-patches and broke Windows pinned tabs (commits `742646a`, `282fcd3`).
   Register uninstallers with `this.register(...)`.
 - **Frontmatter sync writes user notes — 5 invariants, all silent-data-loss if broken:**
   cleanup runs *before* flipping `enableFrontmatter` off; `canvas` key precedes
@@ -51,15 +51,14 @@ extending `Canvas.d.ts` for new code. `randomId` in `utils.ts` over `Math.random
 
 ## Working here — agent governance
 
-Universal working rules (delegation, judgment, prompt templates, verification) live in
-`~/.claude/playbooks/`. The **project-specific layer** is in `docs/agent/`:
+Project-specific working notes are in `docs/agent/`:
 
 - `diagnosis.md` — what wastes tokens / breaks in *this* repo (read once per new session).
-- `model-dispatch.md` — when to delegate here (rarely — small repo) and to which model.
 - `judgment.md` — what "done" means here (no tests → tsc + Obsidian reload).
-- `prompt-templates.md` — dispatch templates pre-filled with this repo's files.
 - `maintenance.md` — how to safely update these docs and CLAUDE.md.
-- `letter-to-future-sessions.md` — read if you're a smaller model or new here.
+
+Design records: `docs/design-ocr-index-per-device.md` (image/PDF text index; step 2
+— sync and storage location — is still open).
 
 ## Keeping this current
 

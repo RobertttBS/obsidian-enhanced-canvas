@@ -1,7 +1,6 @@
 # D. Judgment Rubrics — project layer
 
-Universal rubrics: **`~/.claude/playbooks/judgment.md`**. This file re-grounds each
-one in *this* repo, where the defining fact is: **there are no tests**, so the usual
+Judgment rubrics for *this* repo, where the defining fact is: **there are no tests**, so the usual
 "run the suite" shortcut for "done" does not exist. Every rule below has a ✅ (do it)
 and a ❌ (don't) drawn from real situations here.
 
@@ -62,12 +61,12 @@ Stop and change approach — not parameters — when:
 Every "no" must be deliberate and stated:
 1. `npx tsc --noEmit` clean, run fresh after the last edit? (§1)
 2. Diff contains ONLY lines traceable to the request? (No opportunistic reformat — this
-   repo just cut ~380 lines of over-engineering; don't re-add it.)
+   repo has cut ~380 lines of over-engineering; don't re-add it.)
 3. Grepped `main.ts` for other callers of anything you changed? (One giant file — a
    helper often has several callers a few hundred lines apart.)
 4. Does something already in `utils.ts`/`main.ts` do this? Reuse beats new.
-5. Touched a frontmatter write path? Are all four invariants still held
-   (order / debounce / cache-as-gate / cleanup-before-flip)? A miss here silently
+5. Touched a frontmatter write path? Are all five invariants still held
+   (order / debounce / cache-as-gate / basename matching / cleanup-before-flip)? A miss here silently
    corrupts user notes — this is below-floor, not a nice-to-have.
 6. Tree still builds (`npm run dev` starts clean)?
 - ✅ YES floor-pass: bugfix in `writeLinkSet` + grepped its 3 callers, all compatible +

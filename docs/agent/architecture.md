@@ -29,12 +29,12 @@ goes through `EnhancedCanvas.registerLazyPatcher(patch)`** — it retries `patch
 (which returns a success boolean) on `active-leaf-change` / `layout-change` /
 `onLayoutReady`, and **detaches the retry listeners after the first success**.
 Leaving them attached re-patches and breaks Windows pinned tabs (shipped once,
-commit `742eb70`). Do not hand-roll the retry. Register every uninstaller with
+commits `742646a`, `282fcd3`). Do not hand-roll the retry. Register every uninstaller with
 `this.register(...)`.
 
 ## Two node concepts — do not mix
 
-Same names, different things (see comments at `main.ts:158-160`):
+Same names, different things (`JsonNodeRef` and the comments in `addProperty`/`removeProperty`, `main.ts`):
 
 | | Lives in | `.file` is | `.filePath` | Used by |
 |---|---|---|---|---|
@@ -78,6 +78,11 @@ Load-bearing rules — all five cause silent user-data loss if broken:
 `.canvas` files, diffs against the metadata cache, and does **at most one**
 `processFrontMatter` write per out-of-date note (zero when nothing changed — keep
 it that way). Mutation functions early-return when the setting is off.
+
+Known, deliberately unfixed: opening a canvas queues every edge, and the flush runs
+`processNodeUpdate` per edge, each calling `canvas.getData()` (O(E × (N log N + E))).
+Only hurts canvases with hundreds of edges; batching it per flush touches the debounce
+and real-frontmatter invariants, so it waits until the symptom shows up.
 
 ## Multi-window
 

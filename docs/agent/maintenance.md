@@ -1,8 +1,7 @@
 # F. Maintenance Protocol — project docs
 
-How future sessions (any model) update `CLAUDE.md`, `AGENTS.md`, and the
-`docs/agent/*` files safely. The universal `~/.claude/` maintenance rules are in
-`~/.claude/playbooks/maintenance.md`; this covers only the *project* docs.
+How future sessions (any model) update `CLAUDE.md`, `AGENTS.md`, `docs/agent/*`
+and the design records in `docs/` safely.
 
 ## Golden rules
 1. **CLAUDE.md ↔ AGENTS.md stay byte-identical.** They currently are. Any edit to one
@@ -30,7 +29,8 @@ How future sessions (any model) update `CLAUDE.md`, `AGENTS.md`, and the
 - Restructuring the docs (renaming files, changing what's extracted where, making
   AGENTS.md a pointer instead of a copy).
 - Anything that changes the release process, the build commands, or settings behavior.
-- Committing or pushing these docs (they are not committed by default).
+- Committing or pushing these docs.
+- Deleting a design record in `docs/` (code comments cite them).
 
 ## Where lessons go
 Hit a real pitfall here (a doc said something that was wrong, an invariant you didn't
@@ -54,13 +54,17 @@ approval.
 ## LESSONS
 
 ### 2026-07-05 — Docs created
-What happened: An Opus-4.8 session built this project governance layer (diagnosis,
-CLAUDE.md rewrite + AGENTS.md sync, model-dispatch, judgment, prompt-templates, this
-file, letter). The six `docs/agent/*` files are thin project layers over the universal
-`~/.claude/playbooks/*`; CLAUDE.md's long architecture prose was extracted to
-`docs/agent/architecture.md`.
-Rule to remember: keep the project docs a *delta* over the global playbooks — don't
-copy universal rules down into the repo; that's the instruction-bloat these docs warn
-against.
-Evidence: `~/.claude/playbooks/` (six universal files, dated 2026-07-03); this repo's
-`docs/agent/`.
+What happened: A session built this governance layer and extracted CLAUDE.md's long
+architecture prose to `docs/agent/architecture.md`.
+Rule to remember: keep the project docs short and repo-specific — no generic rules.
+
+### 2026-11-15 — Docs pruned
+What happened: `~/.claude/playbooks/` (which these docs pointed to as the "universal
+layer") no longer exists; `main.ts:158-160` and commit `742eb70` were dead refs; three
+docs still said "four" invariants after the fifth (`canvasLinkBasename`) was added.
+Deleted `model-dispatch.md`, `prompt-templates.md`, `letter-to-future-sessions.md`
+(stale handoff / delegation scaffolding) and `docs/obsidian-source-audit.md` (backlog
+done except B1 edge flush).
+Rule to remember: cite symbols and commit hashes you just verified, never line numbers
+or sizes; when an invariant is added, grep the docs for its old count.
+Evidence: `ls ~/.claude/playbooks` → no such dir; `git cat-file -t 742eb70` → invalid.
