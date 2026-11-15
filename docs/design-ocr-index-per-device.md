@@ -1,6 +1,6 @@
 # 設計決策：圖片與 PDF 文字 index 改為每台裝置自己建立
 
-狀態：第 1 步進行中（PDF 改用 pdf.js 已完成；Windows 圖片 OCR 程式碼已完成，未在 Windows 上驗證）。基準 commit：`bbe6964`（64-shard，只考慮單台 Mac 寫入）。
+狀態：第 1 步進行中（PDF 改用 pdf.js 已完成；Windows 圖片 OCR 已完成，2026-11-15 在 Windows 11 以腳本驗證，尚未在 Obsidian 內完整驗證）。基準 commit：`bbe6964`（64-shard，只考慮單台 Mac 寫入）。
 決策日期：2026-11-15。
 
 ## 1. 起因
@@ -51,11 +51,11 @@
 - 已決定（2026-11-15）：macOS 的 PDF 也改用 pdf.js（`readPdf()`），PDFKit 程式碼已刪除。實測結果見 4.1、4.2。
   - 已驗證：在 Obsidian 內（`Robert_OB`，唯讀）用 `cMapUrl: '/lib/pdfjs/cmaps/'` 讀 826 頁的中文 PDF，抽出 577,091 字（其中中文 199,944 字），與 Node 結果相同。不傳 `cMapUrl` 時，中文只剩 3,300 字。
   - 未驗證：plugin reload 後的完整掃描流程；最大 PDF 在 Obsidian 內的記憶體用量。
-- Windows 圖片 OCR（2026-11-15 實作，未驗證）：
+- Windows 圖片 OCR（2026-11-15 實作；腳本已驗證，見下方，Obsidian 內未完整驗證）：
   - `powershell.exe -EncodedCommand` 執行 `WIN_OCR_SCRIPT`。必須用 Windows PowerShell 5.1，PowerShell 7 不能載入 WinRT 型別。
   - 路徑以 JSON 從 stdin 傳入，非 ASCII 字元先轉成 `\uXXXX`。輸出格式與 macOS 相同。
-  - 語言：優先使用第一個已安裝的中日韓 OCR 語言，沒有才用 `TryCreateFromUserProfileLanguages()`。一個引擎只認一種語言；中文引擎也認得英文，英文引擎會默默漏掉所有中文。
-  - 無法執行的原因會寫進通知（`BLOCK_HINT`），並直接設定 `broken`，單張圖片也會觸發：exit 2 = 沒有 OCR 語言包；exit 3 = Constrained Language Mode（企業 AppLocker/WDAC）；無法啟動（ENOENT）= 找不到 PowerShell；其他啟動錯誤、stderr 出現 AMSI 訊息、被外部終止 = 防毒或安全政策封鎖。PowerShell 用完整路徑啟動。
+  - 語言：依使用者在設定中的語言順序（`GlobalizationPreferences.Languages`），用第一個有 OCR 的中日韓語言；沒有才用第一個已安裝的中日韓 OCR 語言（系統列舉順序）；再沒有才用 `TryCreateFromUserProfileLanguages()`。`IsLanguageSupported` 接受 `zh-TW`、`zh-Hant` 對到已安裝的 `zh-Hant-TW`（2026-11-15 驗證；本機只有一個語言，多語言排序未實測）。一個引擎只認一種語言；中文引擎也認得英文，英文引擎會默默漏掉所有中文。
+  - 無法執行的原因會寫進通知（`BLOCK_HINT`），並直接設定 `broken`，單張圖片也會觸發：exit 2 = 沒有 OCR 語言包；exit 3 = Constrained Language Mode（企業 AppLocker/WDAC）；無法啟動（ENOENT）= 找不到 PowerShell；其他啟動錯誤、stderr 出現 AMSI 訊息 = 防毒或安全政策封鎖；逐張重試而暫停時，若每次都是非 0 結束、stderr 空白、且不是我們自己 kill 的（EDR 無聲終止），或跨次掃描連續 3 次這樣結束（`silentRuns`，涵蓋每次只有一張圖的情況）= 被中途停止，提示同樣指向防毒/EDR。PowerShell 用完整路徑啟動。260 字元以上的圖片路徑會轉成 `\\?\`（UNC 為 `\\?\UNC\`）再交給 PowerShell：PS 5.1 在沒開 LongPathsEnabled 時讀不到長路徑（2026-11-15 驗證：365 字元路徑原樣 `null`，加前綴後成功）。
   - 「整批失敗 = OCR 壞掉」只計算 png/jpg/gif/tiff/bmp。HEIC、WebP 需要 Microsoft Store 的 codec，整批失敗不代表 OCR 壞掉，失敗通知會提示安裝 codec。
   - 2026-11-15 在 Windows 11（zh-Hant-TW）驗證：50 張一批 50/50 成功；webp、gif、中文路徑成功；Constrained Language Mode 回傳 exit 3；損壞的 HEIC 只讓該張回傳 null。
   - 圖片超過 `OcrEngine.MaxImageDimension` 時先等比縮小。

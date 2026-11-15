@@ -8,6 +8,8 @@ import { matchesTextQuery, normalizeText, parseTextQuery, queryTerms } from './u
 
 const IMAGE_EXT = /^(png|jpe?g|heic|webp|gif|tiff?|bmp)$/i;
 const BATCH = 50; // files per OCR process run; keeps argv short and saves progress often
+const PDF_BATCH = 5; // at most this many PDFs per batch: a large one takes seconds, and progress is saved per batch
+const DEVICE_KEY = 'enhanced-canvas-ocr-device'; // localStorage (per vault, per device): `failed` and `readImage`
 const LIMIT = 50; // results shown in the modal
 const COMMAND_ID = 'search-image-text';
 const REBUILD_ID = 'rebuild-image-text-index';
@@ -55,7 +57,8 @@ function run(paths) {
 // PowerShell 7 can't load WinRT types). Reads the paths as JSON on stdin, writes the same JSON shape as
 // OCR_SCRIPT. Exit 2 = no OCR language installed; exit 3 = Constrained Language Mode (AppLocker/WDAC), where
 // the .NET calls below are blocked — checked first, before anything that mode forbids. Both set `broken`.
-// Engine: the first installed Chinese/Japanese/Korean OCR language, else the first user-profile one. One engine
+// Engine: the user's first Chinese/Japanese/Korean language (Settings order) that has OCR, else the first installed
+// CJK OCR language (system order, not the user's), else the first user-profile one. One engine
 // reads one language; a CJK engine still reads Latin text, an English one drops every CJK character silently.
 // JSON is written by hand: ConvertTo-Json in 5.1 can wrap arrays in {"value":…,"Count":…}.
 // PowerShell variable names are case-insensitive: $w would overwrite $W, so the word loop uses $wd.
@@ -69,7 +72,9 @@ function Await($op, [Type]$t) { $task = $asTask.MakeGenericMethod($t).Invoke($nu
 $null = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]
 $null = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics, ContentType = WindowsRuntime]
 $null = [Windows.Graphics.Imaging.SoftwareBitmap, Windows.Graphics, ContentType = WindowsRuntime]
-$cjk = [Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages | Where-Object { $_.LanguageTag -match '^(zh|ja|ko)' } | Select-Object -First 1
+$null = [Windows.System.UserProfile.GlobalizationPreferences, Windows.System.UserProfile, ContentType = WindowsRuntime]
+$null = [Windows.Globalization.Language, Windows.Globalization, ContentType = WindowsRuntime]
+$cjk = @([Windows.System.UserProfile.GlobalizationPreferences]::Languages | Where-Object { $_ -match '^(zh|ja|ko)' } | ForEach-Object { New-Object Windows.Globalization.Language $_ } | Where-Object { [Windows.Media.Ocr.OcrEngine]::IsLanguageSupported($_) }) + @([Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages | Where-Object { $_.LanguageTag -match '^(zh|ja|ko)' }) | Select-Object -First 1
 $engine = if ($cjk) { [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($cjk) } else { [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages() }
 if ($null -eq $engine) { [Console]::Error.Write('No OCR language installed.'); exit 2 }
 $max = [Windows.Media.Ocr.OcrEngine]::MaxImageDimension
@@ -103,15 +108,27 @@ const ALWAYS_DECODABLE = /^(png|jpe?g|gif|tiff?|bmp)$/i;
 const NEEDS_CODEC = /^(heic|webp)$/i;
 
 /** Why image OCR can't run at all, as opposed to one image failing. Each pauses image reading until Rebuild. */
-type OcrBlock = 'no-language' | 'constrained' | 'blocked' | 'missing';
+type OcrBlock = 'no-language' | 'constrained' | 'blocked' | 'stopped' | 'missing';
 const BLOCK_HINT: Record<OcrBlock, string> = {
     'no-language': 'Windows has no OCR language installed. Add one in Settings → Time & language → Language & region: pick a language → Language options → Optical character recognition.',
     'constrained': 'PowerShell runs in Constrained Language Mode, set by your organization\'s security policy (AppLocker or WDAC), which blocks Windows OCR. Only your IT administrator can allow it. PDFs are still indexed.',
     'blocked': 'PowerShell was blocked or stopped, most likely by antivirus or a company security policy. Allow powershell.exe for Obsidian, or ask your IT administrator. PDFs are still indexed.',
+    'stopped': 'PowerShell kept closing without an error message, which usually means antivirus or endpoint security (EDR) stopped it. Allow powershell.exe for Obsidian, or ask your IT administrator. PDFs are still indexed.',
     'missing': 'Windows PowerShell (powershell.exe) wasn\'t found on this system. PDFs are still indexed.',
 };
 // AMSI (Defender and most antivirus) refusing the script text.
 const AV_BLOCKED = /ScriptContainedMaliciousContent|malicious content|antivirus/i;
+
+/**
+ * A Windows path PowerShell 5.1 can open past MAX_PATH (260) without LongPathsEnabled: `\\?\C:\…` or `\\?\UNC\server\…`.
+ * Shorter paths are left alone. `\\?\` turns off normalization, so the path is resolved first (backslashes, no `.`/`..`).
+ */
+function longPath(p: string) {
+    if (p.length < 260 || p.startsWith('\\\\?\\')) return p;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const full = (require('path') as typeof import('path')).win32.resolve(p);
+    return full.startsWith('\\\\') ? `\\\\?\\UNC\\${full.slice(2)}` : `\\\\?\\${full}`;
+}
 
 // Windows OCR puts a space between CJK characters; drop it so "中文" matches.
 const CJK_GAP = /(?<=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-〿＀-￯]) (?=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-〿＀-￯])/gu;
@@ -130,9 +147,11 @@ export class ImageTextSearch {
     private scanning = false;
     private rescan = false;
     private gen = 0; // bumped by disable(), so a scan can tell its OCR process was killed on purpose
-    private failed = new Map<string, number>(); // path → mtime OCR couldn't read; retried once the file changes
+    private failed = new Map<string, number>(); // path → mtime this device couldn't read; retried once the file changes or on Rebuild
+    private readImage = false; // this device has read an image, so OCR works here (index entries may come from another device)
     private broken = false; // image OCR itself failed: images are skipped until Rebuild, so each change doesn't burn a new batch
     private blockedBy: OcrBlock | null = null; // the known reason for `broken`, shown in the notice
+    private silentRuns = 0; // Windows runs in a row that failed with no error text and weren't killed by us: a likely EDR kill
     private saving: Promise<void> = Promise.resolve();
     private saveQueued = false;
     private loadedAt: number[] = []; // per shard: mtime of the file last read or written
@@ -246,6 +265,7 @@ export class ImageTextSearch {
         await this.load();
         // Turned off while reading (and maybe on again: that later call does the setup).
         if (gen !== this.gen) return;
+        if (ImageTextSearch.canIndex) this.loadDevice();
 
         this.plugin.addCommand({ id: COMMAND_ID, name: 'Search text in images and PDFs', callback: this.open });
         this.ribbon = this.plugin.addRibbonIcon('scan-text', 'Search text in images and PDFs', this.open);
@@ -330,6 +350,17 @@ export class ImageTextSearch {
         } catch (e) { console.error('Enhanced Canvas OCR: migrating the old index failed', e); }
     }
 
+    /** Device-local state: not in the synced index, since another device may read what this one can't (codecs, OCR). */
+    private loadDevice() {
+        const d = this.plugin.app.loadLocalStorage(DEVICE_KEY);
+        this.failed = new Map(Object.entries(d?.failed ?? {}).filter((e): e is [string, number] => typeof e[1] === 'number'));
+        this.readImage = d?.readImage === true;
+    }
+
+    private saveDevice() {
+        this.plugin.app.saveLocalStorage(DEVICE_KEY, { failed: Object.fromEntries(this.failed), readImage: this.readImage });
+    }
+
     /** On search-only devices, picks up an index file that sync replaced. */
     async refresh() {
         if (this.enabled && !ImageTextSearch.canIndex) await this.load();
@@ -372,8 +403,10 @@ export class ImageTextSearch {
         this.index = {};
         for (let s = 0; s < SHARDS; s++) this.dirty.add(s);
         this.failed.clear();
+        this.saveDevice();
         this.broken = false;
         this.blockedBy = null;
+        this.silentRuns = 0;
         await this.save();
         new Notice('Enhanced Canvas: rebuilding the image and PDF text index…');
         void this.scan();
@@ -393,16 +426,21 @@ export class ImageTextSearch {
                 const gone = Object.keys(this.index).filter((p) => !isIndexedFile(vault.getAbstractFileByPath(p)) || excluded(p));
                 gone.forEach((p) => this.put(p));
                 if (gone.length) await this.save();
+                const lost = [...this.failed.keys()].filter((p) => !isIndexedFile(vault.getAbstractFileByPath(p)) || excluded(p));
+                lost.forEach((p) => this.failed.delete(p));
+                if (lost.length) this.saveDevice();
 
                 const todo = vault.getFiles().filter((f) => isIndexedFile(f) && !excluded(f.path)
                     && this.index[f.path]?.m !== f.stat.mtime && this.failed.get(f.path) !== f.stat.mtime
                     && !(this.broken && !isPdf(f)));
-                const notice = todo.length > BATCH ? new Notice('', 0) : null;
+                const notice = todo.length > BATCH || todo.filter(isPdf).length > PDF_BATCH ? new Notice('', 0) : null;
                 let warned = false;
                 try {
-                    for (let i = 0; i < todo.length && gen === this.gen; i += BATCH) {
+                    for (let i = 0, n = 0; i < todo.length && gen === this.gen; i += n) {
                         notice?.setMessage(`Enhanced Canvas: reading text in images and PDFs ${i} / ${todo.length}`);
-                        const batch = todo.slice(i, i + BATCH);
+                        let pdfs = 0;
+                        for (n = 0; i + n < todo.length && n < BATCH && pdfs < PDF_BATCH; n++) if (isPdf(todo[i + n])) pdfs++;
+                        const batch = todo.slice(i, i + n);
                         // Taken before OCR: an image changed mid-run must still look stale afterwards.
                         const mtimes = batch.map((f) => f.stat.mtime);
                         const lines = await this.ocr(batch, gen);
@@ -421,6 +459,7 @@ export class ImageTextSearch {
                             else if (vault.getAbstractFileByPath(f.path) === f) this.put(f.path, { m: mtimes[j], l });
                         });
                         await this.save();
+                        this.saveDevice();
                         if (bad && !warned) {
                             warned = true;
                             const codec = Platform.isWin && badCodec
@@ -449,25 +488,37 @@ export class ImageTextSearch {
         if (!read && images.length > 1 && !this.broken) {
             read = [];
             let crashed = 0; // runs that failed as a whole, not one image the run reported as unreadable
+            let silent = 0; // of those, Windows runs that ended with no error text (see silentRuns)
             for (const f of images) {
                 if (gen !== this.gen) return [];
                 if (this.broken) break;
                 const one = await this.ocrImages([f]);
-                if (!one) crashed++;
+                if (!one) { crashed++; if (this.silentRuns) silent++; }
                 read.push(one?.[0] ?? null);
                 // ponytail: the first 3 runs (or all of a smaller batch) failing = OCR is broken, not the images; saves up to ~18 min of retries.
                 // Later failures in a row are not checked: each is retried and marked failed on its own.
-                if (crashed === read.length && (read.length === 3 || read.length === images.length)) { this.broken = true; break; }
+                if (crashed === read.length && (read.length === 3 || read.length === images.length)) {
+                    this.broken = true;
+                    // Every run died without a word: EDR terminating the process leaves no AMSI text to match.
+                    if (silent === crashed && !this.blockedBy) this.blockedBy = 'stopped';
+                    break;
+                }
             }
         }
         if (gen !== this.gen) return [];
+        // One image per run never reaches the retries above (a pasted screenshot): 3 silent runs in a row, across scans, also pause.
+        if (!this.broken && this.silentRuns >= 3) {
+            this.broken = true;
+            if (!this.blockedBy) this.blockedBy = 'stopped';
+        }
+        if (read?.some(Boolean)) this.readImage = true;
         // Every image failing means OCR itself is broken: pause images instead of marking them all failed. PDFs go on.
         // Only formats that always decode count: a batch of HEIC without the codec fails with OCR working fine.
-        // Not once an image was ever read on this device: then OCR works and these files are bad (corrupt, or not really images),
-        // and `failed` is in memory only, so they would come back alone after every restart and pause OCR each time.
+        // Not once an image was ever read on this device (readImage, not the index: it may be synced from another device):
+        // then OCR works and these files are bad (corrupt, or not really images).
         // ocrImages() also sets broken for a known block (no OCR language, policy, antivirus), even for a single image.
         const decodable = images.flatMap((f, j) => (ALWAYS_DECODABLE.test(f.extension) ? [j] : []));
-        if (decodable.length > 1 && decodable.every((j) => !read?.[j]) && !Object.keys(this.index).some((p) => !/\.pdf$/i.test(p))) {
+        if (decodable.length > 1 && decodable.every((j) => !read?.[j]) && !this.readImage) {
             console.warn('Enhanced Canvas OCR: no image could be read, pausing image OCR:', decodable.map((j) => images[j].path));
             this.broken = true;
         }
@@ -529,7 +580,7 @@ export class ImageTextSearch {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { spawn } = require('child_process') as typeof import('child_process');
         const gen = this.gen;
-        const paths = files.map((f) => adapter.getFullPath(f.path));
+        const paths = files.map((f) => Platform.isWin ? longPath(adapter.getFullPath(f.path)) : adapter.getFullPath(f.path));
         // A hung process must not stall indexing forever.
         const timeout = 20_000 + 2_000 * files.length;
         // Full path: a damaged PATH must not hide the PowerShell that every Windows 10/11 ships.
@@ -553,6 +604,7 @@ export class ImageTextSearch {
             proc.on('error', (e: NodeJS.ErrnoException) => {
                 if (done) return;
                 done = true;
+                this.silentRuns = 0;
                 if (this.proc === proc) this.proc = null;
                 // Couldn't start at all: missing, or refused by antivirus / Defender ASR (EPERM, EACCES, UNKNOWN).
                 if (Platform.isWin && gen === this.gen) block(e.code === 'ENOENT' ? 'missing' : 'blocked');
@@ -563,6 +615,9 @@ export class ImageTextSearch {
                 if (done) return;
                 done = true;
                 if (this.proc === proc) this.proc = null;
+                // A signal means our own kill (timeout or disable()); exit 2/3 or any stderr has a known cause.
+                const silent = Platform.isWin && code !== 0 && code !== 2 && code !== 3 && signal === null && !err.trim();
+                this.silentRuns = silent ? this.silentRuns + 1 : 0;
                 try {
                     // No check for being killed from outside: on Windows that is just a nonzero code with no signal,
                     // and a signal only ever comes from our own kill (timeout, or disable() which changes gen).
