@@ -2,12 +2,7 @@
 export const whatsNew = `
 ## What's new
 
-- **Search text in images**: turn on *Search text in images and PDFs* in settings and the text in every vault image is read on-device with the system's built-in OCR (macOS or Windows). Run *Search text in images and PDFs* from the command palette or the ribbon icon; matching text is boxed on the image. \`a b\` needs both words, \`a OR b\` either, \`"a b"\` the exact phrase. Off by default; the first run takes a few minutes.
-- **Search text in PDFs**: the same setting indexes the text in your PDFs too. Results show the page number, and choosing one opens the PDF at that page. Scanned PDFs without a text layer aren't searchable yet.
-- **Filter by file type**: the *All*, *Images* and *PDFs* buttons show one file type at a time, each with its number of matches. The button on their right hides thumbnails for a compact list.
-- **Image and PDF cards in Find in canvas**: *Find in canvas* now matches the text inside image and PDF cards.
-- **Results in core Search**: *Show image and PDF results in Search* lists matching images and PDFs in Obsidian's Search next to your notes.
-- **Linux and mobile**: these devices can't read images themselves, but with the setting on they search the index synced from your Mac or Windows PC.
+- **Password-protected PDFs**: after indexing, a notice lists PDFs that need a password. Click **Unlock…** there, or run *Unlock password-protected PDFs for text search*, and enter each password once; a password that opens one PDF is tried on the others. The password isn't saved; the text stays in the index until the PDF changes.
 `;
 
 // Shown on first install and after every update. Add an entry when a feature ships.
@@ -41,6 +36,7 @@ Search words or a \`[[link]]\` across the Canvas: \`a b\` needs both words, \`a 
 ### Search text in images and PDFs
 Reads the text in every vault image with the system's built-in OCR (macOS or Windows), on-device, and the embedded text of every PDF. Search all images and PDFs, or let Find in canvas match image and PDF cards; matching text is boxed on the image, and a PDF result opens at its page.
 - **Where:** command *Search text in images and PDFs* or the ribbon icon; *Find in canvas* for image and PDF cards. Same search syntax as Find in canvas; results are numbered, with the total count on top. *All*, *Images* and *PDFs* filter by file type, the button beside them hides thumbnails, and **Show more** at the end lists 50 more.
+- **Locked PDFs:** command *Unlock password-protected PDFs for text search* (or **Unlock…** in the notice after indexing) asks for each password once. The password isn't saved.
 - **Rebuild:** command *Rebuild image and PDF text index* reads every image and PDF again. Files in *Excluded files* are skipped.
 - **Settings:** *Search text in images and PDFs* (off by default; the first run takes a few minutes). *Show image and PDF results in Search* puts matching images, with thumbnails, in core Search next to your notes (add \`-file:.md -file:.canvas\` for images and PDFs only); the ribbon icon stays.
 - **Other devices:** reading images needs a Mac or a Windows PC (Windows needs an OCR language installed); on Linux and mobile the same setting searches the index synced from that computer.
