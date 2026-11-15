@@ -2,33 +2,103 @@
 
 > This Obsidian plugin enhances Obsidian Canvas with features I find essential.
 
+## Features at a Glance
+
+| Feature | What it does | How to use it |
+| --- | --- | --- |
+| [Find in Canvas](#find-in-canvas) | Highlights the cards that contain a word or link to a note | **Cmd/Ctrl+F** in a Canvas |
+| [Search Text in Images and PDFs](#search-text-in-images-and-pdfs) | Searches the text inside images (OCR) and PDFs, on-device | Turn on in settings, then click the ribbon icon |
+| [Split Node by Headings](#split-node-by-headings) | Splits one card into a tree of cards, one per heading | Right-click a card → **Split by headings** |
+| [Add Notes by Tag](#add-notes-by-tag) | Adds every note that matches a tag query | Right-click the Canvas → **Add notes by tag...** |
+| [Send Note to Canvas](#send-note-to-canvas) | Sends the current note to a Canvas | **Send to Canvas** command |
+| [Auto-Resize Node](#auto-resize-node) | Keeps a card's height fitted to its text | Double-click the card's bottom edge |
+| [Canvas properties in notes](#main-feature) | Writes a note's Canvas and its edges into the note's properties | Automatic |
+| [Focus node from a link](#main-feature) | Zooms to the note's card when you open a Canvas link from that note | Click the link |
+| [Hide Properties in Canvas Nodes](#hide-properties-in-canvas-nodes) | Hides the properties panel inside cards | Automatic |
+| [Edge commands](#commands) | Adds edges from the links in notes, shortens edge paths, deletes edges | Command palette, on selected cards |
+
 ## ✨New Feature✨
 
 ### Find in Canvas
 
-Press **Cmd+F** (Ctrl+F on Windows), the core *Search current file* hotkey, in a Canvas, or run **"Find in canvas"** from the command palette, and type a word or a `[[link]]`. Every card that contains the word, or links to that note, is outlined and the rest are dimmed; matched text is highlighted and the view zooms to fit the results. Select text in a card and right-click → **Find in canvas** to search for it directly. Click an empty spot on the Canvas to clear.
+Search the cards of a Canvas. Matching cards are outlined, the rest are dimmed, matched text is highlighted, and the view zooms to fit the results.
 
--   While editing a card, Cmd/Ctrl+F still searches that card. Change the key via *Search current file* in Settings → Hotkeys, or bind *Find in canvas* separately.
--   Type several words to find cards with all of them, `OR` (uppercase) for either one, and `"quotes"` for an exact phrase: `canvas plugin OR "find text"`. Selected text is searched as one phrase.
+**Start a search**
+
+-   Press **Cmd+F** (Ctrl+F on Windows) in a Canvas, or run **"Find in canvas"** from the command palette, and type a word or a `[[link]]`.
+-   Or select text in a card and right-click → **Find in canvas**. Selected text is searched as one phrase.
+-   Click an empty spot on the Canvas to clear.
+
+**Query syntax**
+
+| Query                | Finds cards with                 |
+| -------------------- | -------------------------------- |
+| `canvas plugin`      | both words                       |
+| `canvas OR plugin`   | either word (`OR` in uppercase)  |
+| `"find text"`        | the exact phrase                 |
+| `[[Note]]`           | a link to that note              |
+
+You can combine them: `canvas plugin OR "find text"`.
+
+**Good to know**
+
 -   Searches text cards, note cards (including their content), group labels, and web links.
+-   With *Search text in images and PDFs* on, image and PDF cards whose text matches are found too, and the matching text is boxed on images.
+-   While editing a card, Cmd/Ctrl+F still searches that card.
+-   Cmd/Ctrl+F is the core *Search current file* hotkey. Change it in Settings → Hotkeys, or bind *Find in canvas* separately.
 -   Node colors and the `.canvas` file are never changed.
 -   Change the highlight color with a CSS snippet: `body { --ec-find-color: <color>; }`
--   With *Search text in images and PDFs* on, image and PDF cards whose text matches are found too, and the matching text is boxed on images.
 
 ### Search Text in Images and PDFs
 
-Turn on *Search text in images and PDFs* in settings, and the plugin reads the text in every image in your vault with the system's built-in OCR, on-device: the Vision framework on macOS, `Windows.Media.Ocr` on Windows 10/11. It also indexes the text in your PDFs (their embedded text only: scanned PDFs without a text layer, and password-protected PDFs, are not searchable). Then:
+Search the text inside every image and PDF in your vault. Everything runs on your device: nothing is downloaded and nothing leaves your computer. Off by default.
 
--   Run **"Search text in images and PDFs"** (or click the ribbon icon) to search all images and PDFs. It uses the same syntax as Find in canvas (words, `OR`, `"phrase"`). Results are numbered, sorted by the number of matching lines, and the total count is shown on top. The first 50 are listed; **Show more** at the end of the list adds 50 more. The **All / Images / PDFs** buttons above the results show only one file type, each with its number of matches, and the button on their right switches to a compact list without thumbnails: the file name and its first matching line. They show the image with the matching text boxed and the notes that embed it; choose one to open that note at the image (a Canvas zooms to the image card). PDF results show the page number of each matching line; choose one to open the PDF at that page.
--   Run **"Rebuild image and PDF text index"** to read every image and PDF again, for example after a file couldn't be read. Files in *Settings → Files and links → Excluded files* are skipped.
+**Set up**
+
+Turn on *Search text in images and PDFs* in settings. The plugin then reads the text in your images with the system's built-in OCR, and indexes the embedded text of your PDFs.
+
+**Search**
+
+Run **"Search text in images and PDFs"** or click the ribbon icon. The query syntax is the same as [Find in Canvas](#find-in-canvas) (words, `OR`, `"phrase"`).
+
+-   Results are numbered and sorted by the number of matching lines. The total count is shown on top.
+-   The first 50 results are listed. **Show more** at the end of the list adds 50 more.
+-   The **All / Images / PDFs** buttons show only one file type, each with its number of matches.
+-   The button on their right switches to a compact list without thumbnails: the file name and its first matching line.
+-   Image results show the image with the matching text boxed, and the notes that embed it. Choose a note to open it at the image (a Canvas zooms to the image card).
+-   PDF results show the page number of each matching line. Choose one to open the PDF at that page.
+
+**Other places that use the index**
+
 -   **Find in canvas** also matches image and PDF cards by their text.
--   Turn on *Show image and PDF results in Search* to see matching images in core Search (search in all files) next to your notes, with the same query syntax as notes, and a thumbnail under each image's name. Add `-file:.md -file:.canvas` to the query to show only images and PDFs. The ribbon icon and command stay, for the boxed view.
+-   Turn on *Show image and PDF results in Search* to see matching images and PDFs in core Search (search in all files) next to your notes, with a thumbnail under each image's name. The query syntax is the same as for notes. Add `-file:.md -file:.canvas` to show only images and PDFs.
 
-The first run takes a few minutes for a large vault (about 0.3 s per image; a 2,700-page PDF takes about 11 s); after that only new or changed files are read. Large PDFs make the index big (tens of MB for a few hundred MB of PDFs); add folders you don't need searched to *Excluded files*. The index is stored in the plugin folder (the `ocr-index` folder), so no notes are added to your vault. A `"phrase"` can't span lines, so a PDF sentence that breaks at the end of a line isn't found as a phrase. On macOS the plugin runs the system's `osascript` to call the Vision framework; on Windows it runs the system's Windows PowerShell (`powershell.exe`) to call `Windows.Media.Ocr`. Nothing is downloaded and nothing leaves your computer. Off by default.
+**The index**
 
-On Windows, OCR reads one language: the first Chinese, Japanese or Korean language in *Settings → Time & language → Language* that has an OCR language pack installed (these also read English), else the first listed language with one (most languages install one with the language; if images can't be read, add the language's optical character recognition feature). Windows can't read HEIC or WebP images unless the matching codec from the Microsoft Store is installed.
+-   The first run takes a few minutes for a large vault: about 0.3 s per image, about 11 s for a 2,700-page PDF. After that, only new or changed files are read.
+-   Run **"Rebuild image and PDF text index"** to read every file again, for example after a file couldn't be read.
+-   Files in *Settings → Files and links → Excluded files* are skipped.
+-   The index is stored in the `ocr-index` folder inside the plugin folder. No notes are added to your vault.
+-   Large PDFs make the index big (tens of MB for a few hundred MB of PDFs). Add folders you don't need searched to *Excluded files*.
 
-Reading images needs a Mac or a Windows PC. On Linux, iPhone, iPad, or Android, turn on the same setting to search an index built on a computer and synced to the device (the `ocr-index` folder in the plugin folder). These devices don't read images themselves, and results show what that computer last read. Whether they can search depends on your sync tool syncing that `ocr-index` folder. Build the index on one computer only: two computers with this setting on overwrite each other's index.
+**Platforms**
+
+| Platform                     | What it does                                                                                 |
+| ---------------------------- | -------------------------------------------------------------------------------------------- |
+| macOS                        | Reads images with the Vision framework, called through the system's `osascript`              |
+| Windows 10/11                | Reads images with `Windows.Media.Ocr`, called through Windows PowerShell (`powershell.exe`)  |
+| Linux, iPhone, iPad, Android | Search only: uses an index built on a Mac or Windows PC and synced to the device             |
+
+-   **Search-only devices**: turn on the same setting. Results show what the computer last read. Your sync tool must sync the `ocr-index` folder in the plugin folder.
+-   **Build the index on one computer only.** Two computers with this setting on overwrite each other's index.
+
+**Limits**
+
+-   PDFs: only embedded text is searched. Scanned PDFs without a text layer and password-protected PDFs are not searchable.
+-   A `"phrase"` can't span lines, so a PDF sentence that breaks at the end of a line isn't found as a phrase.
+-   Windows OCR reads one language: the first Chinese, Japanese or Korean language in *Settings → Time & language → Language* that has an OCR language pack installed (these also read English). Otherwise it uses the first listed language that has one.
+-   Most Windows languages install an OCR pack with the language. If images can't be read, add the language's optical character recognition feature.
+-   Windows can't read HEIC or WebP images unless the matching codec from the Microsoft Store is installed.
 
 ### Split Node by Headings
 
