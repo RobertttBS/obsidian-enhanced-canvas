@@ -1,4 +1,4 @@
-import { EventRef, FileSystemAdapter, Notice, Platform, SuggestModal, TAbstractFile, TFile, setIcon } from 'obsidian';
+import { EventRef, FileSystemAdapter, Notice, Platform, SuggestModal, TAbstractFile, TFile, loadPdfJs, setIcon } from 'obsidian';
 import type { ChildProcess } from 'child_process';
 import { around } from 'monkey-around';
 
@@ -25,29 +25,15 @@ type OcrIndex = Record<string, { m: number; l: OcrLine[] }>;
 
 export const isImageFile = (f: TAbstractFile | null): f is TFile => f instanceof TFile && IMAGE_EXT.test(f.extension);
 /** Files in the index: images (OCR) and PDFs (their embedded text layer only; scanned pages stay unsearchable). */
-const isIndexedFile = (f: TAbstractFile | null): f is TFile => isImageFile(f) || (f instanceof TFile && f.extension.toLowerCase() === 'pdf');
+const isPdf = (f: TFile) => f.extension.toLowerCase() === 'pdf';
+const isIndexedFile = (f: TAbstractFile | null): f is TFile => isImageFile(f) || (f instanceof TFile && isPdf(f));
 
 // macOS's built-in JavaScript for Automation calls Vision.framework (runs on the Neural
-// Engine). Nothing to ship or install: osascript is on every Mac.
-// A PDF is read with PDFKit instead: its embedded text, no OCR, so a scanned PDF indexes as empty.
+// Engine). Nothing to ship or install: osascript is on every Mac. PDFs don't go through it: see readPdf.
 const OCR_SCRIPT = `ObjC.import('Vision');
-ObjC.import('PDFKit');
-function pdf(p) {
-  var doc = $.PDFDocument.alloc.initWithURL($.NSURL.fileURLWithPath(p));
-  if (doc.isNil()) return null; // unreadable
-  if (doc.isLocked) return []; // password-protected: no text to read, and retrying won't change that
-  var lines = [];
-  for (var i = 0; i < doc.pageCount; i++) {
-    var s = doc.pageAtIndex(i).string;
-    if (s.isNil()) continue;
-    s.js.split(/\\r\\n|\\r|\\n/).forEach(function (t) { t = t.trim(); if (t) lines.push([t, i + 1]); });
-  }
-  return lines;
-}
 function run(paths) {
   return JSON.stringify(paths.map(function (p) {
     try {
-      if (/\\.pdf$/i.test(p)) return pdf(p);
       var req = $.VNRecognizeTextRequest.alloc.init;
       req.recognitionLevel = 0; // accurate
       req.usesLanguageCorrection = true;
@@ -80,7 +66,7 @@ export class ImageTextSearch {
     private rescan = false;
     private gen = 0; // bumped by disable(), so a scan can tell its osascript was killed on purpose
     private failed = new Map<string, number>(); // path → mtime OCR couldn't read; retried once the file changes
-    private broken = false; // OCR itself failed: no scans until Rebuild, so each change doesn't burn a new batch
+    private broken = false; // image OCR itself failed: images are skipped until Rebuild, so each change doesn't burn a new batch
     private saving: Promise<void> = Promise.resolve();
     private saveQueued = false;
     private loadedAt: number[] = []; // per shard: mtime of the file last read or written
@@ -328,7 +314,6 @@ export class ImageTextSearch {
 
     /** OCR every image whose mtime changed since it was indexed; drop entries whose image is gone or excluded. */
     private async scan() {
-        if (this.broken) return;
         if (this.scanning) { this.rescan = true; return; }
         this.scanning = true;
         const { vault, metadataCache } = this.plugin.app;
@@ -343,7 +328,8 @@ export class ImageTextSearch {
                 if (gone.length) await this.save();
 
                 const todo = vault.getFiles().filter((f) => isIndexedFile(f) && !excluded(f.path)
-                    && this.index[f.path]?.m !== f.stat.mtime && this.failed.get(f.path) !== f.stat.mtime);
+                    && this.index[f.path]?.m !== f.stat.mtime && this.failed.get(f.path) !== f.stat.mtime
+                    && !(this.broken && !isPdf(f)));
                 const notice = todo.length > BATCH ? new Notice('', 0) : null;
                 let warned = false;
                 try {
@@ -352,29 +338,13 @@ export class ImageTextSearch {
                         const batch = todo.slice(i, i + BATCH);
                         // Taken before OCR: an image changed mid-run must still look stale afterwards.
                         const mtimes = batch.map((f) => f.stat.mtime);
-                        let lines: (OcrLine[] | null)[] | null = await this.ocr(batch);
-                        // One bad image fails the whole run: retry one by one so it can't block the rest.
-                        if (!lines && batch.length > 1) {
-                            lines = [];
-                            for (const f of batch) {
-                                if (gen !== this.gen) break;
-                                lines.push((await this.ocr([f]))?.[0] ?? null);
-                                // ponytail: the first 3 all failing alone = OCR is broken, not the images; saves up to ~18 min of retries.
-                                // Later failures in a row are not checked: each is retried and marked failed on its own.
-                                if (lines.length === 3 && lines.every((l) => !l)) break;
-                            }
-                        }
+                        const lines = await this.ocr(batch, gen);
                         if (gen !== this.gen) break; // disabled: osascript was killed, not a failure
 
-                        // Every image failing means OCR itself is broken: pause instead of marking them all failed.
-                        if (batch.length > 1 && batch.every((_, j) => !lines?.[j])) {
-                            this.broken = true;
-                            new Notice('Enhanced Canvas: macOS text recognition isn\'t working, so reading images is paused. Run "Rebuild image text index" to try again.', 0);
-                            break;
-                        }
                         let bad = 0;
                         batch.forEach((f, j) => {
-                            const l = lines?.[j];
+                            const l = lines[j];
+                            if (l === undefined) return; // an image skipped while OCR is broken
                             if (!l) { this.failed.set(f.path, mtimes[j]); bad++; console.warn('Enhanced Canvas OCR: could not read', f.path); }
                             // Skip a file deleted while it was being read.
                             else if (vault.getAbstractFileByPath(f.path) === f) this.put(f.path, { m: mtimes[j], l });
@@ -388,13 +358,83 @@ export class ImageTextSearch {
                 } finally {
                     notice?.hide();
                 }
-            } while (this.rescan && this.enabled && !this.broken);
+            } while (this.rescan && this.enabled);
         } finally {
             this.scanning = false;
         }
     }
 
-    private ocr(files: TFile[]): Promise<(OcrLine[] | null)[] | null> {
+    /**
+     * Images through osascript, PDFs through pdf.js; in the order given. null = could not read that file;
+     * undefined = an image skipped because OCR is broken, or anything after `gen` changed.
+     */
+    private async ocr(files: TFile[], gen: number): Promise<(OcrLine[] | null | undefined)[]> {
+        const images = this.broken ? [] : files.filter((f) => !isPdf(f));
+        let read = images.length ? await this.ocrImages(images) : [];
+        // One bad image fails the whole run: retry one by one so it can't block the rest.
+        if (!read && images.length > 1) {
+            read = [];
+            for (const f of images) {
+                if (gen !== this.gen) return [];
+                read.push((await this.ocrImages([f]))?.[0] ?? null);
+                // ponytail: the first 3 all failing alone = OCR is broken, not the images; saves up to ~18 min of retries.
+                // Later failures in a row are not checked: each is retried and marked failed on its own.
+                if (read.length === 3 && read.every((l) => !l)) break;
+            }
+        }
+        if (gen !== this.gen) return [];
+        // Every image failing means OCR itself is broken: pause images instead of marking them all failed. PDFs go on.
+        if (images.length > 1 && images.every((_, j) => !read?.[j])) {
+            this.broken = true;
+            new Notice('Enhanced Canvas: macOS text recognition isn\'t working, so reading images is paused. Run "Rebuild image text index" to try again.', 0);
+        }
+        const out: (OcrLine[] | null | undefined)[] = [];
+        let k = 0;
+        for (const f of files) {
+            if (gen !== this.gen) break;
+            out.push(isPdf(f) ? await this.readPdf(f, gen) : this.broken ? undefined : read?.[k++] ?? null);
+        }
+        return out;
+    }
+
+    /**
+     * A PDF's embedded text with Obsidian's own pdf.js: no OCR, so a scanned PDF indexes as empty.
+     * Measured on 302 PDFs against macOS PDFKit (docs/design-ocr-index-per-device.md): same text, a bit faster.
+     */
+    private async readPdf(f: TFile, gen: number): Promise<OcrLine[] | null> {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let doc: any;
+        try {
+            const pdfjs = await loadPdfJs();
+            // Without the CMaps, CJK text in CID fonts (e.g. LaTeX output) comes out mostly empty. Same URL as Obsidian's PDF view.
+            doc = await pdfjs.getDocument({ data: await this.plugin.app.vault.readBinary(f), cMapUrl: '/lib/pdfjs/cmaps/', cMapPacked: true }).promise;
+            const lines: OcrLine[] = [];
+            for (let i = 1; i <= doc.numPages; i++) {
+                if (gen !== this.gen) return null; // disabled or rebuilding: the caller drops this batch
+                const page = await doc.getPage(i);
+                let cur = '';
+                const flush = () => {
+                    // Math fonts without a Unicode map give control characters for − · ×: unsearchable noise.
+                    // A tab separates words, so it becomes a space instead.
+                    // eslint-disable-next-line no-control-regex
+                    for (const t of cur.split(/\r\n|\r|\n/)) { const s = t.replace(/\t/g, ' ').replace(/[\u0000-\u001f\u007f]/g, '').trim(); if (s) lines.push([s, i]); }
+                    cur = '';
+                };
+                for (const it of (await page.getTextContent()).items) { cur += it.str ?? ''; if (it.hasEOL) flush(); }
+                flush();
+                page.cleanup();
+            }
+            return lines;
+        } catch (e) {
+            if (e?.name === 'PasswordException') return []; // no text to read, and retrying won't change that
+            console.error('Enhanced Canvas OCR: reading the PDF failed', f.path, e);
+            return null;
+        } finally {
+            void doc?.destroy();
+        }
+    }
+
+    private ocrImages(files: TFile[]): Promise<(OcrLine[] | null)[] | null> {
         const adapter = this.plugin.app.vault.adapter;
         if (!(adapter instanceof FileSystemAdapter)) return Promise.resolve(null);
         // Required lazily: child_process doesn't exist on mobile, where this never runs.
@@ -403,8 +443,8 @@ export class ImageTextSearch {
         const gen = this.gen;
         return new Promise((resolve) => {
             const proc = this.proc = spawn('osascript', ['-l', 'JavaScript', '-e', OCR_SCRIPT, ...files.map((f) => adapter.getFullPath(f.path))],
-                // A hung osascript must not stall indexing forever. Must be an integer: spawn throws on a fraction. Size term: a 19 MB, 2,720-page PDF reads in ~11 s on an M4.
-                { timeout: 20_000 + 2_000 * files.length + Math.round(files.reduce((t, f) => t + f.stat.size, 0) / 500) });
+                // A hung osascript must not stall indexing forever.
+                { timeout: 20_000 + 2_000 * files.length });
             let out = '', err = '';
             // Decode as one stream: a CJK character split across two chunks would otherwise be garbled.
             proc.stdout?.setEncoding('utf8');

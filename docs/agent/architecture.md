@@ -114,10 +114,14 @@ safe.
   shard files whose mtime changed. OCRs every
   vault image by spawning the system `osascript -l JavaScript` with an inline JXA script
   that calls Vision.framework — no binary ships. `child_process` is `require`d inside
-  `ocr()` only, so mobile never loads it (keep it that way: a top-level import breaks
-  mobile). PDFs are indexed too, by the same script with PDFKit: only their embedded text
-  layer (no OCR, so scanned pages stay empty; a password-protected PDF indexes as `[]`),
-  one line per text line as `[text, page]` (1-based) instead of a box. Index
+  `ocrImages()` only, so mobile never loads it (keep it that way: a top-level import breaks
+  mobile). PDFs are indexed too, in-process by `readPdf()` with Obsidian's pdf.js
+  (`loadPdfJs()`): only their embedded text layer (no OCR, so scanned pages stay empty; a
+  password-protected PDF indexes as `[]`), one line per text line (`hasEOL`) as `[text, page]`
+  (1-based) instead of a box, control characters stripped. `getDocument` must get
+  `cMapUrl: '/lib/pdfjs/cmaps/', cMapPacked: true` (Obsidian's own PDF view uses it): without
+  it CJK text in CID fonts comes out nearly empty. pdf.js replaced macOS PDFKit after a
+  302-PDF comparison (`docs/design-ocr-index-per-device.md` §4). Index
   `{path: {m: mtime, l: [[text,x,y,w,h] | [text,page]]}}` lives in
   `<plugin dir>/ocr-index/00.json`…`3f.json`, never in `data.json` (it's ~100 MB): 64 shards, a path's
   shard is `shardOf(path)` (FNV-1a mod 64 — never change it), each file is that shard's part of the
@@ -128,11 +132,12 @@ safe.
   indexing Mac, `migrateLegacy` runs after the shards load, adds only paths the shards lack from an
   earlier build's single `ocr-index.json`, and deletes it only after every dirty shard is written. Rescans images whose
   mtime changed, 50 per osascript run; vault events keep it current. Each scan first
-  prunes entries whose image is gone. A failed run is retried one image at a time;
-  images that still fail go in the in-memory `failed` map with their mtime (skipped
-  until the file changes, never indexed as empty). If a whole batch fails (or the first 3
-  single retries), OCR itself is broken: `broken` pauses all scans until the
-  "Rebuild image text index" command, which also clears the index and `failed`. Images
+  prunes entries whose image is gone. A failed osascript run is retried one image at a time;
+  files that still fail (images, or PDFs `readPdf()` can't open) go in the in-memory `failed`
+  map with their mtime (skipped until the file changes, never indexed as empty). If every
+  image of a batch fails (or the first 3 single retries), OCR itself is broken: `broken`
+  skips images (PDFs keep indexing) until the "Rebuild image text index" command, which
+  also clears the index and `failed`. PDF failures never set `broken`. Images
   matched by Obsidian's *Excluded files* (`metadataCache.isUserIgnored`) are skipped and pruned. Index changes must go through `put()` and writes through `save()`, which serializes and
   coalesces them — never call `adapter.write` on the index directly, and never from a search-only device. `disable()` removes
   the command, ribbon and listeners and kills the process but keeps the index. Also owns
