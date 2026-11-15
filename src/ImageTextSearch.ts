@@ -506,9 +506,9 @@ export class ImageTextSearch {
         if (locked && this.enabled) {
             const n = this.lockedPdfs().length;
             if (!n) return;
-            new Notice(createFragment((el) => {
+            const notice = new Notice(createFragment((el) => {
                 el.appendText(`Enhanced Canvas: ${n} PDF${n === 1 ? ' is' : 's are'} password-protected, so ${n === 1 ? 'its' : 'their'} text isn't searchable yet. `);
-                el.createEl('a', { text: 'Unlock…', href: '#' }).addEventListener('click', (e) => { e.preventDefault(); this.openUnlock(); });
+                el.createEl('a', { text: 'Unlock…', href: '#' }).addEventListener('click', (e) => { e.preventDefault(); notice.hide(); this.openUnlock(); });
             }), 0);
         }
     }
