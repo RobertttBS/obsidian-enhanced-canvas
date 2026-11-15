@@ -2,10 +2,12 @@
 export const whatsNew = `
 ## What's new
 
-- **Search text in PDFs**: with *Search text in images and PDFs* (renamed from *Search text in images*) on, the text in your PDFs is indexed too. Results show the page number, and choosing one opens the PDF at that page. Scanned PDFs without a text layer aren't searchable yet.
-- **Filter by file type**: in *Search text in images and PDFs*, the *All*, *Images* and *PDFs* buttons show one file type at a time, each with its number of matches. The button on their right hides thumbnails for a compact list.
-- **Find in canvas**: search a word or a \`[[link]]\` to highlight every matching card, dim the rest, and zoom to fit. Press Cmd/Ctrl+F (the *Search current file* hotkey) in a Canvas, run *Find in canvas* from the command palette, or right-click selected text in a card. Click an empty spot to clear.
-- **Images in callouts**: in Live Preview you can now drag an image's corner to resize it inside a callout, and clicking the image no longer switches the callout to source.
+- **Search text in images**: turn on *Search text in images and PDFs* in settings and the text in every vault image is read on-device with the system's built-in OCR (macOS or Windows). Run *Search text in images and PDFs* from the command palette or the ribbon icon; matching text is boxed on the image. \`a b\` needs both words, \`a OR b\` either, \`"a b"\` the exact phrase. Off by default; the first run takes a few minutes.
+- **Search text in PDFs**: the same setting indexes the text in your PDFs too. Results show the page number, and choosing one opens the PDF at that page. Scanned PDFs without a text layer aren't searchable yet.
+- **Filter by file type**: the *All*, *Images* and *PDFs* buttons show one file type at a time, each with its number of matches. The button on their right hides thumbnails for a compact list.
+- **Image and PDF cards in Find in canvas**: *Find in canvas* now matches the text inside image and PDF cards.
+- **Results in core Search**: *Show image and PDF results in Search* lists matching images and PDFs in Obsidian's Search next to your notes.
+- **Linux and mobile**: these devices can't read images themselves, but with the setting on they search the index synced from your Mac or Windows PC.
 `;
 
 // Shown on first install and after every update. Add an entry when a feature ships.
