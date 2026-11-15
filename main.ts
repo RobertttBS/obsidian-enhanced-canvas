@@ -1577,12 +1577,12 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 					},
 				],
 			},
-			// OCR runs only on macOS (system Vision framework); other devices search the synced index.
+			// OCR runs only on macOS (Vision) and Windows (Windows.Media.Ocr); other devices search the synced index.
 			{
-				name: 'Search text in images (macOS)',
+				name: 'Search text in images',
 				desc: ImageTextSearch.canIndex
-					? 'Reads the text in every vault image with macOS\'s built-in OCR, and the embedded text of every PDF (runs the system osascript, on-device). Adds a "Search text in images" command and lets Find in canvas match image cards. The index is stored in the plugin folder; no notes are created. The first run takes a few minutes for large vaults.'
-					: 'Searches the image text index built on a Mac and synced to this device (plugin folder, ocr-index folder). This device doesn\'t read images or PDFs itself. Adds a "Search text in images" command and lets Find in canvas match image cards.',
+					? 'Reads the text in every vault image with the system\'s built-in OCR (macOS: Vision through osascript; Windows: Windows.Media.Ocr through PowerShell, needs an OCR language installed), on-device, and the embedded text of every PDF. Adds a "Search text in images" command and lets Find in canvas match image cards. The index is stored in the plugin folder; no notes are created. The first run takes a few minutes for large vaults.'
+					: 'Searches the image text index built on a Mac or Windows PC and synced to this device (plugin folder, ocr-index folder). This device doesn\'t read images or PDFs itself. Adds a "Search text in images" command and lets Find in canvas match image cards.',
 				render: this.bindImageTextToggle,
 			},
 			{

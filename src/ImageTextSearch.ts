@@ -7,7 +7,7 @@ import type { CanvasView } from '../Canvas';
 import { matchesTextQuery, normalizeText, parseTextQuery, queryTerms } from './utils';
 
 const IMAGE_EXT = /^(png|jpe?g|heic|webp|gif|tiff?|bmp)$/i;
-const BATCH = 50; // files per osascript run; keeps argv short and saves progress often
+const BATCH = 50; // files per OCR process run; keeps argv short and saves progress often
 const LIMIT = 50; // results shown in the modal
 const COMMAND_ID = 'search-image-text';
 const REBUILD_ID = 'rebuild-image-text-index';
@@ -51,8 +51,49 @@ function run(paths) {
   }));
 }`;
 
+// Windows 10/11: Windows.Media.Ocr through Windows PowerShell 5.1 (powershell.exe, on every install;
+// PowerShell 7 can't load WinRT types). Reads the paths as JSON on stdin, writes the same JSON shape as
+// OCR_SCRIPT. Uses the first user-profile language that has an OCR language pack; none → exit 2 (sets `broken`).
+// JSON is written by hand: ConvertTo-Json in 5.1 can wrap arrays in {"value":…,"Count":…}.
+const WIN_OCR_SCRIPT = `$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation\`1' } | Select-Object -First 1
+function Await($op, [Type]$t) { $task = $asTask.MakeGenericMethod($t).Invoke($null, @($op)); [void]$task.Wait(-1); $task.Result }
+$null = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]
+$null = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics, ContentType = WindowsRuntime]
+$null = [Windows.Graphics.Imaging.SoftwareBitmap, Windows.Graphics, ContentType = WindowsRuntime]
+$engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+if ($null -eq $engine) { [Console]::Error.Write('No OCR language installed (Settings > Time & language > Language).'); exit 2 }
+$max = [Windows.Media.Ocr.OcrEngine]::MaxImageDimension
+$inv = [Globalization.CultureInfo]::InvariantCulture
+function N($v) { ([double]$v).ToString('R', $inv) }
+$out = foreach ($p in @(ConvertFrom-Json ([Console]::In.ReadToEnd()))) {
+  $fs = $null; $b = $null
+  try {
+    $fs = [IO.File]::OpenRead($p)
+    $d = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync([IO.WindowsRuntimeStreamExtensions]::AsRandomAccessStream($fs))) ([Windows.Graphics.Imaging.BitmapDecoder])
+    $k = [Math]::Min(1.0, $max / [Math]::Max($d.PixelWidth, $d.PixelHeight)) # larger images are rejected
+    $tr = New-Object Windows.Graphics.Imaging.BitmapTransform
+    $tr.ScaledWidth = [uint32][Math]::Max(1, [Math]::Floor($d.PixelWidth * $k))
+    $tr.ScaledHeight = [uint32][Math]::Max(1, [Math]::Floor($d.PixelHeight * $k))
+    $b = Await ($d.GetSoftwareBitmapAsync([Windows.Graphics.Imaging.BitmapPixelFormat]::Bgra8, [Windows.Graphics.Imaging.BitmapAlphaMode]::Premultiplied, $tr, [Windows.Graphics.Imaging.ExifOrientationMode]::RespectExifOrientation, [Windows.Graphics.Imaging.ColorManagementMode]::DoNotColorManage)) ([Windows.Graphics.Imaging.SoftwareBitmap])
+    $r = Await ($engine.RecognizeAsync($b)) ([Windows.Media.Ocr.OcrResult])
+    $W = $b.PixelWidth; $H = $b.PixelHeight
+    $ls = foreach ($l in $r.Lines) {
+      $x0 = [double]::MaxValue; $y0 = [double]::MaxValue; $x1 = 0.0; $y1 = 0.0
+      foreach ($w in $l.Words) { $q = $w.BoundingRect; $x0 = [Math]::Min($x0, $q.X); $y0 = [Math]::Min($y0, $q.Y); $x1 = [Math]::Max($x1, $q.X + $q.Width); $y1 = [Math]::Max($y1, $q.Y + $q.Height) }
+      '[' + (ConvertTo-Json ([string]$l.Text)) + ',' + (N ($x0 / $W)) + ',' + (N ($y0 / $H)) + ',' + (N (($x1 - $x0) / $W)) + ',' + (N (($y1 - $y0) / $H)) + ']'
+    }
+    '[' + ($ls -join ',') + ']'
+  } catch { 'null' } finally { if ($b) { $b.Dispose() }; if ($fs) { $fs.Dispose() } }
+}
+[Console]::Out.Write('[' + ($out -join ',') + ']')`;
+// Windows OCR puts a space between CJK characters; drop it so "中文" matches.
+const CJK_GAP = /(?<=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-〿＀-￯]) (?=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-〿＀-￯])/gu;
+
 /**
- * Optional: on macOS desktop, OCR every vault image into an index kept in the plugin
+ * Optional: on macOS or Windows desktop, OCR every vault image into an index kept in the plugin
  * folder (no notes are created); on every device, a vault-wide "Search text in images"
  * modal and image matches for Find in canvas. Other devices only read the synced index.
  */
@@ -64,7 +105,7 @@ export class ImageTextSearch {
     private proc: ChildProcess | null = null;
     private scanning = false;
     private rescan = false;
-    private gen = 0; // bumped by disable(), so a scan can tell its osascript was killed on purpose
+    private gen = 0; // bumped by disable(), so a scan can tell its OCR process was killed on purpose
     private failed = new Map<string, number>(); // path → mtime OCR couldn't read; retried once the file changes
     private broken = false; // image OCR itself failed: images are skipped until Rebuild, so each change doesn't burn a new batch
     private saving: Promise<void> = Promise.resolve();
@@ -74,8 +115,8 @@ export class ImageTextSearch {
 
     constructor(readonly plugin: EnhancedCanvas) {}
 
-    /** Only macOS desktop reads images; other devices search the index that sync brings over. */
-    static get canIndex() { return Platform.isMacOS && Platform.isDesktopApp; }
+    /** Only macOS and Windows desktop read images; other devices search the index that sync brings over. */
+    static get canIndex() { return (Platform.isMacOS || Platform.isWin) && Platform.isDesktopApp; }
 
     get isEnabled() { return this.enabled; }
 
@@ -184,7 +225,7 @@ export class ImageTextSearch {
         this.plugin.addCommand({ id: COMMAND_ID, name: 'Search text in images', callback: this.open });
         this.ribbon = this.plugin.addRibbonIcon('scan-text', 'Search text in images', this.open);
         this.setCoreSearch();
-        // Search-only devices never write the index: the indexing Mac owns the file.
+        // Search-only devices never write the index: the indexing computer owns the file.
         if (!ImageTextSearch.canIndex) return;
         this.plugin.addCommand({ id: REBUILD_ID, name: 'Rebuild image text index', callback: () => void this.rebuild() });
 
@@ -339,7 +380,7 @@ export class ImageTextSearch {
                         // Taken before OCR: an image changed mid-run must still look stale afterwards.
                         const mtimes = batch.map((f) => f.stat.mtime);
                         const lines = await this.ocr(batch, gen);
-                        if (gen !== this.gen) break; // disabled: osascript was killed, not a failure
+                        if (gen !== this.gen) break; // disabled: the OCR process was killed, not a failure
 
                         let bad = 0;
                         batch.forEach((f, j) => {
@@ -365,17 +406,18 @@ export class ImageTextSearch {
     }
 
     /**
-     * Images through osascript, PDFs through pdf.js; in the order given. null = could not read that file;
+     * Images through osascript (macOS) or PowerShell (Windows), PDFs through pdf.js; in the order given. null = could not read that file;
      * undefined = an image skipped because OCR is broken, or anything after `gen` changed.
      */
     private async ocr(files: TFile[], gen: number): Promise<(OcrLine[] | null | undefined)[]> {
         const images = this.broken ? [] : files.filter((f) => !isPdf(f));
         let read = images.length ? await this.ocrImages(images) : [];
         // One bad image fails the whole run: retry one by one so it can't block the rest.
-        if (!read && images.length > 1) {
+        if (!read && images.length > 1 && !this.broken) {
             read = [];
             for (const f of images) {
                 if (gen !== this.gen) return [];
+                if (this.broken) break;
                 read.push((await this.ocrImages([f]))?.[0] ?? null);
                 // ponytail: the first 3 all failing alone = OCR is broken, not the images; saves up to ~18 min of retries.
                 // Later failures in a row are not checked: each is retried and marked failed on its own.
@@ -384,9 +426,10 @@ export class ImageTextSearch {
         }
         if (gen !== this.gen) return [];
         // Every image failing means OCR itself is broken: pause images instead of marking them all failed. PDFs go on.
-        if (images.length > 1 && images.every((_, j) => !read?.[j])) {
-            this.broken = true;
-            new Notice('Enhanced Canvas: macOS text recognition isn\'t working, so reading images is paused. Run "Rebuild image text index" to try again.', 0);
+        // ocrImages() also sets broken when Windows has no OCR language, even for a single image.
+        if (images.length > 1 && images.every((_, j) => !read?.[j])) this.broken = true;
+        if (images.length && this.broken) {
+            new Notice(`Enhanced Canvas: text recognition isn't working, so reading images is paused.${Platform.isWin ? ' Check that an OCR language is installed (Settings → Time & language → Language).' : ''} Run "Rebuild image text index" to try again.`, 0);
         }
         const out: (OcrLine[] | null | undefined)[] = [];
         let k = 0;
@@ -441,10 +484,16 @@ export class ImageTextSearch {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { spawn } = require('child_process') as typeof import('child_process');
         const gen = this.gen;
+        const paths = files.map((f) => adapter.getFullPath(f.path));
+        // A hung process must not stall indexing forever.
+        const timeout = 20_000 + 2_000 * files.length;
         return new Promise((resolve) => {
-            const proc = this.proc = spawn('osascript', ['-l', 'JavaScript', '-e', OCR_SCRIPT, ...files.map((f) => adapter.getFullPath(f.path))],
-                // A hung osascript must not stall indexing forever.
-                { timeout: 20_000 + 2_000 * files.length });
+            const proc = this.proc = Platform.isWin
+                ? spawn('powershell.exe', ['-NoProfile', '-NonInteractive',
+                    '-EncodedCommand', Buffer.from(WIN_OCR_SCRIPT, 'utf16le').toString('base64')], { timeout, windowsHide: true })
+                : spawn('osascript', ['-l', 'JavaScript', '-e', OCR_SCRIPT, ...paths], { timeout });
+            // ASCII-only JSON (\uXXXX escapes), so the console code page can't garble a path.
+            if (Platform.isWin) proc.stdin?.end(JSON.stringify(paths).replace(/[\u0080-￿]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`));
             let out = '', err = '';
             // Decode as one stream: a CJK character split across two chunks would otherwise be garbled.
             proc.stdout?.setEncoding('utf8');
@@ -455,8 +504,11 @@ export class ImageTextSearch {
             proc.on('close', (code) => {
                 if (this.proc === proc) this.proc = null;
                 try {
-                    if (code !== 0) throw new Error(err || `osascript exited with ${code}`);
-                    resolve(JSON.parse(out));
+                    if (code === 2 && Platform.isWin) this.broken = true; // no OCR language: every image would fail
+                    if (code !== 0) throw new Error(err || `OCR process exited with ${code}`);
+                    const read: (OcrLine[] | null)[] = JSON.parse(out);
+                    if (Platform.isWin) for (const l of read) l?.forEach((x) => (x[0] = x[0].replace(CJK_GAP, '')));
+                    resolve(read);
                 } catch (e) {
                     if (gen === this.gen) console.error('Enhanced Canvas OCR:', e); // else killed by disable()
                     resolve(null);

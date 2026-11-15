@@ -1,6 +1,6 @@
 # 設計決策：圖片與 PDF 文字 index 改為每台裝置自己建立
 
-狀態：第 1 步進行中（PDF 改用 pdf.js 已完成，Windows 圖片 OCR 未開始）。基準 commit：`bbe6964`（64-shard，只考慮單台 Mac 寫入）。
+狀態：第 1 步進行中（PDF 改用 pdf.js 已完成；Windows 圖片 OCR 程式碼已完成，未在 Windows 上驗證）。基準 commit：`bbe6964`（64-shard，只考慮單台 Mac 寫入）。
 決策日期：2026-11-15。
 
 ## 1. 起因
@@ -51,6 +51,13 @@
 - 已決定（2026-11-15）：macOS 的 PDF 也改用 pdf.js（`readPdf()`），PDFKit 程式碼已刪除。實測結果見 4.1、4.2。
   - 已驗證：在 Obsidian 內（`Robert_OB`，唯讀）用 `cMapUrl: '/lib/pdfjs/cmaps/'` 讀 826 頁的中文 PDF，抽出 577,091 字（其中中文 199,944 字），與 Node 結果相同。不傳 `cMapUrl` 時，中文只剩 3,300 字。
   - 未驗證：plugin reload 後的完整掃描流程；最大 PDF 在 Obsidian 內的記憶體用量。
+- Windows 圖片 OCR（2026-11-15 實作，未驗證）：
+  - `powershell.exe -EncodedCommand` 執行 `WIN_OCR_SCRIPT`。必須用 Windows PowerShell 5.1，PowerShell 7 不能載入 WinRT 型別。
+  - 路徑以 JSON 從 stdin 傳入，非 ASCII 字元先轉成 `\uXXXX`。輸出格式與 macOS 相同。
+  - 語言：`TryCreateFromUserProfileLanguages()`，只用第一個有 OCR 語言包的使用者語言。沒有語言包時 exit 2，`ocrImages()` 直接設定 `broken`，單張圖片也會觸發。
+  - 圖片超過 `OcrEngine.MaxImageDimension` 時先等比縮小。
+  - Windows OCR 在中日文字元之間插入空白。存入前用 `CJK_GAP` 移除。
+  - Windows 實測項目：中文辨識品質；EXIF 旋轉的照片框線位置；HEIC、WebP 沒有 codec 時進入 `failed`；50 張一批的時間。
 
 ### 4.1 PDFKit 與 pdf.js 實測（2026-11-15）
 

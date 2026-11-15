@@ -108,12 +108,16 @@ safe.
   feature is off) are matched as one text; image matches are the one DOM edit: `.ec-ocr-box` divs appended to the
   node's `.image-embed`, drawn once per mount (so the observer doesn't loop), removed on clear.
 - `ImageTextSearch.ts` — optional, setting `enableImageTextSearch` (default off). Indexing is
-  macOS desktop only (`ImageTextSearch.canIndex`); every other device is search-only: it
+  macOS and Windows desktop only (`ImageTextSearch.canIndex`); every other device is search-only: it
   reads the synced index, never writes it, registers no Rebuild command, vault events or scan,
   and `refresh()` (run before the modal opens and before Find in canvas matches) re-reads the
   shard files whose mtime changed. OCRs every
   vault image by spawning the system `osascript -l JavaScript` with an inline JXA script
-  that calls Vision.framework — no binary ships. `child_process` is `require`d inside
+  that calls Vision.framework (macOS), or `powershell.exe -EncodedCommand` (Windows PowerShell 5.1;
+  PowerShell 7 can't load WinRT) with `WIN_OCR_SCRIPT` calling `Windows.Media.Ocr`: paths go in
+  as ASCII-escaped JSON on stdin, the same JSON shape comes out, and `CJK_GAP` removes the space
+  Windows puts between CJK characters. Windows uses the first user-profile language with an OCR
+  pack; none → exit 2 → `ocrImages()` sets `broken` (even for one image). No binary ships. `child_process` is `require`d inside
   `ocrImages()` only, so mobile never loads it (keep it that way: a top-level import breaks
   mobile). PDFs are indexed too, in-process by `readPdf()` with Obsidian's pdf.js
   (`loadPdfJs()`): only their embedded text layer (no OCR, so scanned pages stay empty; a
@@ -129,10 +133,10 @@ safe.
   marks the entry's shard in `dirty`; `save()` rewrites only dirty shards (an empty one as `{}`,
   never deleted) and puts them back in `dirty` if a write fails. `load()` reads only shards whose
   mtime changed and are not dirty (unsaved local entries win), and applies them in one step. On the
-  indexing Mac, `migrateLegacy` runs after the shards load, adds only paths the shards lack from an
+  indexing computer, `migrateLegacy` runs after the shards load, adds only paths the shards lack from an
   earlier build's single `ocr-index.json`, and deletes it only after every dirty shard is written. Rescans images whose
-  mtime changed, 50 per osascript run; vault events keep it current. Each scan first
-  prunes entries whose image is gone. A failed osascript run is retried one image at a time;
+  mtime changed, 50 per OCR process run; vault events keep it current. Each scan first
+  prunes entries whose image is gone. A failed OCR process run is retried one image at a time;
   files that still fail (images, or PDFs `readPdf()` can't open) go in the in-memory `failed`
   map with their mtime (skipped until the file changes, never indexed as empty). If every
   image of a batch fails (or the first 3 single retries), OCR itself is broken: `broken`

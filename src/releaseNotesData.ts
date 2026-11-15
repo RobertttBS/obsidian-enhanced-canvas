@@ -35,12 +35,12 @@ Search words or a \`[[link]]\` across the Canvas: \`a b\` needs both words, \`a 
 - **Clear:** click an empty spot on the Canvas, or run *Clear find highlights*.
 - **Hotkey:** whatever *Search current file* uses (Cmd/Ctrl+F by default); while editing a card it still searches that card. Or bind *Find in canvas* in Settings → Hotkeys.
 
-### Search text in images (macOS)
-Reads the text in every vault image with macOS's built-in OCR, on-device, and the embedded text of every PDF. Search all images and PDFs, or let Find in canvas match image and PDF cards; matching text is boxed on the image, and a PDF result opens at its page.
+### Search text in images
+Reads the text in every vault image with the system's built-in OCR (macOS or Windows), on-device, and the embedded text of every PDF. Search all images and PDFs, or let Find in canvas match image and PDF cards; matching text is boxed on the image, and a PDF result opens at its page.
 - **Where:** command *Search text in images* or the ribbon icon; *Find in canvas* for image cards. Same search syntax as Find in canvas; results are numbered, with the total count on top.
 - **Rebuild:** command *Rebuild image text index* reads every image again. Images in *Excluded files* are skipped.
-- **Settings:** *Search text in images (macOS)* (off by default; the first run takes a few minutes). *Show image results in Search* puts matching images, with thumbnails, in core Search next to your notes (add \`-file:.md -file:.canvas\` for images only); the ribbon icon stays.
-- **Other devices:** reading images needs a Mac; on Windows, Linux, and mobile the same setting searches the index synced from your Mac.
+- **Settings:** *Search text in images* (off by default; the first run takes a few minutes). *Show image results in Search* puts matching images, with thumbnails, in core Search next to your notes (add \`-file:.md -file:.canvas\` for images only); the ribbon icon stays.
+- **Other devices:** reading images needs a Mac or a Windows PC (Windows needs an OCR language installed); on Linux and mobile the same setting searches the index synced from that computer.
 
 ### Send to Canvas
 Add the current note to a Canvas of your choice. That Canvas is remembered, so later notes can go straight to it.
