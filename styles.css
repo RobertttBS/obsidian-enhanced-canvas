@@ -88,6 +88,92 @@ body {
     pointer-events: none;
 }
 
+/* All / Images / PDFs filter in the search modal: plain text tabs, the active one underlined in the accent color. */
+.ec-ocr-filter {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+    padding: var(--size-4-1) var(--size-4-3) 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.ec-ocr-segment {
+    display: inline-flex;
+    gap: var(--size-4-4);
+}
+
+.ec-ocr-segment .ec-ocr-filter-button {
+    height: auto;
+    padding: var(--size-4-1) 0;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    box-shadow: none;
+    background-color: transparent;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    font-variant-numeric: tabular-nums;
+    cursor: var(--cursor);
+}
+
+.ec-ocr-segment .ec-ocr-filter-button:hover {
+    background-color: transparent;
+    color: var(--text-normal);
+}
+
+.ec-ocr-segment .ec-ocr-filter-button.is-active {
+    border-bottom-color: var(--interactive-accent);
+    color: var(--text-normal);
+    font-weight: var(--font-semibold);
+}
+
+.ec-ocr-filter-count {
+    margin-left: var(--size-4-1);
+    color: var(--text-faint);
+}
+
+.ec-ocr-filter-count:empty {
+    display: none;
+}
+
+.ec-ocr-compact-toggle {
+    margin-left: auto;
+}
+
+/* Compact view (toggle on the filter row): no thumbnail, a file-type icon, one match line, no backlinks. */
+.ec-ocr-kind-icon {
+    display: none;
+}
+
+.ec-ocr-compact .ec-ocr-thumb,
+.ec-ocr-compact .ec-ocr-notes,
+.ec-ocr-compact .ec-ocr-line ~ .ec-ocr-line {
+    display: none;
+}
+
+.ec-ocr-compact .ec-ocr-meta {
+    flex: 1;
+    min-width: 0; /* lets the match line shrink to its ellipsis */
+}
+
+.ec-ocr-compact .ec-ocr-kind-icon {
+    display: inline-flex;
+    vertical-align: middle;
+    margin-right: var(--size-4-1);
+    color: var(--text-muted);
+}
+
+.ec-ocr-compact .ec-ocr-kind-icon .svg-icon {
+    width: 16px;
+    height: 16px;
+}
+
+.ec-ocr-compact .ec-ocr-line {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .ec-ocr-count {
     padding: var(--size-4-1) var(--size-4-3);
     color: var(--text-muted);
@@ -164,4 +250,11 @@ body {
 .ec-ocr-notes {
     margin-top: var(--size-4-1);
     color: var(--text-faint);
+}
+
+/* "Show more" row at the end of a cut result list. */
+.suggestion-item.ec-ocr-more {
+    color: var(--text-accent);
+    font-size: var(--font-ui-small);
+    text-align: center;
 }

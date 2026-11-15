@@ -155,7 +155,14 @@ safe.
   coalesces them — never call `adapter.write` on the index directly, and never from a search-only device. `disable()` removes
   the command, ribbon and listeners and kills the process but keeps the index. Also owns
   the vault-wide "Search text in images and PDFs" `SuggestModal`: same query syntax, scans the whole
-  index for the total, sorts by matching lines, shows 50 numbered results; a canvas backlink
+  index for the total, sorts by matching lines, numbers them all. The modal caches that list per
+  query + kind (rescanned on every redraw while `isIndexing`; rows tolerate a file deleted since) and shows `PAGE` = 50; a last "Show more" row (overridden `selectSuggestion`, so it
+  doesn't close) adds 50 by redrawing the list, then restores the scroll and selects the first new
+  row via the private `chooser.setSelectedItem`. An All / Images / PDFs
+  filter (reset to All on every open) is applied inside `search()` before paging, and each
+  button shows that kind's match count; the row (filter + toggle) is hidden while the query is empty. A compact toggle (not remembered) is CSS only: the
+  `ec-ocr-compact` class on the modal hides thumbnails and backlinks and keeps one match line,
+  with a file-type icon before the name; a canvas backlink
   opens zoomed to the image card, a PDF opens at its first matching page (`#page=N`).
   `drawOcrBoxes` skips PDF lines; PDFs get a file icon instead of a thumbnail.
   Ceiling: one entry is never split, so a single PDF whose entry exceeds 100 MiB (about 45,000

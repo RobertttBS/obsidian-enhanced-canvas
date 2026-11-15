@@ -10,7 +10,7 @@ const IMAGE_EXT = /^(png|jpe?g|heic|webp|gif|tiff?|bmp)$/i;
 const BATCH = 50; // files per OCR process run; keeps argv short and saves progress often
 const PDF_BATCH = 5; // at most this many PDFs per batch: a large one takes seconds, and progress is saved per batch
 const DEVICE_KEY = 'enhanced-canvas-ocr-device'; // localStorage (per vault, per device): `failed` and `readImage`
-const LIMIT = 50; // results shown in the modal
+const PAGE = 50; // results the modal shows at first, and adds per "Show more"
 const COMMAND_ID = 'search-image-text';
 const REBUILD_ID = 'rebuild-image-text-index';
 const SHARDS = 64; // index files; a save rewrites only the shards that changed
@@ -653,24 +653,32 @@ export class ImageTextSearch {
         return this.enabled && l ? { lines: l, norm: this.norm(l) } : null;
     }
 
-    /** Images matching the query (parseTextQuery syntax), most matching lines first. */
-    search(input: string) {
+    /**
+     * Every match of `input` (parseTextQuery syntax) among files of `kind`, most matching lines
+     * first and numbered; `counts` holds every kind's match count. The modal pages through them.
+     */
+    search(input: string, kind: FileKind = 'all') {
         const query = parseTextQuery(input), terms = queryTerms(query);
         const { vault } = this.plugin.app;
         const results: { path: string; hits: OcrLine[]; terms: string[]; n: number }[] = [];
-        if (!terms.length) return { results, total: 0 };
+        const counts: Record<FileKind, number> = { all: 0, image: 0, pdf: 0 };
+        if (!terms.length) return { results, counts };
         // ponytail: linear scan of the whole index for the total; fine for a few thousand images.
         for (const [path, { l }] of Object.entries(this.index)) {
             const norm = this.norm(l);
             // Per line, so a phrase can't span OCR lines: every match then has a line to box.
             if (!matchesTextQuery(query, (t) => norm.some((n) => n.includes(t)))) continue;
-            if (!isIndexedFile(vault.getAbstractFileByPath(path))) continue; // deleted, entry not pruned yet
+            const file = vault.getAbstractFileByPath(path);
+            if (!isIndexedFile(file)) continue; // deleted, entry not pruned yet
+            const fileKind = isImageFile(file) ? 'image' : 'pdf';
+            counts.all++;
+            counts[fileKind]++;
+            if (kind !== 'all' && kind !== fileKind) continue;
             results.push({ path, terms, n: 0, hits: l.filter((_, i) => terms.some((t) => norm[i].includes(t))) });
         }
         results.sort((a, b) => b.hits.length - a.hits.length);
-        const shown = results.slice(0, LIMIT);
-        shown.forEach((r, i) => (r.n = i + 1));
-        return { results: shown, total: results.length };
+        results.forEach((r, i) => (r.n = i + 1));
+        return { results, counts };
     }
 
     /** Indexed image path → notes that embed or link it. Walks every link once: build per modal, not per result. */
@@ -707,41 +715,121 @@ export function drawOcrBoxes(container: HTMLElement, lines: OcrLine[]) {
 }
 
 type ImageTextResult = ReturnType<ImageTextSearch['search']>['results'][number];
+type FileKind = 'all' | 'image' | 'pdf';
+const KIND_LABELS: Record<FileKind, string> = { all: 'All', image: 'Images', pdf: 'PDFs' };
 
-class ImageTextModal extends SuggestModal<ImageTextResult> {
+/** Last row when results are cut: choosing it shows the next PAGE in place. */
+type ShowMore = { more: number };
+type ModalRow = ImageTextResult | ShowMore;
+const isShowMore = (r: ModalRow): r is ShowMore => 'more' in r;
+
+class ImageTextModal extends SuggestModal<ModalRow> {
     private backlinks: Map<string, string[]>;
     private countEl: HTMLElement;
+    private filterEl: HTMLElement; // hidden until there's a query: no results, nothing to filter
+    private kind: FileKind = 'all'; // every open starts at All, so a forgotten filter never hides results
+    private kindButtons = new Map<FileKind, { button: HTMLButtonElement; count: HTMLElement }>();
+    // Paging: the full result list is kept per query + kind, so "Show more" doesn't rescan the index.
+    private cache?: { key: string } & ReturnType<ImageTextSearch['search']>;
+    private shown = PAGE;
 
     constructor(private search: ImageTextSearch) {
         super(search.plugin.app);
         this.backlinks = search.backlinks();
         this.setPlaceholder('Search text inside images and PDFs: words, OR, "exact phrase"');
-        this.limit = LIMIT;
-        this.countEl = this.modalEl.createDiv('ec-ocr-count'); // modal's own document (pop-out windows)
-        this.resultContainerEl.before(this.countEl);
+        // modal's own document (pop-out windows)
+        const filterEl = this.filterEl = this.modalEl.createDiv('ec-ocr-filter');
+        const segmentEl = filterEl.createDiv('ec-ocr-segment');
+        for (const kind of Object.keys(KIND_LABELS) as FileKind[]) {
+            const button = segmentEl.createEl('button', { cls: 'ec-ocr-filter-button', text: KIND_LABELS[kind] });
+            const count = button.createSpan('ec-ocr-filter-count');
+            button.toggleClass('is-active', kind === this.kind);
+            // Keep focus in the input: mousedown would otherwise take it before click.
+            button.addEventListener('mousedown', (e) => e.preventDefault());
+            button.addEventListener('click', () => this.setKind(kind));
+            this.kindButtons.set(kind, { button, count });
+        }
+        // Compact view: CSS hides thumbnails (lazy images then never load) and keeps one match line.
+        // Not remembered: a view toggle, one click away.
+        const compactButton = filterEl.createDiv('clickable-icon ec-ocr-compact-toggle');
+        const setCompact = (on: boolean) => {
+            this.modalEl.toggleClass('ec-ocr-compact', on);
+            setIcon(compactButton, on ? 'copy-plus' : 'copy-minus');
+            compactButton.setAttribute('aria-label', on ? 'Show thumbnails' : 'Hide thumbnails');
+        };
+        setCompact(false);
+        compactButton.addEventListener('mousedown', (e) => e.preventDefault());
+        compactButton.addEventListener('click', () => setCompact(!this.modalEl.hasClass('ec-ocr-compact')));
+        this.countEl = this.modalEl.createDiv('ec-ocr-count');
+        filterEl.hide();
+        this.resultContainerEl.before(filterEl, this.countEl);
     }
 
-    getSuggestions(query: string) {
-        const { results, total } = this.search.search(query);
-        const count = !query.trim() ? ''
-            : total > results.length ? `Showing ${results.length} of ${total} results` : `${total} result${total === 1 ? '' : 's'}`;
+    private setKind(kind: FileKind) {
+        this.kind = kind;
+        for (const [k, { button }] of this.kindButtons) button.toggleClass('is-active', k === kind);
+        // SuggestModal has no public refresh: an input event re-runs getSuggestions.
+        this.inputEl.dispatchEvent(new Event('input'));
+        this.inputEl.focus();
+    }
+
+    getSuggestions(query: string): ModalRow[] {
+        const key = `${this.kind}\n${query}`;
+        if (this.cache?.key !== key) this.shown = PAGE; // a new query or filter starts from the top again
+        // Reuse the list only once the index is complete; while it's still being read, rescan so
+        // "Show more" and switching back to a tab pick up the files read since.
+        if (this.cache?.key !== key || this.search.isIndexing) this.cache = { key, ...this.search.search(query, this.kind) };
+        const { results, counts } = this.cache, total = results.length;
+        const page: ModalRow[] = results.slice(0, this.shown);
+        if (total > this.shown) page.push({ more: total - this.shown });
+        this.limit = page.length; // SuggestModal cuts at `limit`
+        const hasQuery = !!query.trim();
+        this.filterEl.toggle(hasQuery);
+        for (const [k, { count }] of this.kindButtons) count.setText(hasQuery ? String(counts[k]) : '');
+        const count = !hasQuery ? ''
+            : total > this.shown ? `Showing ${this.shown} of ${total} results; add words or pick a type to narrow them`
+            : `${total} result${total === 1 ? '' : 's'}`;
         // Before the index is complete, "no results" may just mean "not read yet".
         const indexing = this.search.isIndexing ? 'Still reading images and PDFs; results may be incomplete.' : '';
         this.countEl.setText([count, indexing].filter(Boolean).join(' · '));
-        return results;
+        return page;
     }
 
-    renderSuggestion({ path, hits, terms, n }: ImageTextResult, el: HTMLElement) {
-        const file = this.app.vault.getAbstractFileByPath(path) as TFile; // search() keeps only existing images
+    /** "Show more" adds a page without closing; anything else opens as usual. */
+    selectSuggestion(row: ModalRow, evt: MouseEvent | KeyboardEvent) {
+        if (!isShowMore(row)) return super.selectSuggestion(row, evt);
+        const first = this.shown, top = this.resultContainerEl.scrollTop;
+        this.shown += PAGE;
+        // Redraws the whole list (SuggestModal has no append), then puts the view back where it was
+        // and selects the first new result. Browser scroll anchoring keeps it there as thumbnails load.
+        this.inputEl.dispatchEvent(new Event('input'));
+        this.resultContainerEl.scrollTop = top;
+        // ponytail: chooser is private Obsidian API; without it selection resets to the first row.
+        (this as any).chooser?.setSelectedItem?.(first, false);
+        this.resultContainerEl.children[first]?.scrollIntoView({ block: 'nearest' });
+    }
+
+    renderSuggestion(item: ModalRow, el: HTMLElement) {
+        if (isShowMore(item)) {
+            el.addClass('ec-ocr-more');
+            el.setText(`Show ${Math.min(PAGE, item.more)} more (${item.more} remaining)`);
+            return;
+        }
+        const { path, hits, terms, n } = item;
+        // search() keeps only existing files, but a cached page can outlive a delete or rename.
+        const file = this.app.vault.getAbstractFileByPath(path);
         const row = el.createDiv('ec-ocr-result');
         const thumb = row.createDiv('ec-ocr-thumb');
-        if (isImageFile(file)) {
+        const isImage = isImageFile(file);
+        if (isImage) {
             thumb.createEl('img', { attr: { src: this.app.vault.getResourcePath(file), loading: 'lazy' } });
             drawOcrBoxes(thumb, hits);
         } else setIcon(thumb, 'file-text');
 
         const meta = row.createDiv('ec-ocr-meta');
-        meta.createDiv({ cls: 'ec-ocr-name', text: `${n}. ${file.name}` });
+        const name = meta.createDiv('ec-ocr-name');
+        setIcon(name.createSpan('ec-ocr-kind-icon'), isImage ? 'image' : 'file-text'); // compact view only
+        name.appendText(`${n}. ${file?.name ?? path.split('/').pop()}`);
         for (const l of hits.slice(0, 3)) {
             const line = meta.createDiv('ec-ocr-line');
             if (l.length === 2) line.createSpan({ cls: 'ec-ocr-page', text: `p. ${l[1]} ` });
@@ -755,7 +843,9 @@ class ImageTextModal extends SuggestModal<ImageTextResult> {
      * A PDF opens at the page of its first match. An image opens the note that embeds it, at
      * the embed's line (a canvas zooms to the image card); else the image itself.
      */
-    async onChooseSuggestion({ path, hits }: ImageTextResult) {
+    async onChooseSuggestion(row: ModalRow) {
+        if (isShowMore(row)) return; // handled in selectSuggestion
+        const { path, hits } = row;
         const first = hits[0];
         if (first?.length === 2) {
             // Not openLinkText: it splits the path at the first '#', which a file name may contain.

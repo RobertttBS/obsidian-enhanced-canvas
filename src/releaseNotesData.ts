@@ -3,6 +3,7 @@ export const whatsNew = `
 ## What's new
 
 - **Search text in PDFs**: with *Search text in images and PDFs* (renamed from *Search text in images*) on, the text in your PDFs is indexed too. Results show the page number, and choosing one opens the PDF at that page. Scanned PDFs without a text layer aren't searchable yet.
+- **Filter by file type**: in *Search text in images and PDFs*, the *All*, *Images* and *PDFs* buttons show one file type at a time, each with its number of matches. The button on their right hides thumbnails for a compact list.
 - **Find in canvas**: search a word or a \`[[link]]\` to highlight every matching card, dim the rest, and zoom to fit. Press Cmd/Ctrl+F (the *Search current file* hotkey) in a Canvas, run *Find in canvas* from the command palette, or right-click selected text in a card. Click an empty spot to clear.
 - **Images in callouts**: in Live Preview you can now drag an image's corner to resize it inside a callout, and clicking the image no longer switches the callout to source.
 `;
@@ -37,7 +38,7 @@ Search words or a \`[[link]]\` across the Canvas: \`a b\` needs both words, \`a 
 
 ### Search text in images and PDFs
 Reads the text in every vault image with the system's built-in OCR (macOS or Windows), on-device, and the embedded text of every PDF. Search all images and PDFs, or let Find in canvas match image and PDF cards; matching text is boxed on the image, and a PDF result opens at its page.
-- **Where:** command *Search text in images and PDFs* or the ribbon icon; *Find in canvas* for image and PDF cards. Same search syntax as Find in canvas; results are numbered, with the total count on top.
+- **Where:** command *Search text in images and PDFs* or the ribbon icon; *Find in canvas* for image and PDF cards. Same search syntax as Find in canvas; results are numbered, with the total count on top. *All*, *Images* and *PDFs* filter by file type, the button beside them hides thumbnails, and **Show more** at the end lists 50 more.
 - **Rebuild:** command *Rebuild image and PDF text index* reads every image and PDF again. Files in *Excluded files* are skipped.
 - **Settings:** *Search text in images and PDFs* (off by default; the first run takes a few minutes). *Show image and PDF results in Search* puts matching images, with thumbnails, in core Search next to your notes (add \`-file:.md -file:.canvas\` for images and PDFs only); the ribbon icon stays.
 - **Other devices:** reading images needs a Mac or a Windows PC (Windows needs an OCR language installed); on Linux and mobile the same setting searches the index synced from that computer.
