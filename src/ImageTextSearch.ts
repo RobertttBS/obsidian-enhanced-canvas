@@ -53,10 +53,15 @@ function run(paths) {
 
 // Windows 10/11: Windows.Media.Ocr through Windows PowerShell 5.1 (powershell.exe, on every install;
 // PowerShell 7 can't load WinRT types). Reads the paths as JSON on stdin, writes the same JSON shape as
-// OCR_SCRIPT. Uses the first user-profile language that has an OCR language pack; none → exit 2 (sets `broken`).
+// OCR_SCRIPT. Exit 2 = no OCR language installed; exit 3 = Constrained Language Mode (AppLocker/WDAC), where
+// the .NET calls below are blocked — checked first, before anything that mode forbids. Both set `broken`.
+// Engine: the first installed Chinese/Japanese/Korean OCR language, else the first user-profile one. One engine
+// reads one language; a CJK engine still reads Latin text, an English one drops every CJK character silently.
 // JSON is written by hand: ConvertTo-Json in 5.1 can wrap arrays in {"value":…,"Count":…}.
 // PowerShell variable names are case-insensitive: $w would overwrite $W, so the word loop uses $wd.
-const WIN_OCR_SCRIPT = `$ErrorActionPreference = 'Stop'
+const WIN_OCR_SCRIPT = `if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') { exit 3 }
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation\`1' } | Select-Object -First 1
@@ -64,8 +69,9 @@ function Await($op, [Type]$t) { $task = $asTask.MakeGenericMethod($t).Invoke($nu
 $null = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]
 $null = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics, ContentType = WindowsRuntime]
 $null = [Windows.Graphics.Imaging.SoftwareBitmap, Windows.Graphics, ContentType = WindowsRuntime]
-$engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
-if ($null -eq $engine) { [Console]::Error.Write('No OCR language installed (Settings > Time & language > Language).'); exit 2 }
+$cjk = [Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages | Where-Object { $_.LanguageTag -match '^(zh|ja|ko)' } | Select-Object -First 1
+$engine = if ($cjk) { [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($cjk) } else { [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages() }
+if ($null -eq $engine) { [Console]::Error.Write('No OCR language installed.'); exit 2 }
 $max = [Windows.Media.Ocr.OcrEngine]::MaxImageDimension
 $inv = [Globalization.CultureInfo]::InvariantCulture
 function N($v) { ([double]$v).ToString('R', $inv) }
@@ -91,6 +97,22 @@ $out = foreach ($p in $paths) {
   } catch { 'null' } finally { if ($b) { $b.Dispose() }; if ($fs) { $fs.Dispose() } }
 }
 [Console]::Out.Write('[' + ($out -join ',') + ']')`;
+// Formats every OCR backend can decode. Windows needs Store codecs for HEIC (HEIF Image Extensions, not
+// preinstalled) and WebP (may be removed on LTSC/debloated systems): only these formats can tell "OCR is broken".
+const ALWAYS_DECODABLE = /^(png|jpe?g|gif|tiff?|bmp)$/i;
+const NEEDS_CODEC = /^(heic|webp)$/i;
+
+/** Why image OCR can't run at all, as opposed to one image failing. Each pauses image reading until Rebuild. */
+type OcrBlock = 'no-language' | 'constrained' | 'blocked' | 'missing';
+const BLOCK_HINT: Record<OcrBlock, string> = {
+    'no-language': 'Windows has no OCR language installed. Add one in Settings → Time & language → Language & region: pick a language → Language options → Optical character recognition.',
+    'constrained': 'PowerShell runs in Constrained Language Mode, set by your organization\'s security policy (AppLocker or WDAC), which blocks Windows OCR. Only your IT administrator can allow it. PDFs are still indexed.',
+    'blocked': 'PowerShell was blocked or stopped, most likely by antivirus or a company security policy. Allow powershell.exe for Obsidian, or ask your IT administrator. PDFs are still indexed.',
+    'missing': 'Windows PowerShell (powershell.exe) wasn\'t found on this system. PDFs are still indexed.',
+};
+// AMSI (Defender and most antivirus) refusing the script text.
+const AV_BLOCKED = /ScriptContainedMaliciousContent|malicious content|antivirus/i;
+
 // Windows OCR puts a space between CJK characters; drop it so "中文" matches.
 const CJK_GAP = /(?<=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-〿＀-￯]) (?=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-〿＀-￯])/gu;
 
@@ -110,6 +132,7 @@ export class ImageTextSearch {
     private gen = 0; // bumped by disable(), so a scan can tell its OCR process was killed on purpose
     private failed = new Map<string, number>(); // path → mtime OCR couldn't read; retried once the file changes
     private broken = false; // image OCR itself failed: images are skipped until Rebuild, so each change doesn't burn a new batch
+    private blockedBy: OcrBlock | null = null; // the known reason for `broken`, shown in the notice
     private saving: Promise<void> = Promise.resolve();
     private saveQueued = false;
     private loadedAt: number[] = []; // per shard: mtime of the file last read or written
@@ -350,6 +373,7 @@ export class ImageTextSearch {
         for (let s = 0; s < SHARDS; s++) this.dirty.add(s);
         this.failed.clear();
         this.broken = false;
+        this.blockedBy = null;
         await this.save();
         new Notice('Enhanced Canvas: rebuilding the image and PDF text index…');
         void this.scan();
@@ -384,18 +408,25 @@ export class ImageTextSearch {
                         const lines = await this.ocr(batch, gen);
                         if (gen !== this.gen) break; // disabled: the OCR process was killed, not a failure
 
-                        let bad = 0;
+                        let bad = 0, badCodec = 0;
                         batch.forEach((f, j) => {
                             const l = lines[j];
                             if (l === undefined) return; // an image skipped while OCR is broken
-                            if (!l) { this.failed.set(f.path, mtimes[j]); bad++; console.warn('Enhanced Canvas OCR: could not read', f.path); }
+                            if (!l) {
+                                this.failed.set(f.path, mtimes[j]); bad++;
+                                if (NEEDS_CODEC.test(f.extension)) badCodec++;
+                                console.warn('Enhanced Canvas OCR: could not read', f.path);
+                            }
                             // Skip a file deleted while it was being read.
                             else if (vault.getAbstractFileByPath(f.path) === f) this.put(f.path, { m: mtimes[j], l });
                         });
                         await this.save();
                         if (bad && !warned) {
                             warned = true;
-                            new Notice(`Enhanced Canvas: couldn't read text in ${bad} file${bad === 1 ? '' : 's'}. They're retried when changed, or run "Rebuild image and PDF text index".`);
+                            const codec = Platform.isWin && badCodec
+                                ? ` ${badCodec} of them are HEIC or WebP, which Windows reads only with "HEIF Image Extensions" / "WebP Image Extensions" from the Microsoft Store.`
+                                : '';
+                            new Notice(`Enhanced Canvas: couldn't read text in ${bad} file${bad === 1 ? '' : 's'}.${codec} They're retried when changed, or run "Rebuild image and PDF text index".`);
                         }
                     }
                 } finally {
@@ -417,21 +448,33 @@ export class ImageTextSearch {
         // One bad image fails the whole run: retry one by one so it can't block the rest.
         if (!read && images.length > 1 && !this.broken) {
             read = [];
+            let crashed = 0; // runs that failed as a whole, not one image the run reported as unreadable
             for (const f of images) {
                 if (gen !== this.gen) return [];
                 if (this.broken) break;
-                read.push((await this.ocrImages([f]))?.[0] ?? null);
-                // ponytail: the first 3 all failing alone = OCR is broken, not the images; saves up to ~18 min of retries.
+                const one = await this.ocrImages([f]);
+                if (!one) crashed++;
+                read.push(one?.[0] ?? null);
+                // ponytail: the first 3 runs (or all of a smaller batch) failing = OCR is broken, not the images; saves up to ~18 min of retries.
                 // Later failures in a row are not checked: each is retried and marked failed on its own.
-                if (read.length === 3 && read.every((l) => !l)) break;
+                if (crashed === read.length && (read.length === 3 || read.length === images.length)) { this.broken = true; break; }
             }
         }
         if (gen !== this.gen) return [];
         // Every image failing means OCR itself is broken: pause images instead of marking them all failed. PDFs go on.
-        // ocrImages() also sets broken when Windows has no OCR language, even for a single image.
-        if (images.length > 1 && images.every((_, j) => !read?.[j])) this.broken = true;
+        // Only formats that always decode count: a batch of HEIC without the codec fails with OCR working fine.
+        // Not once an image was ever read on this device: then OCR works and these files are bad (corrupt, or not really images),
+        // and `failed` is in memory only, so they would come back alone after every restart and pause OCR each time.
+        // ocrImages() also sets broken for a known block (no OCR language, policy, antivirus), even for a single image.
+        const decodable = images.flatMap((f, j) => (ALWAYS_DECODABLE.test(f.extension) ? [j] : []));
+        if (decodable.length > 1 && decodable.every((j) => !read?.[j]) && !Object.keys(this.index).some((p) => !/\.pdf$/i.test(p))) {
+            console.warn('Enhanced Canvas OCR: no image could be read, pausing image OCR:', decodable.map((j) => images[j].path));
+            this.broken = true;
+        }
         if (images.length && this.broken) {
-            new Notice(`Enhanced Canvas: text recognition isn't working, so reading images is paused.${Platform.isWin ? ' Check that an OCR language is installed (Settings → Time & language → Language).' : ''} Run "Rebuild image and PDF text index" to try again.`, 0);
+            const why = this.blockedBy ? BLOCK_HINT[this.blockedBy]
+                : 'See the developer console (Ctrl+Shift+I) for the error.';
+            new Notice(`Enhanced Canvas: text recognition in images isn't working, so reading images is paused. ${why} Then run "Rebuild image and PDF text index".`, 0);
         }
         const out: (OcrLine[] | null | undefined)[] = [];
         let k = 0;
@@ -489,9 +532,12 @@ export class ImageTextSearch {
         const paths = files.map((f) => adapter.getFullPath(f.path));
         // A hung process must not stall indexing forever.
         const timeout = 20_000 + 2_000 * files.length;
+        // Full path: a damaged PATH must not hide the PowerShell that every Windows 10/11 ships.
+        const powershell = process.env.SystemRoot ? `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe` : 'powershell.exe';
+        const block = (why: OcrBlock) => { this.broken = true; this.blockedBy = why; };
         return new Promise((resolve) => {
             const proc = this.proc = Platform.isWin
-                ? spawn('powershell.exe', ['-NoProfile', '-NonInteractive',
+                ? spawn(powershell, ['-NoProfile', '-NonInteractive',
                     '-EncodedCommand', Buffer.from(WIN_OCR_SCRIPT, 'utf16le').toString('base64')], { timeout, windowsHide: true })
                 : spawn('osascript', ['-l', 'JavaScript', '-e', OCR_SCRIPT, ...paths], { timeout });
             // ASCII-only JSON (\uXXXX escapes), so the console code page can't garble a path.
@@ -502,12 +548,30 @@ export class ImageTextSearch {
             proc.stderr?.setEncoding('utf8');
             proc.stdout?.on('data', (d) => (out += d));
             proc.stderr?.on('data', (d) => (err += d));
-            proc.on('error', (e) => { console.error('Enhanced Canvas OCR:', e); resolve(null); });
-            proc.on('close', (code) => {
+            // 'close' may still follow 'error': handle only the first.
+            let done = false;
+            proc.on('error', (e: NodeJS.ErrnoException) => {
+                if (done) return;
+                done = true;
+                if (this.proc === proc) this.proc = null;
+                // Couldn't start at all: missing, or refused by antivirus / Defender ASR (EPERM, EACCES, UNKNOWN).
+                if (Platform.isWin && gen === this.gen) block(e.code === 'ENOENT' ? 'missing' : 'blocked');
+                console.error('Enhanced Canvas OCR:', e);
+                resolve(null);
+            });
+            proc.on('close', (code, signal) => {
+                if (done) return;
+                done = true;
                 if (this.proc === proc) this.proc = null;
                 try {
-                    if (code === 2 && Platform.isWin) this.broken = true; // no OCR language: every image would fail
-                    if (code !== 0) throw new Error(err || `OCR process exited with ${code}`);
+                    // No check for being killed from outside: on Windows that is just a nonzero code with no signal,
+                    // and a signal only ever comes from our own kill (timeout, or disable() which changes gen).
+                    if (Platform.isWin && gen === this.gen) {
+                        if (code === 2) block('no-language'); // every image would fail
+                        else if (code === 3) block('constrained');
+                        else if (AV_BLOCKED.test(err)) block('blocked');
+                    }
+                    if (code !== 0) throw new Error(err || `OCR process exited with ${code ?? signal}`);
                     const read: (OcrLine[] | null)[] = JSON.parse(out);
                     if (!Array.isArray(read) || read.length !== files.length) throw new Error(`OCR returned ${Array.isArray(read) ? read.length : 'no'} results for ${files.length} images`);
                     if (Platform.isWin) for (const l of read) l?.forEach((x) => (x[0] = x[0].replace(CJK_GAP, '')));

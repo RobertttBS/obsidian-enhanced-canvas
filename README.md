@@ -13,7 +13,7 @@ Press **Cmd+F** (Ctrl+F on Windows), the core *Search current file* hotkey, in a
 -   Searches text cards, note cards (including their content), group labels, and web links.
 -   Node colors and the `.canvas` file are never changed.
 -   Change the highlight color with a CSS snippet: `body { --ec-find-color: <color>; }`
--   With *Search text in images and PDFs* on, image cards whose text matches are found too, and the matching text is boxed on the image.
+-   With *Search text in images and PDFs* on, image and PDF cards whose text matches are found too, and the matching text is boxed on images.
 
 ### Search Text in Images and PDFs
 
@@ -21,7 +21,7 @@ Turn on *Search text in images and PDFs* in settings, and the plugin reads the t
 
 -   Run **"Search text in images and PDFs"** (or click the ribbon icon) to search all images and PDFs. It uses the same syntax as Find in canvas (words, `OR`, `"phrase"`). Results are numbered, sorted by the number of matching lines, and the total count is shown on top. They show the image with the matching text boxed and the notes that embed it; choose one to open that note at the image (a Canvas zooms to the image card). PDF results show the page number of each matching line; choose one to open the PDF at that page.
 -   Run **"Rebuild image and PDF text index"** to read every image and PDF again, for example after a file couldn't be read. Files in *Settings → Files and links → Excluded files* are skipped.
--   **Find in canvas** also matches image cards by their text.
+-   **Find in canvas** also matches image and PDF cards by their text.
 -   Turn on *Show image and PDF results in Search* to see matching images in core Search (search in all files) next to your notes, with the same query syntax as notes, and a thumbnail under each image's name. Add `-file:.md -file:.canvas` to the query to show only images and PDFs. The ribbon icon and command stay, for the boxed view.
 
 The first run takes a few minutes for a large vault (about 0.3 s per image; a 2,700-page PDF takes about 11 s); after that only new or changed files are read. Large PDFs make the index big (tens of MB for a few hundred MB of PDFs); add folders you don't need searched to *Excluded files*. The index is stored in the plugin folder (the `ocr-index` folder), so no notes are added to your vault. A `"phrase"` can't span lines, so a PDF sentence that breaks at the end of a line isn't found as a phrase. On macOS the plugin runs the system's `osascript` to call the Vision framework; on Windows it runs the system's Windows PowerShell (`powershell.exe`) to call `Windows.Media.Ocr`. Nothing is downloaded and nothing leaves your computer. Off by default.

@@ -54,7 +54,10 @@
 - Windows 圖片 OCR（2026-11-15 實作，未驗證）：
   - `powershell.exe -EncodedCommand` 執行 `WIN_OCR_SCRIPT`。必須用 Windows PowerShell 5.1，PowerShell 7 不能載入 WinRT 型別。
   - 路徑以 JSON 從 stdin 傳入，非 ASCII 字元先轉成 `\uXXXX`。輸出格式與 macOS 相同。
-  - 語言：`TryCreateFromUserProfileLanguages()`，只用第一個有 OCR 語言包的使用者語言。沒有語言包時 exit 2，`ocrImages()` 直接設定 `broken`，單張圖片也會觸發。
+  - 語言：優先使用第一個已安裝的中日韓 OCR 語言，沒有才用 `TryCreateFromUserProfileLanguages()`。一個引擎只認一種語言；中文引擎也認得英文，英文引擎會默默漏掉所有中文。
+  - 無法執行的原因會寫進通知（`BLOCK_HINT`），並直接設定 `broken`，單張圖片也會觸發：exit 2 = 沒有 OCR 語言包；exit 3 = Constrained Language Mode（企業 AppLocker/WDAC）；無法啟動（ENOENT）= 找不到 PowerShell；其他啟動錯誤、stderr 出現 AMSI 訊息、被外部終止 = 防毒或安全政策封鎖。PowerShell 用完整路徑啟動。
+  - 「整批失敗 = OCR 壞掉」只計算 png/jpg/gif/tiff/bmp。HEIC、WebP 需要 Microsoft Store 的 codec，整批失敗不代表 OCR 壞掉，失敗通知會提示安裝 codec。
+  - 2026-11-15 在 Windows 11（zh-Hant-TW）驗證：50 張一批 50/50 成功；webp、gif、中文路徑成功；Constrained Language Mode 回傳 exit 3；損壞的 HEIC 只讓該張回傳 null。
   - 圖片超過 `OcrEngine.MaxImageDimension` 時先等比縮小。
   - Windows OCR 在中日文字元之間插入空白。存入前用 `CJK_GAP` 移除。
   - Windows 實測項目：中文辨識品質；EXIF 旋轉的照片框線位置；HEIC、WebP 沒有 codec 時進入 `failed`；50 張一批的時間。

@@ -116,8 +116,12 @@ safe.
   that calls Vision.framework (macOS), or `powershell.exe -EncodedCommand` (Windows PowerShell 5.1;
   PowerShell 7 can't load WinRT) with `WIN_OCR_SCRIPT` calling `Windows.Media.Ocr`: paths go in
   as ASCII-escaped JSON on stdin, the same JSON shape comes out, and `CJK_GAP` removes the space
-  Windows puts between CJK characters. Windows uses the first user-profile language with an OCR
-  pack; none → exit 2 → `ocrImages()` sets `broken` (even for one image). No binary ships. `child_process` is `require`d inside
+  Windows puts between CJK characters. Windows uses the first installed zh/ja/ko OCR language, else
+  the first user-profile one (one engine reads one language; an English engine drops CJK silently).
+  PowerShell is spawned by full path (`%SystemRoot%\System32\WindowsPowerShell\v1.0`). Known blocks
+  set `broken` + `blockedBy` (even for one image) and the notice names the cause (`BLOCK_HINT`):
+  exit 2 = no OCR language, exit 3 = Constrained Language Mode (checked on the script's first line),
+  spawn ENOENT = missing, other spawn errors / AMSI text on stderr / external kill = blocked. No binary ships. `child_process` is `require`d inside
   `ocrImages()` only, so mobile never loads it (keep it that way: a top-level import breaks
   mobile). PDFs are indexed too, in-process by `readPdf()` with Obsidian's pdf.js
   (`loadPdfJs()`): only their embedded text layer (no OCR, so scanned pages stay empty; a
@@ -139,7 +143,8 @@ safe.
   prunes entries whose image is gone. A failed OCR process run is retried one image at a time;
   files that still fail (images, or PDFs `readPdf()` can't open) go in the in-memory `failed`
   map with their mtime (skipped until the file changes, never indexed as empty). If every
-  image of a batch fails (or the first 3 single retries), OCR itself is broken: `broken`
+  `ALWAYS_DECODABLE` image (png/jpg/gif/tiff/bmp — not HEIC/WebP, which need Windows Store codecs) of a
+  batch fails, or the first 3 single-retry runs fail as whole runs, OCR itself is broken: `broken`
   skips images (PDFs keep indexing) until the "Rebuild image and PDF text index" command, which
   also clears the index and `failed`. PDF failures never set `broken`. Images
   matched by Obsidian's *Excluded files* (`metadataCache.isUserIgnored`) are skipped and pruned. Index changes must go through `put()` and writes through `save()`, which serializes and
