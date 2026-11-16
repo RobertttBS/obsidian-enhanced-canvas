@@ -118,9 +118,10 @@ safe.
   and `refresh()` (run before the modal opens and before Find in canvas matches) re-reads the
   shard files whose mtime changed. OCRs every
   vault image by spawning the system `osascript -l JavaScript` with an inline JXA script
-  that calls Vision.framework (macOS), or `powershell.exe -EncodedCommand` (Windows PowerShell 5.1;
-  PowerShell 7 can't load WinRT) with `WIN_OCR_SCRIPT` calling `Windows.Media.Ocr`: paths go in
-  as ASCII-escaped JSON on stdin, the same JSON shape comes out, and `CJK_GAP` removes the space
+  that calls Vision.framework (macOS), or `powershell.exe -Command -` (Windows PowerShell 5.1;
+  PowerShell 7 can't load WinRT) with `WIN_OCR_SCRIPT` calling `Windows.Media.Ocr`: the script goes in
+  on stdin (not `-EncodedCommand`, which antivirus/EDR flags) as one `try` statement plus a blank line, with the paths
+  embedded as ASCII-escaped JSON (`winOcrScript`); the same JSON shape comes out, and `CJK_GAP` removes the space
   Windows puts between CJK characters. Windows uses the user's first zh/ja/ko language (Settings order,
   `GlobalizationPreferences.Languages`) that has OCR, else the first installed zh/ja/ko OCR language, else
   the first user-profile one (one engine reads one language; an English engine drops CJK silently).

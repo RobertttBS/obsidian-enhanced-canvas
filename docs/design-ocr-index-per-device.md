@@ -52,8 +52,8 @@ pdf.js 中文抽字已在 Obsidian 內驗證（見第 4 節）；Windows OCR 只
   - 已驗證：在 Obsidian 內（`Robert_OB`，唯讀）用 `cMapUrl: '/lib/pdfjs/cmaps/'` 讀 826 頁的中文 PDF，抽出 577,091 字（其中中文 199,944 字），與 Node 結果相同。不傳 `cMapUrl` 時，中文只剩 3,300 字。
   - 未驗證：plugin reload 後的完整掃描流程；最大 PDF 在 Obsidian 內的記憶體用量。
 - Windows 圖片 OCR（2026-11-15 實作；腳本已驗證，見下方，Obsidian 內未完整驗證）：
-  - `powershell.exe -EncodedCommand` 執行 `WIN_OCR_SCRIPT`。必須用 Windows PowerShell 5.1，PowerShell 7 不能載入 WinRT 型別。
-  - 路徑以 JSON 從 stdin 傳入，非 ASCII 字元先轉成 `\uXXXX`。輸出格式與 macOS 相同。
+  - `powershell.exe -Command -` 執行 `WIN_OCR_SCRIPT`，腳本從 stdin 送入（2026-11-16 由 `-EncodedCommand` 改過來：編碼過的命令列是防毒/EDR 最先標記的特徵；stdin 版已在 Windows 上以獨立腳本驗證過中文 OCR、路徑含 `'` / `$` / 中文、CLM 結束碼 3、執行期錯誤結束碼 1，尚未在 Obsidian 內重新載入驗證）。解析期錯誤（含 AMSI 擋下腳本）在 `-Command -` 下結束碼是 0、只有 stderr，所以「沒有輸出但有 stderr」也視為失敗。stdin 會像互動輸入一樣逐句執行，所以整份腳本包在一個 `try` 裡成為單一語句，結尾要有空行。必須用 Windows PowerShell 5.1，PowerShell 7 不能載入 WinRT 型別。
+  - 路徑以 JSON 嵌在腳本裡（`winOcrScript`；stdin 已被腳本佔用），非 ASCII 字元先轉成 `\uXXXX`，`'` 寫成 `''`。輸出格式與 macOS 相同。
   - 語言：依使用者在設定中的語言順序（`GlobalizationPreferences.Languages`），用第一個有 OCR 的中日韓語言；沒有才用第一個已安裝的中日韓 OCR 語言（系統列舉順序）；再沒有才用 `TryCreateFromUserProfileLanguages()`。`IsLanguageSupported` 接受 `zh-TW`、`zh-Hant` 對到已安裝的 `zh-Hant-TW`（2026-11-15 驗證；本機只有一個語言，多語言排序未實測）。一個引擎只認一種語言；中文引擎也認得英文，英文引擎會默默漏掉所有中文。
   - 無法執行的原因會寫進通知（`BLOCK_HINT`），並直接設定 `broken`，單張圖片也會觸發：exit 2 = 沒有 OCR 語言包；exit 3 = Constrained Language Mode（企業 AppLocker/WDAC）；無法啟動（ENOENT）= 找不到 PowerShell；其他啟動錯誤、stderr 出現 AMSI 訊息 = 防毒或安全政策封鎖；逐張重試而暫停時，若每次都是非 0 結束、stderr 空白、且不是我們自己 kill 的（EDR 無聲終止），或跨次掃描連續 3 次這樣結束（`silentRuns`，涵蓋每次只有一張圖的情況）= 被中途停止，提示同樣指向防毒/EDR。PowerShell 用完整路徑啟動。260 字元以上的圖片路徑會轉成 `\\?\`（UNC 為 `\\?\UNC\`）再交給 PowerShell：PS 5.1 在沒開 LongPathsEnabled 時讀不到長路徑（2026-11-15 驗證：365 字元路徑原樣 `null`，加前綴後成功）。
   - 「整批失敗 = OCR 壞掉」只計算 png/jpg/gif/tiff/bmp。HEIC、WebP 需要 Microsoft Store 的 codec，整批失敗不代表 OCR 壞掉，失敗通知會提示安裝 codec。

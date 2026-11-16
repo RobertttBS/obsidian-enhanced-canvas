@@ -60,7 +60,9 @@ function run(paths) {
 }`;
 
 // Windows 10/11: Windows.Media.Ocr through Windows PowerShell 5.1 (powershell.exe, on every install;
-// PowerShell 7 can't load WinRT types). Reads the paths as JSON on stdin, writes the same JSON shape as
+// PowerShell 7 can't load WinRT types). The script itself goes in on stdin (`-Command -`), not as
+// -EncodedCommand: an encoded command line is what antivirus/EDR flags first. So the paths can't use stdin:
+// winOcrScript() puts them in the script as JSON. Writes the same JSON shape as
 // OCR_SCRIPT. Exit 2 = no OCR language installed; exit 3 = Constrained Language Mode (AppLocker/WDAC), where
 // the .NET calls below are blocked — checked first, before anything that mode forbids. Both set `broken`.
 // Engine: the user's first Chinese/Japanese/Korean language (Settings order) that has OCR, else the first installed
@@ -68,7 +70,10 @@ function run(paths) {
 // reads one language; a CJK engine still reads Latin text, an English one drops every CJK character silently.
 // JSON is written by hand: ConvertTo-Json in 5.1 can wrap arrays in {"value":…,"Count":…}.
 // PowerShell variable names are case-insensitive: $w would overwrite $W, so the word loop uses $wd.
-const WIN_OCR_SCRIPT = `if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') { exit 3 }
+// Stdin is run statement by statement, like typed input: one try block makes the whole script a single statement
+// (so an error can't fall through to the next line), and the blank line at the end is what completes it.
+const WIN_OCR_SCRIPT = `try {
+if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') { exit 3 }
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
@@ -86,7 +91,7 @@ if ($null -eq $engine) { [Console]::Error.Write('No OCR language installed.'); e
 $max = [Windows.Media.Ocr.OcrEngine]::MaxImageDimension
 $inv = [Globalization.CultureInfo]::InvariantCulture
 function N($v) { ([double]$v).ToString('R', $inv) }
-$paths = ConvertFrom-Json ([Console]::In.ReadToEnd()) # assigned first: 5.1 emits the array as one object, so @(...) would nest it
+$paths = ConvertFrom-Json '__PATHS__' # assigned first: 5.1 emits the array as one object, so @(...) would nest it
 $out = foreach ($p in $paths) {
   $fs = $null; $b = $null
   try {
@@ -107,7 +112,16 @@ $out = foreach ($p in $paths) {
     '[' + ($ls -join ',') + ']'
   } catch { 'null' } finally { if ($b) { $b.Dispose() }; if ($fs) { $fs.Dispose() } }
 }
-[Console]::Out.Write('[' + ($out -join ',') + ']')`;
+[Console]::Out.Write('[' + ($out -join ',') + ']')
+} catch { [Console]::Error.Write([string]$_); exit 1 }
+
+`;
+/** WIN_OCR_SCRIPT for these paths. ASCII-only JSON (\uXXXX escapes), so the console code page can't garble a path. */
+function winOcrScript(paths: string[]) {
+    const json = JSON.stringify(paths).replace(/[\u0080-\uffff]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+    // A function, so `$` in a path isn't a replacement pattern; '' is a literal ' in a single-quoted PowerShell string.
+    return WIN_OCR_SCRIPT.replace('__PATHS__', () => json.replace(/'/g, "''"));
+}
 // Formats every OCR backend can decode. Windows needs Store codecs for HEIC (HEIF Image Extensions, not
 // preinstalled) and WebP (may be removed on LTSC/debloated systems): only these formats can tell "OCR is broken".
 const ALWAYS_DECODABLE = /^(png|jpe?g|gif|tiff?|bmp)$/i;
@@ -648,11 +662,9 @@ export class ImageTextSearch {
         const block = (why: OcrBlock) => { this.broken = true; this.blockedBy = why; };
         return new Promise((resolve) => {
             const proc = this.proc = Platform.isWin
-                ? spawn(powershell, ['-NoProfile', '-NonInteractive',
-                    '-EncodedCommand', Buffer.from(WIN_OCR_SCRIPT, 'utf16le').toString('base64')], { timeout, windowsHide: true })
+                ? spawn(powershell, ['-NoProfile', '-NonInteractive', '-Command', '-'], { timeout, windowsHide: true })
                 : spawn('osascript', ['-l', 'JavaScript', '-e', OCR_SCRIPT, ...paths], { timeout });
-            // ASCII-only JSON (\uXXXX escapes), so the console code page can't garble a path.
-            if (Platform.isWin) proc.stdin?.end(JSON.stringify(paths).replace(/[\u0080-￿]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`));
+            if (Platform.isWin) proc.stdin?.end(winOcrScript(paths));
             let out = '', err = '';
             // Decode as one stream: a CJK character split across two chunks would otherwise be garbled.
             proc.stdout?.setEncoding('utf8');
@@ -686,7 +698,8 @@ export class ImageTextSearch {
                         else if (code === 3) block('constrained');
                         else if (AV_BLOCKED.test(err)) block('blocked');
                     }
-                    if (code !== 0) throw new Error(err || `OCR process exited with ${code ?? signal}`);
+                    // `-Command -` exits 0 on a parse-time failure (AMSI rejecting the script included): stderr, no output.
+                    if (code !== 0 || (!out.trim() && err.trim())) throw new Error(err || `OCR process exited with ${code ?? signal}`);
                     const read: (OcrLine[] | null)[] = JSON.parse(out);
                     if (!Array.isArray(read) || read.length !== files.length) throw new Error(`OCR returned ${Array.isArray(read) ? read.length : 'no'} results for ${files.length} images`);
                     if (Platform.isWin) for (const l of read) l?.forEach((x) => (x[0] = x[0].replace(CJK_GAP, '')));
