@@ -51,11 +51,11 @@ You can combine them: `canvas plugin OR "find text"`.
 
 ### Search Text in Images and PDFs
 
-Search the text inside every image and PDF in your vault. Everything runs on your device: nothing is downloaded and nothing leaves your computer. On by default.
+Search the text inside every image and PDF in your vault. Text recognition runs on your device: your images and PDFs never leave your computer. The only download is the [built-in OCR](#built-in-ocr)'s model files (about 31 MB, once), when that engine is used. On by default.
 
 **Set up**
 
-*Search text in images and PDFs* is on by default (turn it off in settings if you don't need it). The plugin reads the text in your images with the system's built-in OCR, and indexes the embedded text of your PDFs.
+*Search text in images and PDFs* is on by default (turn it off in settings if you don't need it). The plugin reads the text in your images with the system's OCR (macOS, Windows) or the [built-in OCR](#built-in-ocr) (Linux, or Windows by choice), and indexes the embedded text of your PDFs.
 
 **Search**
 
@@ -93,11 +93,25 @@ Run **"Search text in images and PDFs"** or click the ribbon icon. The query syn
 | Platform                     | What it does                                                                                 |
 | ---------------------------- | -------------------------------------------------------------------------------------------- |
 | macOS                        | Reads images with the Vision framework, called through the system's `osascript`              |
-| Windows 10/11                | Reads images with `Windows.Media.Ocr`, called through Windows PowerShell (`powershell.exe`)  |
-| Linux, iPhone, iPad, Android | Search only: uses an index built on a Mac or Windows PC and synced to the device             |
+| Windows 10/11 (System)       | Reads images with `Windows.Media.Ocr`, called through Windows PowerShell (`powershell.exe`)  |
+| Windows 10/11 (Built-in)     | Reads images with the [built-in OCR](#built-in-ocr), inside Obsidian                         |
+| Linux                        | Reads images with the [built-in OCR](#built-in-ocr), inside Obsidian                         |
+| iPhone, iPad, Android        | Search only: uses an index built on a computer and synced to the device                      |
 
 -   **Search-only devices**: turn on the same setting. Results show what the computer last read. Your sync tool must sync the `ocr-index` folder in the plugin folder.
 -   **Build the index on one computer only.** Two computers with this setting on overwrite each other's index.
+
+**Built-in OCR**
+
+PaddleOCR (PP-OCRv6 small) running inside Obsidian, on your graphics card (WebGPU) when available, else on the CPU. One model reads many languages at once.
+
+-   **When it's used**: always on Linux. On Windows, when you choose *OCR engine → Built-in* in settings, or click **Use built-in OCR** on the notice shown when Windows OCR can't run (no OCR language, or PowerShell blocked by a security policy or endpoint protection). The built-in OCR doesn't start PowerShell.
+-   **What is downloaded**: three model files (about 31 MB) from this project's GitHub release `ocr-assets-1`, once per computer, after you choose it or click **Download**. Each file is checked against a fixed SHA-256 before it's stored. Only model data is downloaded; the program that runs it (onnxruntime-web) is part of the plugin itself. Recognition then runs on your device: images are never sent anywhere.
+-   **Where it's stored**: in Obsidian's own browser storage (IndexedDB) on this computer, not in your vault, so file sync doesn't copy it.
+-   **Switching engines**: images not read yet, and images the previous engine couldn't read, are read with the new one automatically. Images already read keep their text; a notice offers **Read again with…** to re-read just the images (PDFs don't use OCR).
+-   **Remove it**: run **"Remove downloaded built-in OCR files"**. On Windows this also switches back to Windows OCR.
+-   **Speed**: about 0.3 s per image on a graphics card; several seconds per image on the CPU.
+-   **Licenses**: the PaddleOCR models are Apache-2.0 ([PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), converted to ONNX by [snowfluke/ppu-paddle-ocr-models](https://huggingface.co/snowfluke/ppu-paddle-ocr-models)); the release lists the files' sources and includes the license text. [onnxruntime-web](https://github.com/microsoft/onnxruntime) and [ppu-paddle-ocr](https://github.com/PT-Perkasa-Pilar-Utama/ppu-paddle-ocr), bundled in the plugin, are MIT. Full notices: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 **Limits**
 

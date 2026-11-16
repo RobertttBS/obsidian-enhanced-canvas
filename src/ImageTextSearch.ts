@@ -5,15 +5,28 @@ import { around } from 'monkey-around';
 import EnhancedCanvas from '../main';
 import type { CanvasView } from '../Canvas';
 import { matchesTextQuery, normalizeText, parseTextQuery, queryTerms } from './utils';
+import { BuiltinOcr } from './BuiltinOcr';
+import { ASSETS_BYTES, DownloadResult } from './OcrAssets';
 
 const IMAGE_EXT = /^(png|jpe?g|heic|webp|gif|tiff?|bmp)$/i;
 const BATCH = 50; // files per OCR process run; keeps argv short and saves progress often
 const PDF_BATCH = 5; // at most this many PDFs per batch: a large one takes seconds, and progress is saved per batch
-const DEVICE_KEY = 'enhanced-canvas-ocr-device'; // localStorage (per vault, per device): `failed` and `readImage`
+// localStorage (per vault, per device): `failed`, `reread`, `readImage`, `pdfLockChecked`, `broken`, `blockedBy`
+const DEVICE_KEY = 'enhanced-canvas-ocr-device';
+// localStorage (per vault, per device), Windows only: 'builtin' reads images with BuiltinOcr; else the system OCR.
+const ENGINE_KEY = 'enhanced-canvas-ocr-engine';
+export type OcrEngine = 'system' | 'builtin';
 const PAGE = 50; // results the modal shows at first, and adds per "Show more"
 const COMMAND_ID = 'search-image-text';
 const REBUILD_ID = 'rebuild-image-text-index';
 const UNLOCK_ID = 'unlock-pdfs-for-text-search';
+const REMOVE_BUILTIN_ID = 'remove-builtin-ocr-files';
+const MB = (bytes: number) => Math.round(bytes / 1e6);
+const DOWNLOAD_FAILED: Record<Exclude<DownloadResult, 'ok'>, string> = {
+    network: 'Couldn\'t download built-in OCR. Check your connection, or your network may block github.com.',
+    hash: 'The downloaded built-in OCR file didn\'t match. It may have been altered or cut off.',
+    storage: 'Couldn\'t save the built-in OCR files (storage may be full).',
+};
 const SHARDS = 64; // index files; a save rewrites only the shards that changed
 // FNV-1a over UTF-16 code units. Must never change: it decides which file holds a path.
 const shardOf = (path: string) => {
@@ -129,6 +142,7 @@ const NEEDS_CODEC = /^(heic|webp)$/i;
 
 /** Why image OCR can't run at all, as opposed to one image failing. Each pauses image reading until Rebuild. */
 type OcrBlock = 'no-language' | 'constrained' | 'blocked' | 'stopped' | 'missing';
+const isOcrBlock = (v: unknown): v is OcrBlock => typeof v === 'string' && v in BLOCK_HINT;
 const BLOCK_HINT: Record<OcrBlock, string> = {
     'no-language': 'Windows has no OCR language installed. Add one in Settings → Time & language → Language & region: pick a language → Language options → Optical character recognition.',
     'constrained': 'PowerShell runs in Constrained Language Mode, set by your organization\'s security policy (AppLocker or WDAC), which blocks Windows OCR. Only your IT administrator can allow it. PDFs are still indexed.',
@@ -154,9 +168,10 @@ function longPath(p: string) {
 const CJK_GAP = /(?<=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-〿＀-￯]) (?=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-〿＀-￯])/gu;
 
 /**
- * Optional: on macOS or Windows desktop, OCR every vault image into an index kept in the plugin
- * folder (no notes are created); on every device, a vault-wide "Search text in images and PDFs"
- * modal and image matches for Find in canvas. Other devices only read the synced index.
+ * Optional: on desktop, OCR every vault image into an index kept in the plugin folder (no notes are
+ * created): macOS Vision, Windows OCR, or the built-in OCR (Linux, or Windows by choice); on every
+ * device, a vault-wide "Search text in images and PDFs" modal and image matches for Find in canvas.
+ * Mobile only reads the synced index.
  */
 export class ImageTextSearch {
     index: OcrIndex = {};
@@ -167,21 +182,49 @@ export class ImageTextSearch {
     private scanning = false;
     private rescan = false;
     private gen = 0; // bumped by disable(), so a scan can tell its OCR process was killed on purpose
-    private failed = new Map<string, number>(); // path → mtime this device couldn't read; retried once the file changes or on Rebuild
+    private failed = new Map<string, number>(); // path → mtime this device couldn't read; retried once the file changes, on Rebuild, or (images) on an engine switch
+    // Images the user asked to read again with the engine now chosen (rereadImages). Device-local, not a change to the
+    // synced index: marking entries stale there would make every other device re-read them too.
+    private reread = new Set<string>();
+    private rereadNotice: Notice | null = null; // the open "read again" offer, replaced by the next engine switch
     private readImage = false; // this device has read an image, so OCR works here (index entries may come from another device)
-    private broken = false; // image OCR itself failed: images are skipped until Rebuild, so each change doesn't burn a new batch
+    // The system OCR itself failed: its images are skipped until Rebuild, so each change doesn't burn a new batch (or,
+    // under EDR, raise a new alert). Kept on the device, so a restart doesn't start PowerShell again.
+    private broken = false;
     private blockedBy: OcrBlock | null = null; // the known reason for `broken`, shown in the notice
+    private builtinBroken = false; // same for the built-in OCR, for this run only (a later download or Rebuild retries)
+    private blockNoticed = false; // the "reading images is paused" notice was shown this run (at most once)
+    private offerNoticed = false; // the built-in OCR download offer was shown, or a download started, this run
     private silentRuns = 0; // Windows runs in a row that failed with no error text and weren't killed by us: a likely EDR kill
     private pdfLockChecked = false; // earlier builds indexed a locked PDF as empty: the first scan re-reads empty PDFs once
     private saving: Promise<void> = Promise.resolve();
     private saveQueued = false;
     private loadedAt: number[] = []; // per shard: mtime of the file last read or written
     private dirty = new Set<number>(); // shards changed since the last save
+    private builtin = new BuiltinOcr(this.plugin);
 
     constructor(readonly plugin: EnhancedCanvas) {}
 
-    /** Only macOS and Windows desktop read images; other devices search the index that sync brings over. */
-    static get canIndex() { return (Platform.isMacOS || Platform.isWin) && Platform.isDesktopApp; }
+    /** Desktop reads images and PDFs; mobile searches the index that sync brings over. */
+    static get canIndex() { return Platform.isDesktopApp; }
+
+    /** The engine choice is offered only on Windows: macOS always uses Vision, Linux always the built-in OCR. */
+    static get canChooseEngine() { return Platform.isWin && Platform.isDesktopApp; }
+
+    /** Which OCR reads images on this device (docs/spec-builtin-ocr.md §5.2). */
+    get engine(): OcrEngine {
+        if (Platform.isMacOS) return 'system';
+        if (!Platform.isWin) return 'builtin';
+        return this.plugin.app.loadLocalStorage(ENGINE_KEY) === 'builtin' ? 'builtin' : 'system';
+    }
+
+    /** The current engine failed as a whole: images wait (PDFs go on). */
+    private get paused() { return this.engine === 'builtin' ? this.builtinBroken : this.broken; }
+
+    private pause() {
+        if (this.engine === 'builtin') this.builtinBroken = true;
+        else this.broken = true;
+    }
 
     get isEnabled() { return this.enabled; }
 
@@ -295,6 +338,7 @@ export class ImageTextSearch {
         if (!ImageTextSearch.canIndex) return;
         this.plugin.addCommand({ id: REBUILD_ID, name: 'Rebuild image and PDF text index', callback: () => void this.rebuild() });
         this.plugin.addCommand({ id: UNLOCK_ID, name: 'Unlock password-protected PDFs for text search', callback: this.openUnlock });
+        if (!Platform.isMacOS) this.plugin.addCommand({ id: REMOVE_BUILTIN_ID, name: 'Remove downloaded built-in OCR files', callback: () => void this.removeBuiltin() });
 
         app.workspace.onLayoutReady(() => {
             if (gen !== this.gen) return;
@@ -331,8 +375,15 @@ export class ImageTextSearch {
         this.plugin.removeCommand(COMMAND_ID);
         this.plugin.removeCommand(REBUILD_ID);
         this.plugin.removeCommand(UNLOCK_ID);
+        this.plugin.removeCommand(REMOVE_BUILTIN_ID);
+        this.stopOcr();
+    }
+
+    /** Kills the running OCR process or worker. Callers bump `gen` first, so the scan drops that batch instead of failing it. */
+    private stopOcr() {
         this.proc?.kill();
         this.proc = null;
+        this.builtin.dispose();
     }
 
     /** Reads the shards whose file changed since they were last read. */
@@ -377,12 +428,18 @@ export class ImageTextSearch {
     private loadDevice() {
         const d = this.plugin.app.loadLocalStorage(DEVICE_KEY);
         this.failed = new Map(Object.entries(d?.failed ?? {}).filter((e): e is [string, number] => typeof e[1] === 'number'));
+        this.reread = new Set(Array.isArray(d?.reread) ? d.reread.filter((p: unknown): p is string => typeof p === 'string') : []);
         this.readImage = d?.readImage === true;
         this.pdfLockChecked = d?.pdfLockChecked === true;
+        this.broken = d?.broken === true;
+        this.blockedBy = this.broken && isOcrBlock(d?.blockedBy) ? d.blockedBy : null;
     }
 
     private saveDevice() {
-        this.plugin.app.saveLocalStorage(DEVICE_KEY, { failed: Object.fromEntries(this.failed), readImage: this.readImage, pdfLockChecked: this.pdfLockChecked });
+        this.plugin.app.saveLocalStorage(DEVICE_KEY, {
+            failed: Object.fromEntries(this.failed), reread: [...this.reread], readImage: this.readImage, pdfLockChecked: this.pdfLockChecked,
+            broken: this.broken, blockedBy: this.blockedBy,
+        });
     }
 
     /** On search-only devices, picks up an index file that sync replaced. */
@@ -425,14 +482,16 @@ export class ImageTextSearch {
     private async rebuild() {
         // Abort a running scan: its todo list was built from the old index.
         this.gen++;
-        this.proc?.kill();
-        this.proc = null;
+        this.stopOcr();
         this.index = Object.fromEntries(Object.entries(this.index).filter(([, e]) => e.pw === 'unlocked'));
         for (let s = 0; s < SHARDS; s++) this.dirty.add(s);
         this.failed.clear();
-        this.saveDevice();
+        this.reread.clear();
         this.broken = false;
         this.blockedBy = null;
+        this.builtinBroken = false;
+        this.blockNoticed = false;
+        this.saveDevice();
         this.silentRuns = 0;
         await this.save();
         new Notice('Enhanced Canvas: rebuilding the image and PDF text index…');
@@ -447,6 +506,7 @@ export class ImageTextSearch {
         // Settings → Files and links → Excluded files.
         const excluded = (p: string) => metadataCache.isUserIgnored?.(p) ?? false;
         const stale = (f: TFile) => {
+            if (this.reread.has(f.path)) return true;
             const e = this.index[f.path];
             // An empty PDF from an earlier build may be a locked one (they were indexed alike): read once more.
             if (e?.m === f.stat.mtime) return !this.pdfLockChecked && isPdf(f) && !e.l.length && !e.pw;
@@ -462,17 +522,28 @@ export class ImageTextSearch {
                 if (gone.length) await this.save();
                 const lost = [...this.failed.keys()].filter((p) => !isIndexedFile(vault.getAbstractFileByPath(p)) || excluded(p));
                 lost.forEach((p) => this.failed.delete(p));
-                if (lost.length) this.saveDevice();
+                const lostReread = [...this.reread].filter((p) => !isImageFile(vault.getAbstractFileByPath(p)) || excluded(p));
+                lostReread.forEach((p) => this.reread.delete(p));
+                if (lost.length || lostReread.length) this.saveDevice();
 
-                const todo = vault.getFiles().filter((f) => isIndexedFile(f) && !excluded(f.path) && stale(f)
-                    && !(this.broken && !isPdf(f)));
+                const all = vault.getFiles().filter((f) => isIndexedFile(f) && !excluded(f.path) && stale(f));
+                // Built-in OCR without its files: images wait for the download (not failed), PDFs go on.
+                const missing = this.engine === 'builtin' && !(await this.builtin.assets.ready());
+                if (gen !== this.gen) continue; // `while` rechecks rescan: stopped, or restarted on another engine
+                const skipImages = this.paused || missing;
+                if (skipImages && all.some((f) => !isPdf(f))) {
+                    if (this.paused) this.noticePaused();
+                    else this.offerDownload();
+                }
+                const todo = skipImages ? all.filter(isPdf) : all;
                 const notice = todo.length > BATCH || todo.filter(isPdf).length > PDF_BATCH ? new Notice('', 0) : null;
                 let warned = false;
                 try {
                     for (let i = 0, n = 0; i < todo.length && gen === this.gen; i += n) {
                         notice?.setMessage(`Enhanced Canvas: reading text in images and PDFs ${i} / ${todo.length}`);
                         let pdfs = 0;
-                        for (n = 0; i + n < todo.length && n < BATCH && pdfs < PDF_BATCH; n++) if (isPdf(todo[i + n])) pdfs++;
+                        const max = this.engine === 'builtin' ? this.builtin.batchSize : BATCH; // per batch: WASM vs WebGPU is known once the worker runs
+                        for (n = 0; i + n < todo.length && n < max && pdfs < PDF_BATCH; n++) if (isPdf(todo[i + n])) pdfs++;
                         const batch = todo.slice(i, i + n);
                         // Taken before OCR: an image changed mid-run must still look stale afterwards.
                         const mtimes = batch.map((f) => f.stat.mtime);
@@ -483,6 +554,7 @@ export class ImageTextSearch {
                         batch.forEach((f, j) => {
                             const l = lines[j];
                             if (l === undefined) return; // an image skipped while OCR is broken
+                            this.reread.delete(f.path); // read again, or failed with this engine (then `failed` holds it)
                             if (l === 'locked') {
                                 // Unlocked in PdfUnlockModal while this batch was reading it: keep that text.
                                 const e = this.index[f.path];
@@ -550,36 +622,39 @@ export class ImageTextSearch {
     }
 
     /**
-     * Images through osascript (macOS) or PowerShell (Windows), PDFs through pdf.js; in the order given. null = could not read that file;
-     * undefined = an image skipped because OCR is broken, or anything after `gen` changed. 'locked' = a PDF that needs a password.
+     * Images through the system OCR (osascript on macOS, PowerShell on Windows) or the built-in one, PDFs through pdf.js; in the order given.
+     * null = could not read that file; undefined = an image skipped because OCR is paused, or anything after `gen` changed.
+     * 'locked' = a PDF that needs a password.
      */
     private async ocr(files: TFile[], gen: number): Promise<(OcrLine[] | null | undefined | 'locked')[]> {
-        const images = this.broken ? [] : files.filter((f) => !isPdf(f));
+        const system = this.engine === 'system';
+        const wasBroken = this.broken;
+        const images = this.paused ? [] : files.filter((f) => !isPdf(f));
         let read = images.length ? await this.ocrImages(images) : [];
         // One bad image fails the whole run: retry one by one so it can't block the rest.
-        if (!read && images.length > 1 && !this.broken) {
+        if (!read && images.length > 1 && !this.paused) {
             read = [];
             let crashed = 0; // runs that failed as a whole, not one image the run reported as unreadable
             let silent = 0; // of those, Windows runs that ended with no error text (see silentRuns)
             for (const f of images) {
                 if (gen !== this.gen) return [];
-                if (this.broken) break;
+                if (this.paused) break;
                 const one = await this.ocrImages([f]);
                 if (!one) { crashed++; if (this.silentRuns) silent++; }
                 read.push(one?.[0] ?? null);
                 // ponytail: the first 3 runs (or all of a smaller batch) failing = OCR is broken, not the images; saves up to ~18 min of retries.
                 // Later failures in a row are not checked: each is retried and marked failed on its own.
                 if (crashed === read.length && (read.length === 3 || read.length === images.length)) {
-                    this.broken = true;
+                    this.pause();
                     // Every run died without a word: EDR terminating the process leaves no AMSI text to match.
-                    if (silent === crashed && !this.blockedBy) this.blockedBy = 'stopped';
+                    if (system && Platform.isWin && silent === crashed && !this.blockedBy) this.blockedBy = 'stopped';
                     break;
                 }
             }
         }
         if (gen !== this.gen) return [];
         // One image per run never reaches the retries above (a pasted screenshot): 3 silent runs in a row, across scans, also pause.
-        if (!this.broken && this.silentRuns >= 3) {
+        if (system && !this.broken && this.silentRuns >= 3) {
             this.broken = true;
             if (!this.blockedBy) this.blockedBy = 'stopped';
         }
@@ -592,20 +667,168 @@ export class ImageTextSearch {
         const decodable = images.flatMap((f, j) => (ALWAYS_DECODABLE.test(f.extension) ? [j] : []));
         if (decodable.length > 1 && decodable.every((j) => !read?.[j]) && !this.readImage) {
             console.warn('Enhanced Canvas OCR: no image could be read, pausing image OCR:', decodable.map((j) => images[j].path));
-            this.broken = true;
+            this.pause();
         }
-        if (images.length && this.broken) {
-            const why = this.blockedBy ? BLOCK_HINT[this.blockedBy]
-                : 'See the developer console (Ctrl+Shift+I) for the error.';
-            new Notice(`Enhanced Canvas: text recognition in images isn't working, so reading images is paused. ${why} Then run "Rebuild image and PDF text index".`, 0);
-        }
+        if (this.broken !== wasBroken) this.saveDevice(); // now, not after the batch: a restart mid-PDFs must not retry PowerShell
+        if (images.length && this.paused) this.noticePaused();
         const out: (OcrLine[] | null | undefined | 'locked')[] = [];
         let k = 0;
         for (const f of files) {
             if (gen !== this.gen) break;
-            out.push(isPdf(f) ? await this.readPdf(f, gen) : this.broken ? undefined : read?.[k++] ?? null);
+            out.push(isPdf(f) ? await this.readPdf(f, gen) : this.paused ? undefined : read?.[k++] ?? null);
         }
         return out;
+    }
+
+    /** "Reading images is paused", at most once per run (a paused state read back at startup counts too). */
+    private noticePaused() {
+        if (this.blockNoticed) return;
+        this.blockNoticed = true;
+        const rebuild = 'Then run "Rebuild image and PDF text index".';
+        if (this.engine === 'builtin') {
+            new Notice(`Enhanced Canvas: the built-in OCR isn't working, so reading images is paused. PDFs are still indexed. See the developer console (Ctrl+Shift+I) for the error. ${rebuild}`, 0);
+            return;
+        }
+        const why = this.blockedBy ? BLOCK_HINT[this.blockedBy] : 'See the developer console (Ctrl+Shift+I) for the error.';
+        if (!ImageTextSearch.canChooseEngine) {
+            new Notice(`Enhanced Canvas: text recognition in images isn't working, so reading images is paused. ${why} ${rebuild}`, 0);
+            return;
+        }
+        // Windows: offer the built-in OCR, which doesn't start PowerShell. With no OCR language, both ways are listed.
+        const notice = new Notice(createFragment((el) => {
+            el.appendText(`Enhanced Canvas: text recognition in images isn't working, so reading images is paused. ${why} `);
+            el.appendText(this.blockedBy === 'no-language'
+                ? `${rebuild} Or use the built-in OCR instead, which needs no language pack: `
+                : 'Use the built-in OCR instead: it runs inside Obsidian, without PowerShell. ');
+            el.createEl('button', { text: `Use built-in OCR (${MB(ASSETS_BYTES)} MB download)` }).addEventListener('click', (e) => {
+                e.stopPropagation();
+                notice.hide();
+                this.setEngine('builtin');
+            });
+        }), 0);
+    }
+
+    /** The built-in OCR's files are missing (first use, or IndexedDB cleared): offer the download once per run. */
+    private offerDownload() {
+        if (this.offerNoticed) return;
+        this.offerNoticed = true;
+        const notice = new Notice(createFragment((el) => {
+            el.appendText(`Enhanced Canvas: reading images needs a one-time download of about ${MB(ASSETS_BYTES)} MB (the built-in OCR). PDFs are indexed meanwhile. `);
+            el.createEl('button', { text: 'Download' }).addEventListener('click', (e) => {
+                e.stopPropagation();
+                notice.hide();
+                void this.downloadBuiltin();
+            });
+        }), 0);
+    }
+
+    /**
+     * Downloads the built-in OCR's files if they're missing, with a progress notice, then reads the images that waited.
+     * Never retried automatically after a failure: the notice has a Retry button, and the next run offers it again.
+     */
+    async downloadBuiltin() {
+        this.offerNoticed = true; // a scan meanwhile must not offer what is already happening
+        const { assets } = this.builtin;
+        if (!assets.isDownloading && await assets.ready()) {
+            if (this.enabled) void this.scan();
+            return;
+        }
+        if (assets.isDownloading) return; // its own notice shows the progress
+        const text = (done: number, total: number) => `Enhanced Canvas: downloading built-in OCR: ${MB(done)} / ${MB(total)} MB`;
+        const progress = new Notice(text(0, ASSETS_BYTES), 0);
+        const r = await assets.download((done, total) => progress.setMessage(text(done, total)));
+        progress.hide();
+        if (r === 'ok') {
+            this.builtinBroken = false;
+            if (this.enabled && this.engine === 'builtin') {
+                new Notice('Enhanced Canvas: built-in OCR is ready. Reading images…');
+                void this.scan();
+            } else new Notice('Enhanced Canvas: built-in OCR is ready.');
+            return;
+        }
+        const notice = new Notice(createFragment((el) => {
+            el.appendText(`Enhanced Canvas: ${DOWNLOAD_FAILED[r]} `);
+            if (r === 'storage') return;
+            el.createEl('button', { text: 'Retry' }).addEventListener('click', (e) => {
+                e.stopPropagation();
+                notice.hide();
+                void this.downloadBuiltin();
+            });
+        }), 0);
+    }
+
+    /**
+     * Sets this device's engine (Windows only). Images the old engine couldn't read are tried again; images already
+     * read keep their text, and a notice offers to read them again (rereadImages). A running scan restarts on the new
+     * engine, and choosing the built-in OCR starts its download if needed (an explicit choice: no second ask).
+     */
+    setEngine(engine: OcrEngine) {
+        if (!ImageTextSearch.canChooseEngine) return;
+        this.plugin.app.saveLocalStorage(ENGINE_KEY, engine);
+        this.blockNoticed = false; // the new engine may be paused too: say so once more
+        this.gen++; // the running batch is dropped, not failed
+        this.stopOcr();
+        // An image one engine can't read (a language it lacks, a missing codec) the other may: PDFs don't use OCR.
+        const { vault } = this.plugin.app;
+        const retry = [...this.failed.keys()].filter((p) => isImageFile(vault.getAbstractFileByPath(p)));
+        retry.forEach((p) => this.failed.delete(p));
+        if (retry.length) this.saveDevice();
+        if (engine === 'builtin') void this.downloadBuiltin(); // scans once the files are there
+        else if (this.enabled) void this.scan();
+        if (this.enabled) this.offerReread(engine);
+    }
+
+    /** After an engine switch: images already read keep the old engine's text until the user asks to read them again. */
+    private offerReread(engine: OcrEngine) {
+        const { vault } = this.plugin.app;
+        const n = Object.keys(this.index).filter((p) => !this.reread.has(p) && isImageFile(vault.getAbstractFileByPath(p))).length;
+        this.rereadNotice?.hide(); // switching back and forth must not stack offers
+        if (!n) return;
+        const name = engine === 'builtin' ? 'the built-in OCR' : 'Windows OCR';
+        const notice = this.rereadNotice = new Notice(createFragment((el) => {
+            el.appendText(`Enhanced Canvas: ${n} image${n === 1 ? '' : 's'} already read keep${n === 1 ? 's' : ''} the text from the previous engine. `);
+            el.createEl('button', { text: `Read again with ${name}` }).addEventListener('click', (e) => {
+                e.stopPropagation();
+                notice.hide();
+                this.rereadImages();
+            });
+        }), 0);
+    }
+
+    /**
+     * Reads every indexed image again with the current engine; PDFs are left alone (no OCR). Their old text stays
+     * searchable until each is replaced, and one this engine can't read keeps it. Survives a restart (saveDevice).
+     */
+    private rereadImages() {
+        if (!this.enabled) return;
+        const { vault } = this.plugin.app;
+        for (const p of Object.keys(this.index)) if (isImageFile(vault.getAbstractFileByPath(p))) this.reread.add(p);
+        this.saveDevice();
+        void this.scan(); // the built-in OCR without its files: images wait for the download, which scans again
+    }
+
+    /** Command: frees the ~31 MB and goes back to the system OCR (Windows) or to offering the download (Linux). */
+    private async removeBuiltin() {
+        if (this.builtin.assets.isDownloading) {
+            new Notice('Enhanced Canvas: the built-in OCR is still downloading. Try again once it finishes.');
+            return;
+        }
+        this.gen++;
+        this.stopOcr();
+        if (ImageTextSearch.canChooseEngine) this.plugin.app.saveLocalStorage(ENGINE_KEY, null);
+        try {
+            await this.builtin.assets.clear();
+        } catch (e) {
+            console.error('Enhanced Canvas OCR (built-in): removing the files failed', e);
+            new Notice('Enhanced Canvas: couldn\'t remove the built-in OCR files. See the developer console (Ctrl+Shift+I).');
+            return;
+        }
+        new Notice(`Enhanced Canvas: removed the built-in OCR files from this device.${Platform.isWin ? ' Images are read with Windows OCR again.' : ''}`);
+        // A fresh start for the next notices: Linux offers the download again, Windows says if the system OCR is paused.
+        this.builtinBroken = false;
+        this.blockNoticed = false;
+        this.offerNoticed = false;
+        if (this.enabled) void this.scan();
     }
 
     /**
@@ -647,7 +870,16 @@ export class ImageTextSearch {
         }
     }
 
-    private ocrImages(files: TFile[]): Promise<(OcrLine[] | null)[] | null> {
+    private async ocrImages(files: TFile[]): Promise<(OcrLine[] | null)[] | null> {
+        if (this.engine === 'system') return this.ocrImagesNative(files);
+        const gen = this.gen;
+        const read = await this.builtin.read(files, () => gen === this.gen);
+        // Same CJK_GAP pass as the Windows path. Here, not in BuiltinOcr: that file may only `import type` from this one.
+        read?.forEach((l) => l?.forEach((x) => (x[0] = x[0].replace(CJK_GAP, ''))));
+        return read;
+    }
+
+    private ocrImagesNative(files: TFile[]): Promise<(OcrLine[] | null)[] | null> {
         const adapter = this.plugin.app.vault.adapter;
         if (!(adapter instanceof FileSystemAdapter)) return Promise.resolve(null);
         // Required lazily: child_process doesn't exist on mobile, where this never runs.

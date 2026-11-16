@@ -2,13 +2,12 @@
 export const whatsNew = `
 ## What's new
 
-- **Search text in images**: turn on *Search text in images and PDFs* in settings and the text in every vault image is read on-device with the system's built-in OCR (macOS or Windows). Run *Search text in images and PDFs* from the command palette or the ribbon icon; matching text is boxed on the image. \`a b\` needs both words, \`a OR b\` either, \`"a b"\` the exact phrase. Off by default; the first run takes a few minutes.
-- **Search text in PDFs**: the same setting indexes the text in your PDFs too. Results show the page number, and choosing one opens the PDF at that page. Scanned PDFs without a text layer aren't searchable yet.
-- **Filter by file type**: the *All*, *Images* and *PDFs* buttons show one file type at a time, each with its number of matches. The button on their right hides thumbnails for a compact list.
-- **Image and PDF cards in Find in canvas**: *Find in canvas* now matches the text inside image and PDF cards.
-- **Results in core Search**: *Show image and PDF results in Search* lists matching images and PDFs in Obsidian's Search next to your notes.
-- **Linux and mobile**: these devices can't read images themselves, but with the setting on they search the index synced from your Mac or Windows PC.
-- **Password-protected PDFs**: after indexing, a notice lists PDFs that need a password. Click **Unlock…** there, or run *Unlock password-protected PDFs for text search*, and enter each password once; a password that opens one PDF is tried on the others. The password isn't saved; the text stays in the index until the PDF changes.
+- **Built-in OCR**: a second way to read the text in images, running inside Obsidian (PaddleOCR, on your graphics card when available). One model reads many languages at once. It needs a one-time download of about 31 MB of model files; nothing is downloaded unless you choose it. Your images never leave your computer.
+- **Windows, when Windows OCR is blocked**: on a computer where PowerShell is blocked by a security policy or endpoint protection, or no OCR language is installed, the notice now has a **Use built-in OCR** button. Click it once: the files download and reading continues. That computer no longer starts PowerShell, also after a restart.
+- **Windows, by choice**: the new *OCR engine* setting switches between *System (Windows OCR)* and *Built-in*. The choice is stored per device.
+- **Linux**: Linux desktops now read images themselves, with the built-in OCR. A notice asks before the download; PDFs are indexed meanwhile.
+- **Remove it**: the command *Remove downloaded built-in OCR files* frees the space.
+- **macOS and mobile**: nothing changes.
 `;
 
 // Shown on first install and after every update. Add an entry when a feature ships.
@@ -40,12 +39,13 @@ Search words or a \`[[link]]\` across the Canvas: \`a b\` needs both words, \`a 
 - **Hotkey:** whatever *Search current file* uses (Cmd/Ctrl+F by default); while editing a card it still searches that card. Or bind *Find in canvas* in Settings → Hotkeys.
 
 ### Search text in images and PDFs
-Reads the text in every vault image with the system's built-in OCR (macOS or Windows), on-device, and the embedded text of every PDF. Search all images and PDFs, or let Find in canvas match image and PDF cards; matching text is boxed on the image, and a PDF result opens at its page.
+Reads the text in every vault image, on-device (macOS and Windows: the system's OCR; Linux, or Windows by choice: the built-in OCR), and the embedded text of every PDF. Search all images and PDFs, or let Find in canvas match image and PDF cards; matching text is boxed on the image, and a PDF result opens at its page.
 - **Where:** command *Search text in images and PDFs* or the ribbon icon; *Find in canvas* for image and PDF cards. Same search syntax as Find in canvas; results are numbered, with the total count on top. *All*, *Images* and *PDFs* filter by file type, the button beside them hides thumbnails, and **Show more** at the end lists 50 more.
 - **Locked PDFs:** command *Unlock password-protected PDFs for text search* (or **Unlock…** in the notice after indexing) asks for each password once. The password isn't saved.
 - **Rebuild:** command *Rebuild image and PDF text index* reads every image and PDF again. Files in *Excluded files* are skipped.
-- **Settings:** *Search text in images and PDFs* (off by default; the first run takes a few minutes). *Show image and PDF results in Search* puts matching images, with thumbnails, in core Search next to your notes (add \`-file:.md -file:.canvas\` for images and PDFs only); the ribbon icon stays.
-- **Other devices:** reading images needs a Mac or a Windows PC (Windows needs an OCR language installed); on Linux and mobile the same setting searches the index synced from that computer.
+- **Settings:** *Search text in images and PDFs* (on by default; the first run takes a few minutes). On Windows, *OCR engine* chooses between Windows OCR and the built-in OCR. *Show image and PDF results in Search* puts matching images, with thumbnails, in core Search next to your notes (add \`-file:.md -file:.canvas\` for images and PDFs only); the ribbon icon stays.
+- **Built-in OCR:** needs a one-time download of about 31 MB, after you choose it or click **Download**. Used on Linux, and on Windows when you pick it or when Windows OCR can't run (no OCR language installed, or PowerShell blocked). *Remove downloaded built-in OCR files* frees the space.
+- **Mobile:** the same setting searches the index synced from your computer.
 
 ### Send to Canvas
 Add the current note to a Canvas of your choice. That Canvas is remembered, so later notes can go straight to it.

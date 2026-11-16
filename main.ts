@@ -12,7 +12,8 @@ import {
 	TFile,
 	TFolder,
 	Vault,
-	Notice
+	Notice,
+	Platform
 } from 'obsidian';
 import { CanvasEdgeData, CanvasNodeData, CanvasData } from "obsidian/canvas";
 import { around } from "monkey-around";
@@ -1490,6 +1491,19 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 		);
 	};
 
+	// Device-local (localStorage), not data.json: which engine a computer needs isn't shared with the others.
+	private bindOcrEngine = (setting: Setting) => {
+		setting.addDropdown((dropdown) =>
+			dropdown
+				.addOption('system', 'System (Windows OCR)')
+				.addOption('builtin', 'Built-in')
+				.setValue(this.plugin.imageText.engine)
+				.onChange((value) => {
+					this.plugin.imageText.setEngine(value === 'builtin' ? 'builtin' : 'system');
+				})
+		);
+	};
+
 	private bindCoreSearchToggle = (setting: Setting) => {
 		setting.addToggle((toggle) =>
 			toggle
@@ -1576,14 +1590,24 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 					},
 				],
 			},
-			// OCR runs only on macOS (Vision) and Windows (Windows.Media.Ocr); other devices search the synced index.
+			// Desktop reads images: macOS Vision, Windows OCR, or the built-in OCR (Linux, or Windows by choice).
+			// Mobile searches the synced index.
 			{
 				name: 'Search text in images and PDFs',
-				desc: ImageTextSearch.canIndex
-					? 'Reads the text in every vault image with the system\'s built-in OCR (macOS: Vision through osascript; Windows: Windows.Media.Ocr through PowerShell, needs an OCR language installed), on-device, and the embedded text of every PDF. Adds a "Search text in images and PDFs" command and lets Find in canvas match image and PDF cards. The index is stored in the plugin folder; no notes are created. The first run takes a few minutes for large vaults.'
-					: 'Searches the image text index built on a Mac or Windows PC and synced to this device (plugin folder, ocr-index folder). This device doesn\'t read images or PDFs itself. Adds a "Search text in images and PDFs" command and lets Find in canvas match image and PDF cards.',
+				desc: !ImageTextSearch.canIndex
+					? 'Searches the image text index built on a computer and synced to this device (plugin folder, ocr-index folder). This device doesn\'t read images or PDFs itself. Adds a "Search text in images and PDFs" command and lets Find in canvas match image and PDF cards.'
+					: `Reads the text in every vault image, on-device, and the embedded text of every PDF. ${Platform.isMacOS
+						? 'Images are read with the system\'s OCR (Vision, through osascript).'
+						: Platform.isWin
+							? 'Images are read with the OCR engine chosen below.'
+							: `Images are read with the built-in OCR, which runs inside Obsidian and needs a one-time download of about 31 MB (asked first; PDFs need nothing).`} Adds a "Search text in images and PDFs" command and lets Find in canvas match image and PDF cards. The index is stored in the plugin folder; no notes are created. The first run takes a few minutes for large vaults.`,
 				render: this.bindImageTextToggle,
 			},
+			...(ImageTextSearch.canChooseEngine ? [{
+				name: 'OCR engine',
+				desc: 'System uses Windows OCR through PowerShell and needs an OCR language installed. Built-in runs inside Obsidian and reads many languages at once. It needs a one-time download of about 31 MB, and uses your graphics card when available. On a work computer with endpoint protection (EDR), choose Built-in: the system engine starts PowerShell, which such tools may block or report. This choice is stored on this device only.',
+				render: this.bindOcrEngine,
+			}] : []),
 			{
 				name: 'Show image and PDF results in Search',
 				desc: 'Needs Search text in images and PDFs. On: images and PDFs whose text matches appear in core Search (search in all files) next to your notes, with the same query syntax and a thumbnail for images. Off: they are searched only with the "Search text in images and PDFs" ribbon icon or command. Either way, that ribbon icon and command stay, and show the matching text boxed on the image.',

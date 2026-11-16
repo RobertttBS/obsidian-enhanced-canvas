@@ -1,6 +1,10 @@
 import esbuild from "esbuild";
 import process from "process";
 import { builtinModules as builtins } from "node:module";
+import path from "node:path";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { gzipSync } from "node:zlib";
 
 const banner =
 `/*
@@ -10,6 +14,44 @@ if you want to view the source, please visit the github repository of this plugi
 `;
 
 const prod = (process.argv[2] === "production");
+
+// Virtual module `ocr-worker-source`: the OCR Worker (src/ocr-worker.js) bundled on its own as a browser script
+// against the WebGPU build of onnxruntime-web (which also runs WASM-only), exported as text, so it ships inside
+// main.js and starts from a Blob URL (src/BuiltinOcr.ts).
+// Virtual module `ocr-wasm-source`: onnxruntime's asyncify .wasm for that build, gzip -9 + base64, also as text.
+// Shipped inside main.js (docs/spec-builtin-ocr.md 2.4): only model data is downloaded at run time, never code.
+const OCR_WASM = "node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm";
+const OCR_WASM_SHA256 = "ca319e9539cd0f1e291cf56074760121eaf39650f5dbf84b6e52c07f4b2944ec";
+let ocrWasm; // once per process: gzip -9 of 28 MB takes seconds, and watch mode rebuilds often
+const ocrSources = {
+	name: "ocr-sources",
+	setup(build) {
+		build.onResolve({ filter: /^ocr-(worker|wasm)-source$/ }, (args) => ({ path: args.path, namespace: "ocr-source" }));
+		build.onLoad({ filter: /^ocr-wasm-source$/, namespace: "ocr-source" }, async () => {
+			ocrWasm ??= (async () => {
+				const buf = await readFile(OCR_WASM);
+				const got = createHash("sha256").update(buf).digest("hex");
+				if (got !== OCR_WASM_SHA256) throw new Error(`${OCR_WASM}: SHA-256 ${got}, expected ${OCR_WASM_SHA256} (onnxruntime-web version changed?)`);
+				return gzipSync(buf, { level: 9 }).toString("base64");
+			})();
+			return { contents: await ocrWasm, loader: "text" };
+		});
+		build.onLoad({ filter: /^ocr-worker-source$/, namespace: "ocr-source" }, async () => {
+			const result = await esbuild.build({
+				entryPoints: ["src/ocr-worker.js"],
+				bundle: true,
+				write: false,
+				format: "iife",
+				platform: "browser",
+				target: "es2020",
+				minify: prod,
+				alias: { "onnxruntime-web": "onnxruntime-web/webgpu" },
+				logLevel: "warning",
+			});
+			return { contents: result.outputFiles[0].text, loader: "text", watchFiles: [path.resolve("src/ocr-worker.js")] };
+		});
+	},
+};
 
 const context = await esbuild.context({
 	banner: {
@@ -39,6 +81,7 @@ const context = await esbuild.context({
 	treeShaking: true,
 	outfile: "main.js",
 	minify: prod,
+	plugins: [ocrSources],
 });
 
 if (prod) {

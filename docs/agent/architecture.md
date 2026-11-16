@@ -113,7 +113,7 @@ safe.
   feature is off) are matched as one text; image matches are the one DOM edit: `.ec-ocr-box` divs appended to the
   node's `.image-embed`, drawn once per mount (so the observer doesn't loop), removed on clear.
 - `ImageTextSearch.ts` — optional, setting `enableImageTextSearch` (default on). Indexing is
-  macOS and Windows desktop only (`ImageTextSearch.canIndex`); every other device is search-only: it
+  desktop only (`ImageTextSearch.canIndex`, Linux included); mobile is search-only: it
   reads the synced index, never writes it, registers no Rebuild command, vault events or scan,
   and `refresh()` (run before the modal opens and before Find in canvas matches) re-reads the
   shard files whose mtime changed. OCRs every
@@ -129,8 +129,42 @@ safe.
   set `broken` + `blockedBy` (even for one image) and the notice names the cause (`BLOCK_HINT`):
   exit 2 = no OCR language, exit 3 = Constrained Language Mode (checked on the script's first line),
   spawn ENOENT = missing, other spawn errors / AMSI text on stderr = blocked; the one-by-one retries that pause OCR all exiting nonzero with empty stderr and no signal (an EDR kill), or 3 such runs in a row across scans (`silentRuns`, for one image per run) = stopped. Image paths of 260+ chars go in as `\\?\` / `\\?\UNC\` (`longPath`): PS 5.1 can't open them otherwise without LongPathsEnabled. No binary ships. `child_process` is `require`d inside
-  `ocrImages()` only, so mobile never loads it (keep it that way: a top-level import breaks
-  mobile). PDFs are indexed too, in-process by `readPdf()` with Obsidian's pdf.js
+  `ocrImagesNative()` only, so mobile never loads it (keep it that way: a top-level import breaks
+  mobile). **Built-in OCR** (`docs/spec-builtin-ocr.md`): `engine` picks the image OCR per batch — macOS
+  `'system'`, Linux `'builtin'`, Windows `'builtin'` only when the device-local key `ENGINE_KEY`
+  (`enhanced-canvas-ocr-engine`, `app.saveLocalStorage`, never `data.json`) says so, set by the "OCR engine"
+  setting (Windows only, `canChooseEngine`) or the paused notice's "Use built-in OCR" button (`setEngine()`, which
+  bumps `gen`, so a running batch is dropped, not failed, and the scan restarts). `setEngine()` also drops the
+  images from `failed` (the other engine may read them; PDF failures stay, no OCR) and, if images are indexed,
+  `offerReread()` shows one notice (replacing a previous one) whose button runs `rereadImages()`: every indexed
+  image goes in the device-local `reread` set (`DEVICE_KEY`; never `m` in the synced index, or every other device
+  would re-read too), which `stale()` treats as stale; a read removes it (success replaces the text, failure keeps
+  the old text and goes in `failed`). Rebuild clears `reread`. Built-in without its files
+  (`OcrAssets.ready()`): the scan leaves images out (not failed; PDFs go on) and `offerDownload()` shows a Download
+  notice once per run; never falls back to the system OCR. `BuiltinOcr.ts` runs PaddleOCR (PP-OCRv6 small,
+  onnxruntime-web, single thread) in a classic Worker started from a Blob URL; the worker source is
+  `src/ocr-worker.js`, bundled to a string against `onnxruntime-web/webgpu` by the `ocr-worker-source` virtual module
+  (`esbuild.config.mjs`). It is `.js` because tsc (`moduleResolution: "node"`, TS 4.7) can't resolve
+  `ppu-paddle-ocr/web`; don't make it `.ts`. The asyncify `.wasm` ships inside `main.js` (virtual module
+  `ocr-wasm-source`: SHA-256 checked at build, gzip -9, base64; ~9.5 MB of main.js) and is unpacked with
+  `DecompressionStream` on every worker start (the buffer is transferred) — never at module load, mobile loads the
+  module too. Only data is downloaded (Obsidian policy: no runtime code installs): `OcrAssets.ts` fetches `det.onnx`,
+  `rec.onnx`, `dict.txt` from this repo's GitHub release `ocr-assets-1` with `requestUrl` (fetch hits CORS), checks
+  the SHA-256 constants before storing, and keeps them in IndexedDB `enhanced-canvas-ocr-assets` (key
+  `<tag>/<name>`, no vault id; outside the vault so sync doesn't carry 31 MB). Resumes per file, verifies only on
+  write, one `download()` at a time; `clear()` (command "Remove downloaded built-in OCR files") deletes the database and
+  resets the engine key. A new model or onnxruntime version needs a new tag (and `scripts/fetch-ocr-assets.mjs`
+  prepares the files; the maintainer uploads them). The worker tries WebGPU (`['webgpu', 'wasm']`) unless
+  `navigator.gpu` is missing (then `['wasm']`); the log line ends with `ep=...`; after two GPU worker failures in a
+  row (init, or the timeout/"restarting the worker" path) it uses WASM until Obsidian restarts; a GPU init failure
+  is retried at once, so one failing start falls through to WASM within the same `read()`. Batches are
+  `builtin.batchSize`: 50 on WebGPU, 10 on WASM (~7 s per image). Traps in the worker: clear
+  `ort.env.wasm.wasmPaths` before `initialize()` (else onnxruntime imports its glue from jsDelivr); use
+  `strategy: 'per-box'` (per-line drops vertical margin text); `.ort` models fail on WebGPU (no NHWC Conv kernel)
+  and the library falls back to WASM silently, so only `.onnx`; the library creates both sessions in parallel and
+  WebGPU refuses the second, so the worker serializes `InferenceSession.create`; `powerPreference` is ignored on
+  Windows. `BuiltinOcr` and `OcrAssets` use no Node modules and may only `import type` from `ImageTextSearch.ts`,
+  so `CJK_GAP` is applied in `ocrImages()`. PDFs are indexed too, in-process by `readPdf()` with Obsidian's pdf.js
   (`loadPdfJs()`): only their embedded text layer (no OCR, so scanned pages stay empty), one line per text line (`hasEOL`) as `[text, page]`
   (1-based) instead of a box, control characters stripped. `getDocument` must get
   `cMapUrl: '/lib/pdfjs/cmaps/', cMapPacked: true` (Obsidian's own PDF view uses it): without
@@ -153,17 +187,23 @@ safe.
   mtime changed and are not dirty (unsaved local entries win), and applies them in one step. On the
   indexing computer, `migrateLegacy` runs after the shards load, adds only paths the shards lack from an
   earlier build's single `ocr-index.json`, and deletes it only after every dirty shard is written. Rescans images whose
-  mtime changed, 50 per OCR process run (at most `PDF_BATCH` = 5 PDFs per batch, so progress is saved often); vault events keep it current. Each scan first
+  mtime changed, 50 per OCR process run (10 on built-in WASM; at most `PDF_BATCH` = 5 PDFs per batch, so progress is saved often); vault events keep it current. Each scan first
   prunes entries whose image is gone. A failed OCR process run is retried one image at a time;
   files that still fail (images, or PDFs `readPdf()` can't open) go in the `failed`
-  map with their mtime (skipped until the file changes, never indexed as empty). `failed` and `readImage`
+  map with their mtime (skipped until the file changes, never indexed as empty). `failed`, `reread` and `readImage`
   are per device, in `app.saveLocalStorage(DEVICE_KEY)`, not the synced index: they survive restarts, so a bad file
   isn't retried (and re-notified) on every launch. If every
   `ALWAYS_DECODABLE` image (png/jpg/gif/tiff/bmp — not HEIC/WebP, which need Windows Store codecs) of a
   batch fails and this device has never read an image (`readImage`; the index can't tell, it may be synced
-  from another device), or the first 3 single-retry runs fail as whole runs, OCR itself is broken: `broken`
-  skips images (PDFs keep indexing) until the "Rebuild image and PDF text index" command, which
-  also clears the index (except unlocked PDFs) and `failed`. PDF failures never set `broken`. Images
+  from another device), or the first 3 single-retry runs fail as whole runs, OCR itself is broken (`pause()`):
+  `broken` for the system OCR, `builtinBroken` (this run only) for the built-in one; `paused` is the current
+  engine's. It skips images (PDFs keep indexing) until the "Rebuild image and PDF text index" command, which
+  also clears the index (except unlocked PDFs) and `failed`. `broken` + `blockedBy` are saved in `DEVICE_KEY`
+  as soon as they change, so a restart doesn't start PowerShell again (an EDR alert each time); only Rebuild clears
+  them, and switching to the built-in OCR doesn't (they describe the system OCR). The paused notice
+  (`noticePaused()`) shows at most once per run, also for a state read back at startup (an engine change or
+  removing the built-in files resets that, and the download offer); on Windows it offers the
+  built-in OCR. PDF failures never pause. Images
   matched by Obsidian's *Excluded files* (`metadataCache.isUserIgnored`) are skipped and pruned. Index changes must go through `put()` and writes through `save()`, which serializes and
   coalesces them — never call `adapter.write` on the index directly, and never from a search-only device. `disable()` removes
   the command, ribbon and listeners and kills the process but keeps the index. Also owns
