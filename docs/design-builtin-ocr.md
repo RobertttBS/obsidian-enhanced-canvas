@@ -69,13 +69,13 @@ onnxruntime 的 `.wasm` 是執行檔，執行時下載它可以被解讀為「�
 
 ### 決定 5：引擎選擇存在裝置上
 
-`app.saveLocalStorage('enhanced-canvas-ocr-engine')`，不進 `data.json`：`data.json` 會跟著 vault 同步，但「公司電腦要用內建、家裡的 Mac 用 Vision」是每台裝置各自的事。macOS 一律系統、Linux 一律內建、Windows 依這個鍵。
+`app.saveLocalStorage('enhanced-canvas-ocr-engine')`，不進 `data.json`：`data.json` 會跟著 vault 同步，但「公司電腦要用內建、家裡的 Mac 用 Vision」是每台裝置各自的事。macOS 一律系統、Linux 一律內建、Windows 依這個鍵；鍵是空的＝還沒選，圖片等使用者回答 `offerChoice()` 的通知，不啟動 PowerShell（`docs/design-ocr-consent-and-crash-guard.md` A，含舊版使用者一次性轉換、`removeBuiltin()` 回到還沒選）。
 
 用內建但資產還沒就緒時，圖片跳過（不記為失敗），PDF 照常，並顯示下載提示。**不退回系統 OCR**：使用者選內建可能正是為了避開 PowerShell。
 
 ### 決定 6：系統 OCR 的被擋狀態持久化
 
-之前 `broken` 與 `blockedBy` 只在記憶體，每次重開 Obsidian 只要還有沒讀過的圖就會再啟動一次 PowerShell，在受 EDR 管控的電腦上等於每次都再觸發一次告警。現在寫進 `DEVICE_KEY`，只有 Rebuild 會清掉；改用內建 OCR 不清（它描述的是系統 OCR）。通知每次啟動最多一次。
+之前 `broken` 與 `blockedBy` 只在記憶體，每次重開 Obsidian 只要還有沒讀過的圖就會再啟動一次 PowerShell，在受 EDR 管控的電腦上等於每次都再觸發一次告警。現在寫進 `DEVICE_KEY`，只有 Rebuild 會清掉（`killed` 例外：它來自整台電腦的判定檔，Rebuild 後重新套用，見 `docs/design-ocr-consent-and-crash-guard.md` B）；改用內建 OCR 不清（它描述的是系統 OCR）。通知每次啟動最多一次。
 
 ### 決定 7：已讀過的圖不自動重讀
 

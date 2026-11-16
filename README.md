@@ -6,18 +6,35 @@
 
 | Feature | What it does | How to use it |
 | --- | --- | --- |
+| [Canvas properties in notes](#canvas-properties-in-notes) | Writes a note's Canvas and its edges into the note's properties | Automatic |
+| [Focus card from a link](#canvas-properties-in-notes) | Zooms to the note's card when you open a Canvas link from that note | Click the link |
 | [Find in Canvas](#find-in-canvas) | Highlights the cards that contain a word or link to a note | **Cmd/Ctrl+F** in a Canvas |
-| [Search Text in Images and PDFs](#search-text-in-images-and-pdfs) | Searches the text inside images (OCR) and PDFs, on-device | Click the ribbon icon (on by default) |
-| [Split Node by Headings](#split-node-by-headings) | Splits one card into a tree of cards, one per heading | Right-click a card → **Split by headings** |
+| [Search Text in Images and PDFs](#search-text-in-images-and-pdfs) | Searches the text inside images (OCR) and PDFs, on your computer | Click the ribbon icon (on by default) |
+| [Split Card by Headings](#split-card-by-headings) | Splits one card into a tree of cards, one per heading | Right-click a card → **Split by headings** |
 | [Add Notes by Tag](#add-notes-by-tag) | Adds every note that matches a tag query | Right-click the Canvas → **Add notes by tag...** |
 | [Send Note to Canvas](#send-note-to-canvas) | Sends the current note to a Canvas | **Send to Canvas** command |
-| [Auto-Resize Node](#auto-resize-node) | Keeps a card's height fitted to its text | Double-click the card's bottom edge |
-| [Canvas properties in notes](#main-feature) | Writes a note's Canvas and its edges into the note's properties | Automatic |
-| [Focus node from a link](#main-feature) | Zooms to the note's card when you open a Canvas link from that note | Click the link |
-| [Hide Properties in Canvas Nodes](#hide-properties-in-canvas-nodes) | Hides the properties panel inside cards | Automatic |
+| [Auto-Resize Card](#auto-resize-card) | Keeps a card's height fitted to its text | Double-click the card's bottom edge |
+| [Default Card Size](#default-card-size) | Sets the size of new text and file cards | Settings → *Default card size* |
+| [Hide Properties in Canvas Cards](#hide-properties-in-canvas-cards) | Hides the properties panel inside cards | Automatic |
 | [Edge commands](#commands) | Adds edges from the links in notes, shortens edge paths, deletes edges | Command palette, on selected cards |
 
-## ✨New Feature✨
+## Features
+
+### Canvas Properties in Notes
+
+![enhanced-canvas](./Attachments/demo_with_focus.gif)
+
+1. **Add a note to a Canvas**: the note gets a `canvas` property with a link to that Canvas.
+
+2. **Draw an edge between two notes**: the source note gets a link to the target note, in a property named after the Canvas (e.g. `Canvas 1` for `Canvas 1.canvas`).
+
+3. **Click a Canvas link in a note**: the Canvas opens zoomed to that note's card.
+
+**Good to know**
+
+-   The plugin writes these properties into your notes. Enabling it adds them for every existing Canvas.
+-   Renaming or deleting a Canvas or a note updates the properties.
+-   To stop it, turn off *Enable Frontmatter Synchronization* in settings. Turning it off, or disabling the plugin, removes every property the plugin added.
 
 ### Find in Canvas
 
@@ -46,87 +63,91 @@ You can combine them: `canvas plugin OR "find text"`.
 -   With *Search text in images and PDFs* on, image and PDF cards whose text matches are found too, and the matching text is boxed on images.
 -   While editing a card, Cmd/Ctrl+F still searches that card.
 -   Cmd/Ctrl+F is the core *Search current file* hotkey. Change it in Settings → Hotkeys, or bind *Find in canvas* separately.
--   Node colors and the `.canvas` file are never changed.
+-   Card colors and the `.canvas` file are never changed.
 -   Change the highlight color with a CSS snippet: `body { --ec-find-color: <color>; }`
 
 ### Search Text in Images and PDFs
 
-Search the text inside every image and PDF in your vault. Text recognition runs on your device: your images and PDFs never leave your computer. The only download is the [built-in OCR](#built-in-ocr)'s model files (about 31 MB, once), when that engine is used. On by default.
-
-**Set up**
-
-*Search text in images and PDFs* is on by default (turn it off in settings if you don't need it). The plugin reads the text in your images with the system's OCR (macOS, Windows) or the [built-in OCR](#built-in-ocr) (Linux, or Windows by choice), and indexes the embedded text of your PDFs.
+Search the text inside every image (OCR) and PDF in your vault. Everything is read on your computer; nothing is uploaded. On by default (setting *Search text in images and PDFs*).
 
 **Search**
 
-Run **"Search text in images and PDFs"** or click the ribbon icon. The query syntax is the same as [Find in Canvas](#find-in-canvas) (words, `OR`, `"phrase"`).
+Run **"Search text in images and PDFs"** or click the ribbon icon. Same query syntax as [Find in Canvas](#find-in-canvas).
 
--   Results are numbered and sorted by the number of matching lines. The total count is shown on top.
--   The first 50 results are listed. **Show more** at the end of the list adds 50 more.
--   The **All / Images / PDFs** buttons show only one file type, each with its number of matches.
--   The button on their right switches to a compact list without thumbnails: the file name and its first matching line.
--   Image results show the image with the matching text boxed, and the notes that embed it. Choose a note to open it at the image (a Canvas zooms to the image card).
--   PDF results show the page number of each matching line. Choose one to open the PDF at that page.
+-   Results are sorted by matching lines, 50 at a time (**Show more** adds 50).
+-   **All / Images / PDFs** filters by type; the button next to them switches to a compact list.
+-   Image results box the matching text and list the notes that embed the image: choose one to open it there. PDF results open at the matching page.
 
-**Other places that use the index**
+**Elsewhere**
 
--   **Find in canvas** also matches image and PDF cards by their text.
--   Turn on *Show image and PDF results in Search* to see matching images and PDFs in core Search (search in all files) next to your notes, with a thumbnail under each image's name. The query syntax is the same as for notes. Add `-file:.md -file:.canvas` to show only images and PDFs.
+-   **Find in canvas** matches image and PDF cards too.
+-   *Show image and PDF results in Search* adds them to core Search. Add `-file:.md -file:.canvas` to show only them.
+
+**How images are read**
+
+| Platform              | OCR                                                        |
+| --------------------- | ---------------------------------------------------------- |
+| macOS                 | macOS OCR (Vision, via `osascript`)                        |
+| Windows 10/11         | [Built-in OCR](#built-in-ocr) (recommended) or Windows OCR |
+| Linux                 | [Built-in OCR](#built-in-ocr)                              |
+| iPhone, iPad, Android | None: they search the index synced from a computer         |
+
+PDFs need no OCR: their embedded text is indexed on every computer.
+
+**Windows: choose an engine**
+
+The first time images need reading, a notice asks which engine to use (PDFs are indexed meanwhile). Change it later in settings → *OCR engine* (per vault and computer). After a switch, a notice offers **Read again with…** for images already read.
+
+|                           | Built-in OCR (recommended)                          | Windows OCR                                    |
+| ------------------------- | --------------------------------------------------- | ---------------------------------------------- |
+| Download                  | About 31 MB, once                                   | None                                           |
+| Languages                 | Many at once                                        | One (see [Limits](#limits))                    |
+| Speed per image           | ~0.3 s with a graphics card, several s without      | ~0.3 s                                         |
+| Company security software | Not affected (runs inside Obsidian)                 | May block it or close Obsidian (runs PowerShell) |
+
+#### Built-in OCR
+
+PaddleOCR (PP-OCRv6 small), running inside Obsidian on your graphics card (WebGPU) or CPU.
+
+-   **Download**: about 31 MB from this project's GitHub release, once per computer, only after you choose it. Each file is SHA-256 checked. Your images are never uploaded.
+-   **Storage**: Obsidian's IndexedDB on this computer, not your vault.
+-   **Remove**: run **"Remove downloaded built-in OCR files"**.
+-   **Licenses**: models Apache-2.0, libraries MIT. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 **The index**
 
--   The first run takes a few minutes for a large vault: about 0.3 s per image, about 11 s for a 2,700-page PDF. After that, only new or changed files are read.
--   Run **"Rebuild image and PDF text index"** to read every file again, for example after a file couldn't be read.
--   Files in *Settings → Files and links → Excluded files* are skipped.
--   The index is stored in the `ocr-index` folder inside the plugin folder. No notes are added to your vault.
--   Large PDFs make the index big (tens of MB for a few hundred MB of PDFs). Add folders you don't need searched to *Excluded files*.
+-   The first run takes a few minutes for a large vault; after that only new or changed files are read.
+-   **"Rebuild image and PDF text index"** reads every file again.
+-   Stored in the plugin's `ocr-index` folder; no notes are added. Large PDFs make it big (tens of MB): add folders you don't need to *Settings → Files and links → Excluded files*, which are skipped.
+-   **Phones and tablets**: turn on the same setting, and make sure your sync includes `ocr-index`.
+-   **Several computers on one vault**: leave it on for only one if you can. Otherwise work is repeated (nothing is lost).
 
 **Password-protected PDFs**
 
--   After indexing, a notice lists the password-protected PDFs. Click **Unlock…** there, or run **"Unlock password-protected PDFs for text search"**, and enter each PDF's password once.
--   A password that opens one PDF is tried on the others too.
--   The password isn't saved. The PDF's text stays in the index, also when you rebuild it, until the PDF changes.
--   That text is stored unencrypted in the index, which syncs with your vault.
+Click **Unlock…** in the notice after indexing, or run **"Unlock password-protected PDFs for text search"**, and enter each password once (it's tried on the other PDFs too). The password isn't saved. The text stays in the index until the PDF changes, unencrypted and synced with your vault.
 
-**Platforms**
+#### If reading images is paused
 
-| Platform                     | What it does                                                                                 |
-| ---------------------------- | -------------------------------------------------------------------------------------------- |
-| macOS                        | Reads images with the Vision framework, called through the system's `osascript`              |
-| Windows 10/11 (System)       | Reads images with `Windows.Media.Ocr`, called through Windows PowerShell (`powershell.exe`)  |
-| Windows 10/11 (Built-in)     | Reads images with the [built-in OCR](#built-in-ocr), inside Obsidian                         |
-| Linux                        | Reads images with the [built-in OCR](#built-in-ocr), inside Obsidian                         |
-| iPhone, iPad, Android        | Search only: uses an index built on a computer and synced to the device                      |
+PDFs keep being indexed.
 
--   **Search-only devices**: turn on the same setting. Results show what the computer last read. Your sync tool must sync the `ocr-index` folder in the plugin folder.
--   **Build the index on one computer only.** Two computers with this setting on overwrite each other's index.
+-   **Windows OCR can't run** (no OCR language, or PowerShell blocked): the notice says why. Click **Use built-in OCR**.
+-   **Obsidian was closed while reading images** (some company security software does this when a plugin starts PowerShell or `osascript`): reading images pauses on that computer, for every vault. The notice offers **Use built-in OCR** (Windows) or **Keep using Windows/macOS OCR**. If it happens again, the system OCR stays off until you click **Try … OCR again** in settings.
 
-**Built-in OCR**
+To detect this, the plugin keeps two small files outside your vault (macOS and Windows): `enhanced-canvas-ocr-running-<vault id>` in the temp folder while OCR runs, and `obsidian-enhanced-canvas/ocr-killed.json` in `%LOCALAPPDATA%` or `~/Library/Application Support` after such a close (delete it to reset).
 
-PaddleOCR (PP-OCRv6 small) running inside Obsidian, on your graphics card (WebGPU) when available, else on the CPU. One model reads many languages at once.
+#### Limits
 
--   **When it's used**: always on Linux. On Windows, when you choose *OCR engine → Built-in* in settings, or click **Use built-in OCR** on the notice shown when Windows OCR can't run (no OCR language, or PowerShell blocked by a security policy or endpoint protection). The built-in OCR doesn't start PowerShell.
--   **What is downloaded**: three model files (about 31 MB) from this project's GitHub release `ocr-assets-1`, once per computer, after you choose it or click **Download**. Each file is checked against a fixed SHA-256 before it's stored. Only model data is downloaded; the program that runs it (onnxruntime-web) is part of the plugin itself. Recognition then runs on your device: images are never sent anywhere.
--   **Where it's stored**: in Obsidian's own browser storage (IndexedDB) on this computer, not in your vault, so file sync doesn't copy it.
--   **Switching engines**: images not read yet, and images the previous engine couldn't read, are read with the new one automatically. Images already read keep their text; a notice offers **Read again with…** to re-read just the images (PDFs don't use OCR).
--   **Remove it**: run **"Remove downloaded built-in OCR files"**. On Windows this also switches back to Windows OCR.
--   **Speed**: about 0.3 s per image on a graphics card; several seconds per image on the CPU.
--   **Licenses**: the PaddleOCR models are Apache-2.0 ([PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), converted to ONNX by [snowfluke/ppu-paddle-ocr-models](https://huggingface.co/snowfluke/ppu-paddle-ocr-models)); the release lists the files' sources and includes the license text. [onnxruntime-web](https://github.com/microsoft/onnxruntime) and [ppu-paddle-ocr](https://github.com/PT-Perkasa-Pilar-Utama/ppu-paddle-ocr), bundled in the plugin, are MIT. Full notices: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+-   PDFs: only embedded text is searched; scanned PDFs without a text layer aren't.
+-   A `"phrase"` can't span lines.
+-   Windows OCR reads one language: the first Chinese, Japanese or Korean language in *Settings → Time & language → Language* with OCR installed (these also read English), else the first listed language with OCR. If it can't read images, add the language's *Optical character recognition* feature.
+-   Windows OCR reads HEIC and WebP only with the matching Microsoft Store codec.
 
-**Limits**
+### Split Card by Headings
 
--   PDFs: only embedded text is searched. Scanned PDFs without a text layer are not searchable.
--   A `"phrase"` can't span lines, so a PDF sentence that breaks at the end of a line isn't found as a phrase.
--   Windows OCR reads one language: the first Chinese, Japanese or Korean language in *Settings → Time & language → Language* that has an OCR language pack installed (these also read English). Otherwise it uses the first listed language that has one.
--   Most Windows languages install an OCR pack with the language. If images can't be read, add the language's optical character recognition feature.
--   Windows can't read HEIC or WebP images unless the matching codec from the Microsoft Store is installed.
+Splits one card into a tree of cards, one per heading. Right-click a note card or a text card and choose **Split by headings**.
 
-### Split Node by Headings
-
-**Split Node by Headings** instantly deconstructs a single node into a hierarchical tree based on its headings. You can try this by right-clicking on a file (text) node and selecting "Split by headings" in Canvas.
-
--   **Choose the heading level**: turn on *Choose heading level on split* in settings, and the plugin asks which level to split down to (e.g. H2). Deeper headings stay inside their parent card.
--   **Cards fit their content**: with *Auto-resize leaf nodes on split* on, each new card's height fits its text and the tree is re-laid out. *Max auto-resize height* caps how tall a card can grow; longer content scrolls.
+-   *Choose heading level on split*: asks which level to split down to (e.g. H2). Deeper headings stay in their parent card.
+-   *Auto-resize leaf cards on split*: fits each new card's height to its text. *Max auto-resize height* caps it; longer content scrolls.
 
 ![SplitNode](./Attachments/split.gif)
 
@@ -140,88 +161,45 @@ Right-click an empty spot on the Canvas and choose **"Add notes by tag..."** to 
 
 ### Send Note to Canvas
 
-With the **"Send to Canvas"** command, you can push your current markdown note directly to a specific Canvas. It automatically appends a "canvas" property to your note, allowing you to navigate back to the board instantly in the future.
-
-Once you have sent a note, that Canvas becomes the "Selected." You can then use the **"Send to Selected Canvas"** command on other notes to instantly add them to the same board—bypassing the file selection step entirely.
+Run **"Send to Canvas"** in a note and pick a Canvas: the note is added as a card. The Canvas is remembered, so **"Send to Selected Canvas"** adds other notes to it without picking again. **"Clear selected Canvas file"** forgets it.
 
 ![SendNote](./Attachments/send.gif)
 
-### Auto-Resize Node
+### Auto-Resize Card
 
-With this update, double-clicking the bottom edge engages **"Auto-Resize."** Now, when you drag the right edge to adjust the width or update the text, the height dynamically adjusts to fit your text. No need for repeated double-clicking!
-
-Dragging the bottom edge to manually adjust the height disables the node's auto-resize feature.
+Double-click a card's bottom edge: its height then follows its text as you edit or change the width. Dragging the bottom edge turns it off.
 
 ![AutoResize](./Attachments/autoresize.gif)
 
-## Main Feature
+### Default Card Size
 
-![enhanced-canvas](./Attachments/demo_with_focus.gif)
+Set the width and height of new text cards and new file cards in settings → *Default card size* (50–5000 px).
 
-Based on this demo:
+### Hide Properties in Canvas Cards
 
-1. **Node addition**: When a note is added to the canvas, the plugin generates a 'canvas' property with a link to its corresponding canvas file.
-
-2. **Edge addition**: Creating an edge in the Canvas generates a link to the target note within a property named after the canvas file (e.g., 'Canvas 1'), where the property name is derived from the canvas file name without its '.canvas' extension.
-
-3. **Node Focusing**: Upon clicking a link to a .canvas file from a note, the system automatically focuses and zooms to the associated node in the canvas.
-
-**Note 1**: All Canvas-related properties will be added when this plugin is enabled, and all properties added by this plugin will be removed upon disabling it.
-
-**Note 2**: If you delete or rename a .canvas or Markdown file, all associated properties will also be updated.
-
-**Note 3**: To stop the plugin from writing these properties, turn off *Enable Frontmatter Synchronization* in settings. Turning it off removes every property the plugin added.
-
-### Hide Properties in Canvas Nodes
-
-The properties panel inside Canvas nodes and embedded notes is hidden. To show it again, turn off *Enable Custom Visuals & CSS* in settings.
+Hides the properties panel inside Canvas cards and embedded notes. Turn off *Hide properties in Canvas cards* to show it.
 
 ## Commands
 
--   **Adjust edges with shortest path**
+Edge commands work on the selected cards:
 
-    -   Adjusts edges between selected nodes using shortest path
+-   **Add edges according to the links in notes**: draws an edge wherever one note links to another, then shortens the paths.
+-   **Adjust edges with shortest path**: re-routes edges along the shortest path.
+-   **Delete edges between selected cards**
+-   **Remove the property of all cards in current Canvas**: removes this plugin's properties from every note in the current Canvas.
+-   **Show feature guide**: opens the in-app guide to every feature.
 
--   **Delete edges between selected nodes**
-
-    -   Removes all edges between selected nodes
-
--   **Add edges according the links in notes**
-
-    -   Automatically creates edges between selected nodes based on links within notes
-
--   **Remove the property of all nodes in current Canvas**
-    -   Removes properties from all nodes in the current Canvas
-
--   **Send to Canvas** / **Send to Selected Canvas** / **Clear selected Canvas file**
-    -   See [Send Note to Canvas](#send-note-to-canvas)
-
--   **Find in canvas (selected text or link)** / **Clear find highlights**
-    -   See [Find in Canvas](#find-in-canvas)
-
--   **Search text in images and PDFs** (when enabled)
-    -   See [Search Text in Images and PDFs](#search-text-in-images-and-pdfs)
-
--   **Show feature guide**
-    -   Opens an in-app guide to every feature, with where to find it and which settings control it
+Other commands are listed under their feature: [Send Note to Canvas](#send-note-to-canvas), [Find in Canvas](#find-in-canvas), [Search Text in Images and PDFs](#search-text-in-images-and-pdfs).
 
 ### Demo
 
--   **Add edges according the links in notes**
+**Add edges according to the links in notes**, on all card types (text, groups, images, nested Canvases):
 
 ![demoCommand](./Attachments/demoCommand.gif)
 
--   Automatically establishes connections based on existing markdown links in notes
-
--   It integrates **Adjust edges with shortest path**
-
--   Optimizes edge paths in Canvas for minimal distance
-
--   Supports all node types (text nodes, group nodes, images, nested Canvases, etc.)
-
 ## Installation Steps
 
-Search for "Enhanced Canvas" in the community plugins and install it. Once enabled, it automatically adds all properties to existing .canvas files.
+Search for "Enhanced Canvas" in the community plugins and install it. Once enabled, it adds the Canvas properties to the notes in your existing .canvas files.
 
 ## Contributing
 

@@ -203,7 +203,7 @@ export class CanvasExploder {
 
 		const cache = this.plugin.app.metadataCache.getFileCache(targetFile);
 		if (!cache || !cache.headings || cache.headings.length === 0) {
-			new Notice(`File "${targetFile.basename}" does not contain any headings to explode.`);
+			new Notice(`File "${targetFile.basename}" has no headings to split.`);
 			return;
 		}
 
@@ -228,7 +228,7 @@ export class CanvasExploder {
 			COMPACT_HEIGHT,
 		);
 
-		new Notice(`Explosion complete, created ${createdCount} nodes.`);
+		new Notice(`Split complete, created ${createdCount} cards.`);
 	}
 
 	/** File-node sections: headings <= maxLevel, plus a preamble entry (no heading) if content precedes them. */

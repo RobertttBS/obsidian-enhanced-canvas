@@ -131,8 +131,13 @@ safe.
   spawn ENOENT = missing, other spawn errors / AMSI text on stderr = blocked; the one-by-one retries that pause OCR all exiting nonzero with empty stderr and no signal (an EDR kill), or 3 such runs in a row across scans (`silentRuns`, for one image per run) = stopped. Image paths of 260+ chars go in as `\\?\` / `\\?\UNC\` (`longPath`): PS 5.1 can't open them otherwise without LongPathsEnabled. No binary ships. `child_process` is `require`d inside
   `ocrImagesNative()` only, so mobile never loads it (keep it that way: a top-level import breaks
   mobile). **Built-in OCR** (`docs/design-builtin-ocr.md`): `engine` picks the image OCR per batch — macOS
-  `'system'`, Linux `'builtin'`, Windows `'builtin'` only when the device-local key `ENGINE_KEY`
-  (`enhanced-canvas-ocr-engine`, `app.saveLocalStorage`, never `data.json`) says so, set by the "OCR engine"
+  `'system'`, Linux `'builtin'`, Windows whatever the device-local key `ENGINE_KEY`
+  (`enhanced-canvas-ocr-engine`, `app.saveLocalStorage`, never `data.json`) says — empty = `null`, not chosen yet:
+  `scan()` holds images back (like missing built-in files) and `offerChoice()` asks once per run (Built-in OCR, recommended /
+  Windows OCR); nothing may start PowerShell while it's `null`. `loadDevice()` once (`engineMigrated`)
+  sets `'system'` when `readImage` is already true (an older build read images with Windows OCR here); never
+  repeat it, since after `removeBuiltin()` (which empties the key, so the user is asked again) `readImage` may come
+  from the built-in OCR. The key is set by `offerChoice()`, the "OCR engine"
   setting (Windows only, `canChooseEngine`) or the paused notice's "Use built-in OCR" button (`setEngine()`, which
   bumps `gen`, so a running batch is dropped, not failed, and the scan restarts). `setEngine()` also drops the
   images from `failed` (the other engine may read them; PDF failures stay, no OCR) and, if images are indexed,
@@ -203,7 +208,17 @@ safe.
   them, and switching to the built-in OCR doesn't (they describe the system OCR). The paused notice
   (`noticePaused()`) shows at most once per run, also for a state read back at startup (an engine change or
   removing the built-in files resets that, and the download offer); on Windows it offers the
-  built-in OCR. PDF failures never pause. Images
+  built-in OCR. **Crash guard** (`docs/design-ocr-consent-and-crash-guard.md` B): EDR may kill all of Obsidian
+  when PowerShell/osascript starts, so nothing after the spawn runs. `ocrImagesNative()` writes a per-vault marker
+  (`os.tmpdir()`, named by `app.appId`) with sync fs before every spawn and removes it `MARKER_LINGER` (10 s) after
+  the process ends; `disable()` and the workspace `quit` event and the main window's `beforeunload` (a reload fires no `quit`) remove it at once. A marker found by `enable()`
+  (`checkMarker()`; skipped if the engine is now `'builtin'`, and an empty engine is restored to `'system'`, since
+  the kill can beat Chromium's localStorage flush of the choice) is recorded in the device-wide `ocr-killed.json` (`%LOCALAPPDATA%` /
+  Application Support), which every vault reads before each spawn and `applyKill()` mirrors into `broken` +
+  `blockedBy: 'killed'` — so Rebuild re-applies it instead of clearing it. `noticeKilled()` asks (built-in, or keep
+  using → `allowSystemAgain()`, which also sets the engine to `'system'` when it's empty or built-in); after a second kill only the built-in OCR is offered, and the settings button
+  ("Try … OCR again", shown while `systemKilled`) is the only way back. Keep fs sync there: localStorage
+  and async writes may not reach disk before the kill. PDF failures never pause. Images
   matched by Obsidian's *Excluded files* (`metadataCache.isUserIgnored`) are skipped and pruned. Index changes must go through `put()` and writes through `save()`, which serializes and
   coalesces them — never call `adapter.write` on the index directly, and never from a search-only device. `disable()` removes
   the command, ribbon and listeners and kills the process but keeps the index. Also owns

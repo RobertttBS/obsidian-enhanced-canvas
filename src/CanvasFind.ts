@@ -43,7 +43,7 @@ class FindQueryModal extends Modal {
         let query = '';
         const submit = () => { this.close(); this.onSubmit(query); };
         new Setting(this.contentEl)
-            .setDesc('Words (all must match), OR between alternatives, "exact phrase", or a [[link]] to match every node that links to that note.')
+            .setDesc('Words (all must match), OR between alternatives, "exact phrase", or a [[link]] to match every card that links to that note.')
             .addText((text) => {
                 text.setPlaceholder('words, OR, "phrase" or [[link]]').onChange((v) => (query = v));
                 text.inputEl.addEventListener('keydown', (e) => {
@@ -281,7 +281,7 @@ export class CanvasFind {
         this.clear(canvas);
         const hits = hitIds.map((id) => canvas.nodes.get(id)).filter((n): n is CanvasNode => n !== undefined);
         if (hits.length === 0) {
-            new Notice(`No nodes match "${query}".`);
+            new Notice(`No cards match "${query}".`);
             return;
         }
 
@@ -297,7 +297,7 @@ export class CanvasFind {
             maxX: Math.max(...boxes.map((b) => b.maxX)),
             maxY: Math.max(...boxes.map((b) => b.maxY)),
         });
-        new Notice(`Found "${query}" in ${hits.length} node${hits.length === 1 ? '' : 's'}. Click empty canvas to clear.`);
+        new Notice(`Found "${query}" in ${hits.length} card${hits.length === 1 ? '' : 's'}. Click an empty spot on the Canvas to clear.`);
     }
 
     /** "[[Note#h|alias]]", "![[Note]]" or "[x](Note.md)" → the TFile it points to; null otherwise. */

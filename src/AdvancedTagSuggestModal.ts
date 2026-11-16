@@ -66,7 +66,7 @@ export class AdvancedTagSuggestModal extends Modal {
 
     onOpen() {
         const { contentEl, titleEl } = this;
-        titleEl.setText("Add notes by tag (Advanced)");
+        titleEl.setText("Add notes by tag");
 
         contentEl.createEl("p", {
             text: "Use space for AND, 'OR' for OR, and '-' for NOT. Example: #tag1 #tag2 -#tag3",
@@ -76,7 +76,7 @@ export class AdvancedTagSuggestModal extends Modal {
         const inputContainer = contentEl.createDiv({ cls: "advanced-tag-input-container" });
 
         this.inputComponent = new TextComponent(inputContainer);
-        this.inputComponent.setPlaceholder("Enter tag query...");
+        this.inputComponent.setPlaceholder("#project #active -#archived");
         this.tagSuggest = new TagSuggest(this.app, this.inputComponent.inputEl, this.getTags());
 
         // Enter imports — unless the suggestion popover is open, in which case
@@ -170,7 +170,7 @@ export class AdvancedTagSuggestModal extends Modal {
         this.selectNodes(createdNodes);
         this.canvas.requestSave();
 
-        new Notice(`Added ${createdNodes.length} node${createdNodes.length === 1 ? "" : "s"}.`);
+        new Notice(`Added ${createdNodes.length} card${createdNodes.length === 1 ? "" : "s"}.`);
     }
 
     private selectNodes(nodes: CanvasNode[]): void {

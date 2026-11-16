@@ -50,7 +50,7 @@ export class SendToCanvas {
             void this.addFileNodeToCanvas(currentFile, this.selectedCanvas);
             new Notice(`Using previously selected Canvas: ${this.selectedCanvas.name}`);
         } else {
-            new Notice(`Failed to send. No Canvas file selected yet.`);
+            new Notice("No Canvas selected yet. Choose one now.");
             this.promptCanvasSelectionAndInsert(currentFile);
         }
     }

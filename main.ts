@@ -751,7 +751,7 @@ export default class EnhancedCanvas extends Plugin {
 
 		this.addCommand({
 			id: 'delete-edges',
-			name: 'Delete edges between selected nodes',
+			name: 'Delete edges between selected cards',
 			checkCallback: this.ifActiveViewIsCanvas((canvas) => {
 				this.deleteEdges(canvas);
 			})
@@ -759,7 +759,7 @@ export default class EnhancedCanvas extends Plugin {
 
 		this.addCommand({
 			id: 'add-link-and-optimize-edge',
-			name: 'Add edges according the links in notes',
+			name: 'Add edges according to the links in notes',
 			checkCallback: this.ifActiveViewIsCanvas((canvas) => {
 				this.createMissingEdgesFromLinks(canvas);
 				this.optimizeEdgesBetweenSelectedNodes(canvas);
@@ -768,7 +768,7 @@ export default class EnhancedCanvas extends Plugin {
 
 		this.addCommand({
 			id: 'remove-canvas-property',
-			name: 'Remove the property of all nodes in current Canvas',
+			name: 'Remove the property of all cards in current Canvas',
 			checkCallback: this.ifActiveViewIsCanvas((canvas) => {
 				void this.removeAllProperty(canvas, canvas.getData());
 			})
@@ -1489,19 +1489,37 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 					else this.plugin.imageText.disable();
 				})
 		);
+		// The crash guard turned the system OCR off on this computer (Obsidian was closed while it ran): the only way back
+		// after a second time, so it lives here, not in a notice.
+		if (this.plugin.imageText.systemKilled) {
+			setting.addButton((button) =>
+				button
+					.setButtonText(`Try ${Platform.isWin ? 'Windows' : 'macOS'} OCR again`)
+					.setTooltip('Obsidian was closed while reading images, possibly by security software. It may happen again.')
+					.onClick(() => {
+						this.plugin.imageText.allowSystemAgain();
+						this.display(); // also switches OCR engine to System: the dropdown must show it
+					})
+			);
+		}
 	};
 
 	// Device-local (localStorage), not data.json: which engine a computer needs isn't shared with the others.
 	private bindOcrEngine = (setting: Setting) => {
-		setting.addDropdown((dropdown) =>
+		const engine = this.plugin.imageText.engine;
+		setting.addDropdown((dropdown) => {
+			// Not chosen yet: shown until a choice is made, then removed (it can't be chosen back).
+			if (engine === null) dropdown.addOption('', 'Not chosen yet');
 			dropdown
-				.addOption('system', 'System (Windows OCR)')
-				.addOption('builtin', 'Built-in')
-				.setValue(this.plugin.imageText.engine)
+				.addOption('builtin', 'Built-in (recommended)')
+				.addOption('system', 'Windows OCR')
+				.setValue(engine ?? '')
 				.onChange((value) => {
-					this.plugin.imageText.setEngine(value === 'builtin' ? 'builtin' : 'system');
-				})
-		);
+					if (value !== 'builtin' && value !== 'system') return;
+					dropdown.selectEl.querySelector('option[value=""]')?.remove();
+					this.plugin.imageText.setEngine(value);
+				});
+		});
 	};
 
 	private bindCoreSearchToggle = (setting: Setting) => {
@@ -1535,36 +1553,36 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 		return [
 			{
 				name: 'Enable Frontmatter Synchronization',
-				desc: 'When enabled, canvas nodes and edges are mapped to file metadata (properties). ',
+				desc: 'Adds a "canvas" property and a link for each edge to notes on a Canvas. Turning this off removes them.',
 				render: this.bindFrontmatterToggle,
 			},
 			{
-				name: 'Enable Custom Visuals & CSS',
-				desc: 'When enabled, hide the metadata panel (properties) inside Canvas Node (and embedded notes and iframe previews).',
+				name: 'Hide properties in Canvas cards',
+				desc: 'Hides the properties panel inside Canvas cards, embedded notes and iframe previews.',
 				render: this.bindCustomCSSToggle,
 			},
 			{
 				type: 'group',
-				heading: 'Default node size',
+				heading: 'Default card size',
 				items: [
 					{
-						name: 'Text node width',
+						name: 'Text card width',
 						desc: 'Initial width (px) for new text cards. 50–5000.',
 						render: this.bindDimensionInput('defaultTextNodeWidth'),
 					},
 					{
-						name: 'Text node height',
+						name: 'Text card height',
 						desc: 'Initial height (px) for new text cards. 50–5000.',
 						render: this.bindDimensionInput('defaultTextNodeHeight'),
 					},
 					{
-						name: 'File node width',
-						desc: 'Initial width (px) for new file nodes. 50–5000.',
+						name: 'File card width',
+						desc: 'Initial width (px) for new file cards. 50–5000.',
 						render: this.bindDimensionInput('defaultFileNodeWidth'),
 					},
 					{
-						name: 'File node height',
-						desc: 'Initial height (px) for new file nodes. 50–5000.',
+						name: 'File card height',
+						desc: 'Initial height (px) for new file cards. 50–5000.',
 						render: this.bindDimensionInput('defaultFileNodeHeight'),
 					},
 				],
@@ -1574,18 +1592,18 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 				heading: 'Split by headings & auto-resize',
 				items: [
 					{
-						name: 'Auto-resize leaf nodes on split',
-						desc: 'Automatically fit leaf node heights to their content and rearrange the tree after splitting by headings.',
+						name: 'Auto-resize leaf cards on split',
+						desc: 'After a split, fits the bottom-level cards to their content and re-lays out the tree.',
 						control: { type: 'toggle', key: 'autoResizeOnSplit' },
 					},
 					{
 						name: 'Choose heading level on split',
-						desc: 'Ask which heading level to split down to. Deeper headings stay inside their parent card.',
+						desc: 'Ask which heading level to split down to. Deeper headings stay in their parent card.',
 						control: { type: 'toggle', key: 'chooseHeadingLevelOnSplit' },
 					},
 					{
 						name: 'Max auto-resize height',
-						desc: 'Maximum height (px) for leaf nodes auto-resized on split. Taller content scrolls, and capped nodes stop auto-fitting after edits. Double-click auto-fit is not capped. 100–5000.',
+						desc: 'Height cap (px) for cards auto-resized on split; taller content scrolls. Double-click auto-resize isn\'t capped. 100–5000.',
 						render: this.bindMaxAutoResizeHeight,
 					},
 				],
@@ -1595,22 +1613,20 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 			{
 				name: 'Search text in images and PDFs',
 				desc: !ImageTextSearch.canIndex
-					? 'Searches the image text index built on a computer and synced to this device (plugin folder, ocr-index folder). This device doesn\'t read images or PDFs itself. Adds a "Search text in images and PDFs" command and lets Find in canvas match image and PDF cards.'
-					: `Reads the text in every vault image, on-device, and the embedded text of every PDF. ${Platform.isMacOS
-						? 'Images are read with the system\'s OCR (Vision, through osascript).'
-						: Platform.isWin
-							? 'Images are read with the OCR engine chosen below.'
-							: `Images are read with the built-in OCR, which runs inside Obsidian and needs a one-time download of about 31 MB (asked first; PDFs need nothing).`} Adds a "Search text in images and PDFs" command and lets Find in canvas match image and PDF cards. The index is stored in the plugin folder; no notes are created. The first run takes a few minutes for large vaults.`,
+					? 'Search the text in images and PDFs (command, ribbon icon, Find in canvas), using the index synced from a computer (ocr-index in the plugin folder).'
+					: `Search the text in images (OCR) and PDFs (command, ribbon icon, Find in canvas). Read on this computer, never uploaded. ${Platform.isLinux
+						? 'Images need a one-time 31 MB download (you are asked first). '
+						: ''}The first run takes a few minutes.`,
 				render: this.bindImageTextToggle,
 			},
 			...(ImageTextSearch.canChooseEngine ? [{
 				name: 'OCR engine',
-				desc: 'System uses Windows OCR through PowerShell and needs an OCR language installed. Built-in runs inside Obsidian and reads many languages at once. It needs a one-time download of about 31 MB, and uses your graphics card when available. On a work computer with endpoint protection (EDR), choose Built-in: the system engine starts PowerShell, which such tools may block or report. This choice is stored on this device only.',
+				desc: 'Built-in: more accurate, many languages, unaffected by company security software; 31 MB download, slow without a graphics card. Windows OCR: no download, one language, runs PowerShell, which security software may block.',
 				render: this.bindOcrEngine,
 			}] : []),
 			{
 				name: 'Show image and PDF results in Search',
-				desc: 'Needs Search text in images and PDFs. On: images and PDFs whose text matches appear in core Search (search in all files) next to your notes, with the same query syntax and a thumbnail for images. Off: they are searched only with the "Search text in images and PDFs" ribbon icon or command. Either way, that ribbon icon and command stay, and show the matching text boxed on the image.',
+				desc: 'Also lists matching images and PDFs in core Search. Needs "Search text in images and PDFs".',
 				render: this.bindCoreSearchToggle,
 			},
 		];
