@@ -2,12 +2,9 @@
 export const whatsNew = `
 ## What's new
 
-- **Built-in OCR**: a second way to read the text in images, running inside Obsidian (PaddleOCR, on your graphics card when available). One model reads many languages at once. It needs a one-time download of about 31 MB of model files; nothing is downloaded unless you choose it. Your images never leave your computer.
-- **Windows, when Windows OCR is blocked**: on a computer where PowerShell is blocked by a security policy or endpoint protection, or no OCR language is installed, the notice now has a **Use built-in OCR** button. Click it once: the files download and reading continues. That computer no longer starts PowerShell, also after a restart.
-- **Windows, by choice**: the new *OCR engine* setting switches between *System (Windows OCR)* and *Built-in*. The choice is stored per device.
-- **Linux**: Linux desktops now read images themselves, with the built-in OCR. A notice asks before the download; PDFs are indexed meanwhile.
-- **Remove it**: the command *Remove downloaded built-in OCR files* frees the space.
-- **macOS and mobile**: nothing changes.
+- **Search text in images on Linux**: with *Search text in images and PDFs* on, click **Download** in the notice (about 31 MB, once). Then run *Search text in images and PDFs* or click the ribbon icon.
+- **Windows OCR not working?** If a notice says reading images is paused (no OCR language installed, or PowerShell blocked on a work computer), click **Use built-in OCR** in it. Reading continues after a one-time download of about 31 MB.
+- **Pick the OCR engine on Windows**: Settings → *OCR engine* → *Built-in* or *System (Windows OCR)*. On a work computer with endpoint protection, choose *Built-in*. Set per computer.
 `;
 
 // Shown on first install and after every update. Add an entry when a feature ships.
@@ -44,7 +41,7 @@ Reads the text in every vault image, on-device (macOS and Windows: the system's 
 - **Locked PDFs:** command *Unlock password-protected PDFs for text search* (or **Unlock…** in the notice after indexing) asks for each password once. The password isn't saved.
 - **Rebuild:** command *Rebuild image and PDF text index* reads every image and PDF again. Files in *Excluded files* are skipped.
 - **Settings:** *Search text in images and PDFs* (on by default; the first run takes a few minutes). On Windows, *OCR engine* chooses between Windows OCR and the built-in OCR. *Show image and PDF results in Search* puts matching images, with thumbnails, in core Search next to your notes (add \`-file:.md -file:.canvas\` for images and PDFs only); the ribbon icon stays.
-- **Built-in OCR:** needs a one-time download of about 31 MB, after you choose it or click **Download**. Used on Linux, and on Windows when you pick it or when Windows OCR can't run (no OCR language installed, or PowerShell blocked). *Remove downloaded built-in OCR files* frees the space.
+- **Built-in OCR:** on Linux, click **Download** in the notice. On Windows, click **Use built-in OCR** when a notice says reading images is paused, or set *OCR engine* to *Built-in*. Either way it's a one-time download of about 31 MB; *Remove downloaded built-in OCR files* frees the space.
 - **Mobile:** the same setting searches the index synced from your computer.
 
 ### Send to Canvas

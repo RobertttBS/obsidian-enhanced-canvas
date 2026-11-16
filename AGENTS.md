@@ -41,6 +41,9 @@ Deep detail lives in `docs/agent/`; read the relevant one when you're in that co
   the callback; canvas links are matched via `canvasLinkBasename`, never string
   equality (Obsidian rewrites them on rename). Mutation fns early-return when the
   setting is off.
+- **Release notes (`src/releaseNotesData.ts`) are a how-to, not a changelog.** Users
+  see them in a modal after updating: say what to click/run/set to use the feature;
+  no internals or "what changed" prose. Rules: architecture.md → Release process.
 - **New DOM listener?** Attach per-document (popped-out windows have their own
   `Document`) — follow `registerFocusCanvas`. Workspace events are global and safe.
 

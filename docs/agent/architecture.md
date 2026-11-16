@@ -258,6 +258,9 @@ the callout image resize corner.
 2. In `src/releaseNotesData.ts`: replace `whatsNew` with this release's user-facing
    features (skip fixes and refactors). When a feature ships, add an entry to
    `featureGuide`: what it does, where to find it (menu/command), related settings.
+   **Both are a how-to for users, not a changelog**: each bullet tells the user what to
+   click, run or set to use the feature. Leave out engine/library names, internals,
+   "X now does Y" comparisons, and "nothing changes for Z" lines.
    Updates show `whatsNew` + `featureGuide`; first install shows `featureGuide`;
    the "Show feature guide" command reopens the update view.
 3. Commit as `update manifest.json to <version>`.
