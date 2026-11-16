@@ -130,7 +130,7 @@ safe.
   exit 2 = no OCR language, exit 3 = Constrained Language Mode (checked on the script's first line),
   spawn ENOENT = missing, other spawn errors / AMSI text on stderr = blocked; the one-by-one retries that pause OCR all exiting nonzero with empty stderr and no signal (an EDR kill), or 3 such runs in a row across scans (`silentRuns`, for one image per run) = stopped. Image paths of 260+ chars go in as `\\?\` / `\\?\UNC\` (`longPath`): PS 5.1 can't open them otherwise without LongPathsEnabled. No binary ships. `child_process` is `require`d inside
   `ocrImagesNative()` only, so mobile never loads it (keep it that way: a top-level import breaks
-  mobile). **Built-in OCR** (`docs/spec-builtin-ocr.md`): `engine` picks the image OCR per batch — macOS
+  mobile). **Built-in OCR** (`docs/design-builtin-ocr.md`): `engine` picks the image OCR per batch — macOS
   `'system'`, Linux `'builtin'`, Windows `'builtin'` only when the device-local key `ENGINE_KEY`
   (`enhanced-canvas-ocr-engine`, `app.saveLocalStorage`, never `data.json`) says so, set by the "OCR engine"
   setting (Windows only, `canChooseEngine`) or the paused notice's "Use built-in OCR" button (`setEngine()`, which

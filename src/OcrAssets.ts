@@ -1,7 +1,7 @@
 import { requestUrl } from 'obsidian';
 
 /**
- * The built-in OCR's model data (docs/spec-builtin-ocr.md §4, §5.3): downloaded once from this project's GitHub
+ * The built-in OCR's model data (docs/design-builtin-ocr.md §4, decision 3): downloaded once from this project's GitHub
  * release, verified, and kept in IndexedDB (outside the vault, so file sync never carries 31 MB; the database name
  * has no vault id). Data only: the onnxruntime .wasm ships inside main.js. Browser and obsidian APIs only: mobile
  * loads this file too (and never calls it).

@@ -28,7 +28,7 @@
 |---|---|---|
 | macOS | Vision，透過 `osascript`（現有） | pdf.js（`loadPdfJs()`，`obsidian` API） |
 | Windows | `Windows.Media.Ocr`，透過 PowerShell；必須安裝該語言的 OCR 語言包 | pdf.js（`loadPdfJs()`，`obsidian` API） |
-| Linux | 不支援 | pdf.js（第 1 步之後） |
+| Linux | 內建 OCR（PaddleOCR，見 `docs/design-builtin-ocr.md`） | pdf.js（第 1 步之後） |
 | iPad、iPhone、Android | 不支援（無法執行外部程式；tesseract.js 需要下載語言資料，不採用） | pdf.js（第 1 步之後） |
 
 pdf.js 中文抽字已在 Obsidian 內驗證（見第 4 節）；Windows OCR 只以腳本驗證。仍待實測：

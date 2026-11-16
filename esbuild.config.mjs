@@ -19,7 +19,7 @@ const prod = (process.argv[2] === "production");
 // against the WebGPU build of onnxruntime-web (which also runs WASM-only), exported as text, so it ships inside
 // main.js and starts from a Blob URL (src/BuiltinOcr.ts).
 // Virtual module `ocr-wasm-source`: onnxruntime's asyncify .wasm for that build, gzip -9 + base64, also as text.
-// Shipped inside main.js (docs/spec-builtin-ocr.md 2.4): only model data is downloaded at run time, never code.
+// Shipped inside main.js (docs/design-builtin-ocr.md, decision 4): only model data is downloaded at run time, never code.
 const OCR_WASM = "node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm";
 const OCR_WASM_SHA256 = "ca319e9539cd0f1e291cf56074760121eaf39650f5dbf84b6e52c07f4b2944ec";
 let ocrWasm; // once per process: gzip -9 of 28 MB takes seconds, and watch mode rebuilds often

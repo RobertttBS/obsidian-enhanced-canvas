@@ -1,5 +1,5 @@
 // Maintainer-only: prepares the files for the `ocr-assets-1` GitHub release that the built-in OCR downloads
-// (docs/spec-builtin-ocr.md §4). Fetches them from the converted PaddleOCR models and checks each SHA-256; upload
+// (docs/design-builtin-ocr.md §4). Fetches them from the converted PaddleOCR models and checks each SHA-256; upload
 // the folder's three files to the release by hand. Names and hashes must match FILES in src/OcrAssets.ts.
 // The onnxruntime .wasm isn't here: it ships inside main.js (esbuild.config.mjs, `ocr-wasm-source`).
 // Usage: node scripts/fetch-ocr-assets.mjs <target folder>

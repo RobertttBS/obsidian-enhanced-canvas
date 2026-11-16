@@ -6,7 +6,7 @@ import type { OcrLine } from './ImageTextSearch';
 import { OcrAssets } from './OcrAssets';
 
 /**
- * The built-in OCR (docs/spec-builtin-ocr.md): PaddleOCR (PP-OCRv6 small, onnxruntime-web, single thread) in a
+ * The built-in OCR (docs/design-builtin-ocr.md): PaddleOCR (PP-OCRv6 small, onnxruntime-web, single thread) in a
  * Web Worker (src/ocr-worker.js), on WebGPU when available, else WASM. ImageTextSearch.ocrImages() uses it instead of
  * the system OCR on Linux, or on Windows when the device-local engine choice is 'builtin'. The model files come from
  * OcrAssets; the onnxruntime .wasm ships inside main.js (`ocr-wasm-source`). Only obsidian and browser APIs here: no

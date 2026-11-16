@@ -211,7 +211,7 @@ export class ImageTextSearch {
     /** The engine choice is offered only on Windows: macOS always uses Vision, Linux always the built-in OCR. */
     static get canChooseEngine() { return Platform.isWin && Platform.isDesktopApp; }
 
-    /** Which OCR reads images on this device (docs/spec-builtin-ocr.md §5.2). */
+    /** Which OCR reads images on this device (docs/design-builtin-ocr.md, decision 5). */
     get engine(): OcrEngine {
         if (Platform.isMacOS) return 'system';
         if (!Platform.isWin) return 'builtin';
