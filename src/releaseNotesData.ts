@@ -2,10 +2,10 @@
 export const whatsNew = `
 ## What's new
 
-- **Built-in OCR on Windows**: click **Download** in the notice (60 MB, once) to read images with the built-in OCR: more accurate, many languages at once, and unaffected by company security software (slow without a graphics card). Prefer Windows OCR? Choose it in settings → *OCR engine*.
-- **Search text in images on Linux**: click **Download** in the notice (60 MB, once).
-- **Already using the built-in OCR?** Click **Download** in the notice once more (29 MB) so new images keep being read.
-- **Reading images paused?** Click **Use built-in OCR** in the notice.
+- **Search PDFs on phones and tablets**: turn on *Search text in images and PDFs* on the device, and it reads your PDFs itself; no computer needed.
+- **Image text on all your devices**: images read on one computer become searchable on your phones and other computers through Obsidian Sync, iCloud or your other sync. Nothing to set up.
+- **A computer you no longer use**: run **Remove image text from other devices…** and tick it.
+- **Password-protected PDFs**: click **Unlock…** on each device.
 `;
 
 // Shown on first install and after every update. Add an entry when a feature ships.
@@ -36,12 +36,13 @@ Search words or a \`[[link]]\` across the Canvas: \`a b\` needs both words, \`a 
 - **Clear:** click an empty spot on the Canvas.
 
 ### Search text in images and PDFs
-Search the text inside every image (OCR) and PDF in your vault, read on your computer. *Find in canvas* also matches image and PDF cards.
+Search the text inside every image (OCR) and PDF in your vault. *Find in canvas* also matches image and PDF cards.
 - **Where:** command *Search text in images and PDFs* or the ribbon icon.
 - **Settings:** *Search text in images and PDFs* (on by default), *Show image and PDF results in Search* (adds them to core Search), *OCR engine* (Windows; **Built-in** is the default).
 - **Windows, Linux:** click **Download** in the notice (60 MB, once).
-- **Locked PDFs:** click **Unlock…** in the notice after indexing.
-- **Mobile:** turn on the same setting to search the index synced from your computer.
+- **Locked PDFs:** click **Unlock…** in the notice after indexing, on each device.
+- **Mobile:** turn on the same setting. PDFs are read on the device; image text comes from your computers through sync.
+- **Other devices:** images read on one computer are searchable on the others through sync. For a computer you no longer use, run *Remove image text from other devices…*.
 
 ### Send to Canvas
 Add the current note to a Canvas; later notes can go straight to the same one.
