@@ -112,10 +112,12 @@ safe.
   A file node's name, note text and OCR text (`plugin.imageText.textOf`, null when that
   feature is off) are matched as one text; image matches are the one DOM edit: `.ec-ocr-box` divs appended to the
   node's `.image-embed`, drawn once per mount (so the observer doesn't loop), removed on clear.
-- `ImageTextSearch.ts` — optional, setting `enableImageTextSearch` (default on). Indexing is
-  desktop only (`ImageTextSearch.canIndex`, Linux included); mobile is search-only: it
-  registers no Rebuild command, vault events or scan; its own index holds only the PDFs imported once from the old
-  `ocr-index` (step C will let it read PDFs). `refresh()` (run before the modal opens and before Find in canvas
+- `ImageTextSearch.ts` — optional, setting `enableImageTextSearch` (default on). Every device
+  indexes: images on desktop only (`ImageTextSearch.canReadImages`, Linux included), PDFs everywhere (step C, §5.6).
+  Mobile registers Rebuild, Unlock and the vault events like desktop, but `readable()` limits its scan to PDFs, and its
+  first scan starts `MOBILE_SCAN_DELAY` (10 s) after layout ready; no size limit (an 83 MB PDF read fine on iPhone).
+  Everything node-only (crash marker, kill verdict, built-in OCR assets, `saveShared`) stays behind `canReadImages`.
+  `refresh()` (run before the modal opens and before Find in canvas
   matches) re-reads only the shared files. **Shared image text** (`docs/design-ocr-index-per-device.md` §5.4, step A):
   Obsidian Sync carries only the config folder's top-level `.json` files to phones, so each desktop also writes its
   image entries (never PDFs or `pw`) to `${configDir}/enhanced-canvas-ocr.<id>.json` (base; split into `.<id>.1.json`…

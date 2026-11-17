@@ -61,8 +61,8 @@ Project-specific working notes are in `docs/agent/`:
 - `maintenance.md` — how to safely update these docs and CLAUDE.md.
 
 Design records: `docs/design-ocr-index-per-device.md` (image/PDF text index; step 2
-— sync and storage location — is decided; step A (images sync via
-per-device files in the config folder's top level) and B (local index in IndexedDB) are implemented, C (PDFs read on every device) is not); `docs/design-builtin-ocr.md` (built-in
+— sync and storage location — is decided; steps A (images sync via
+per-device files in the config folder's top level), B (local index in IndexedDB) and C (PDFs read on every device) are implemented); `docs/design-builtin-ocr.md` (built-in
 PaddleOCR engine: decisions, verified facts, worker traps, open questions).
 
 ## Keeping this current

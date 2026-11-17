@@ -1,6 +1,6 @@
 # 設計決策：圖片與 PDF 文字 index 改為每台裝置自己建立
 
-狀態：第 1 步已實作（PDF 改用 pdf.js：`1e62a31`；Windows 圖片 OCR：`5bfd901`、`bcd935b`、`9a628a1`。Windows OCR 2026-11-15 在 Windows 11 以腳本驗證，尚未在 Obsidian 內完整驗證）。第 2 步方向已決定（2026-11-17，見第 5 節），步驟 A 已實作、未在 Obsidian 內驗證。基準 commit：`bbe6964`（64-shard，只考慮單台 Mac 寫入）。
+狀態：第 1 步已實作（PDF 改用 pdf.js：`1e62a31`；Windows 圖片 OCR：`5bfd901`、`bcd935b`、`9a628a1`。Windows OCR 2026-11-15 在 Windows 11 以腳本驗證，尚未在 Obsidian 內完整驗證）。第 2 步方向已決定（2026-11-17，見第 5 節），步驟 A、B、C 已實作、未在 Obsidian 內驗證。基準 commit：`bbe6964`（64-shard，只考慮單台 Mac 寫入）。
 決策日期：2026-11-15。
 
 ## 1. 起因
@@ -109,7 +109,16 @@ pdf.js 中文抽字已在 Obsidian 內驗證（見第 4 節）；Windows OCR 只
 
 ## 5. 第 2 步：同步與儲存位置
 
-狀態：方向已決定（2026-11-17）。步驟 A、B 已實作（2026-11-17，`npx tsc` 通過，Obsidian 內未驗證，5.9 清單待做）；步驟 C 未實作。取代先前「共享資料夾做成設定」的方案。
+狀態：方向已決定（2026-11-17）。步驟 A、B、C 已實作（2026-11-17，`npx tsc` 通過，Obsidian 內未驗證，5.9 清單待做）。取代先前「共享資料夾做成設定」的方案。
+
+步驟 C 實作與本文的差異（2026-11-17 與使用者討論後決定）：
+- **不設大小上限**（取代 5.6 的上限與「太大未讀」顯示，C.3 不做）。依據：iPhone 讀完最大的 83 MB PDF，app 沒被關掉。風險：某台手機讀某份 PDF 時被系統關掉，下次啟動會再讀同一份、再被關掉（沒有記錄「讀到一半」）。Android 未驗證。
+- **`load()` 仍把整個本機 index 讀進記憶體**（不改成搜尋時才讀 DB）：步驟 B 之前 git、iCloud 使用者的手機本來就讀整個 `ocr-index`。實機驗證時確認。
+- 手機開啟設定就自動讀 PDF，不另加開關。
+- 沒有 `canReadPdfs`：所有平台都讀 PDF，所以只把 `canIndex` 改名為 `canReadImages`，另加 `readable(f)`（桌面版：圖片與 PDF；手機：PDF）供 `scan` 與 vault 事件使用。手機本機 index 裡若有圖片 entry，`scan` 會把它當成 `gone` 刪掉（圖片改從共享檔讀）。
+- 延遲：layout ready 後 10 秒（`MOBILE_SCAN_DELAY`）才開始第一次掃描；之後 vault 事件觸發的掃描不延遲。
+- 手機也讀寫 `DEVICE_KEY`（`failed`、`pdfLockChecked`），讀不了的 PDF 不會每次啟動都重讀。crash marker、kill verdict、內建 OCR、`saveShared` 仍只在桌面版。
+- release notes 尚未寫（發佈時再寫）。
 
 步驟 B 實作與本文的差異：
 - 另有 object store `meta`，key `migrated` 記錄已匯入舊 index，與匯入的 entry 寫在同一個 transaction。只在舊檔全部讀成功時才記錄，否則下次啟動再匯入一次（只補 DB 沒有的 path）。不用「DB 是空的」判斷：Rebuild 後 DB 可能是空的，會把舊 index 再匯入一次。
@@ -291,7 +300,7 @@ pdf.js 中文抽字已在 Obsidian 內驗證（見第 4 節）；Windows OCR 只
 
 ### 5.10 未決定事項
 
-- 手機 PDF 大小上限的預設值，以及要不要做成設定（等步驟 C.1 的實測）。
+- ~~手機 PDF 大小上限~~：已決定不設（見第 5 節開頭的步驟 C 差異）；Android 實測後若會被關掉再加。
 - 舊 `ocr-index/` 什麼時候刪除、由誰刪除（自動或指令）。
 - 使用不同設定資料夾的手機（例如 `.obsidian-mobile`）讀不到共享檔。目前只在 README 說明限制，不處理。
 

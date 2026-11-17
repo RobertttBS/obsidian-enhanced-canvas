@@ -92,7 +92,7 @@ Run **"Search text in images and PDFs"** or click the ribbon icon. Same query sy
 | Linux                 | [Built-in OCR](#built-in-ocr)                              |
 | iPhone, iPad, Android | None: they search the image text synced from a computer     |
 
-PDFs need no OCR: their embedded text is indexed on every computer.
+PDFs need no OCR: every device, phones and tablets included, reads their embedded text itself.
 
 **Windows: choose an engine**
 
@@ -121,7 +121,7 @@ PaddleOCR (PP-OCRv6 small), running inside Obsidian on your graphics card (WebGP
 -   Stored on each device in Obsidian's IndexedDB (database `enhanced-canvas-ocr-<vault id>`), outside your vault and not synced; no notes are added. Large PDFs make it big (tens of MB): add folders you don't need to *Settings → Files and links → Excluded files*, which are skipped.
 -   **Delete it**: turn off *Search text in images and PDFs*. Uninstalling the plugin doesn't delete it, so turn the setting off first.
 -   **Updating from an earlier version**: the index in the plugin's `ocr-index` folder is imported once, so nothing is read again. The folder stays for devices still on an earlier version; delete it once every device is updated.
--   **Phones and tablets**: turn on the same setting. Image text arrives from your computers through sync (below). PDF text is imported once from the plugin's `ocr-index` folder, if your sync includes it (Obsidian Sync doesn't).
+-   **Phones and tablets**: turn on the same setting. PDFs are read on the device: the first run starts a few seconds after the vault opens, takes longer than on a computer, and continues where it stopped if the app is closed or put in the background. Image text arrives from your computers through sync (below).
 -   **Several computers on one vault**: each reads the vault itself. Images read on one are searchable on the others through sync (below).
 
 **Image text on your other devices**

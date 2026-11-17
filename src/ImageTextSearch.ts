@@ -12,6 +12,7 @@ import { OcrIndexStore, indexDbName } from './OcrIndexStore';
 const IMAGE_EXT = /^(png|jpe?g|heic|webp|gif|tiff?|bmp)$/i;
 const BATCH = 50; // files per OCR process run; keeps argv short and saves progress often
 const PDF_BATCH = 5; // at most this many PDFs per batch: a large one takes seconds, and progress is saved per batch
+const MOBILE_SCAN_DELAY = 10_000; // after layout ready, before a phone starts reading PDFs
 // localStorage (per vault, per device): `failed`, `reread`, `readBy`, `pdfLockChecked`, `broken`, `blockedBy`
 const DEVICE_KEY = 'enhanced-canvas-ocr-device';
 // localStorage (per vault, per device), Windows only: 'builtin' or 'system'. Empty = the default, 'builtin': PowerShell
@@ -233,7 +234,7 @@ const CJK_GAP = /(?<=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-�
  * created): macOS Vision, Windows OCR, or the built-in OCR (Linux, or Windows by choice); on every
  * device, a vault-wide "Search text in images and PDFs" modal and image matches for Find in canvas.
  * Desktop also shares its image entries through files in the config folder (saveShared), which every
- * device reads (loadShared). Mobile only reads those files, plus the PDFs it imported once from the old ocr-index.
+ * device reads (loadShared). Mobile reads PDFs into its own index (no OCR there) and gets image text from those files.
  */
 export class ImageTextSearch {
     /** What this device read (and what the old ocr-index folder brought in once), kept in IndexedDB. Searches go through entryOf(). */
@@ -281,8 +282,13 @@ export class ImageTextSearch {
 
     constructor(readonly plugin: EnhancedCanvas) {}
 
-    /** Desktop reads images and PDFs; mobile searches the index that sync brings over. */
-    static get canIndex() { return Platform.isDesktopApp; }
+    /** Desktop reads images and PDFs; mobile reads only PDFs (pdf.js runs there too) and gets image text from the shared files. */
+    static get canReadImages() { return Platform.isDesktopApp; }
+
+    /** A file this device reads into its own index. */
+    private static readable(f: TAbstractFile | null): f is TFile {
+        return ImageTextSearch.canReadImages ? isIndexedFile(f) : f instanceof TFile && isPdf(f);
+    }
 
     /** The engine choice is offered only on Windows: macOS always uses Vision, Linux always the built-in OCR. */
     static get canChooseEngine() { return Platform.isWin && Platform.isDesktopApp; }
@@ -417,8 +423,8 @@ export class ImageTextSearch {
         await this.load();
         // Turned off while reading (and maybe on again: that later call does the setup).
         if (gen !== this.gen) return;
-        if (ImageTextSearch.canIndex) {
-            this.loadDevice();
+        this.loadDevice();
+        if (ImageTextSearch.canReadImages) {
             this.checkMarker();
             this.applyKill();
         }
@@ -429,15 +435,16 @@ export class ImageTextSearch {
         await this.loadShared();
         if (gen !== this.gen) return;
         this.setCoreSearch();
-        // Search-only devices never write the index: the indexing computer owns the file.
-        if (!ImageTextSearch.canIndex) return;
+        // Every device reads (phones: PDFs only, §5.6) into its own index.
         this.plugin.addCommand({ id: REBUILD_ID, name: 'Rebuild image and PDF text index', callback: () => void this.rebuild() });
         this.plugin.addCommand({ id: UNLOCK_ID, name: 'Unlock password-protected PDFs for text search', callback: this.openUnlock });
-        if (!Platform.isMacOS) this.plugin.addCommand({ id: REMOVE_BUILTIN_ID, name: 'Remove downloaded built-in OCR files', callback: () => void this.removeBuiltin() });
+        if (ImageTextSearch.canReadImages && !Platform.isMacOS) this.plugin.addCommand({ id: REMOVE_BUILTIN_ID, name: 'Remove downloaded built-in OCR files', callback: () => void this.removeBuiltin() });
 
         app.workspace.onLayoutReady(() => {
             if (gen !== this.gen) return;
-            const changed = (f: TAbstractFile) => { if (isIndexedFile(f)) void this.scan(); };
+            // A phone ignores changes until its delayed first scan (sync writes many files right after opening); that scan picks them up.
+            let started = ImageTextSearch.canReadImages;
+            const changed = (f: TAbstractFile) => { if (started && ImageTextSearch.readable(f)) void this.scan(); };
             this.refs = [
                 app.vault.on('create', changed),
                 app.vault.on('modify', changed),
@@ -455,7 +462,9 @@ export class ImageTextSearch {
                     this.scheduleShared();
                 }),
             ];
-            void this.scan();
+            // A phone's first scan reads every PDF, slower than a computer: let the vault finish opening first.
+            if (ImageTextSearch.canReadImages) void this.scan();
+            else window.setTimeout(() => { if (gen !== this.gen) return; started = true; void this.scan(); }, MOBILE_SCAN_DELAY);
         });
     }
 
@@ -513,7 +522,7 @@ export class ImageTextSearch {
     private clearMarker() {
         if (this.markerTimer !== null) window.clearTimeout(this.markerTimer);
         this.markerTimer = null;
-        if (ImageTextSearch.canIndex) unlinkQuiet(markerPath(this.appId));
+        if (ImageTextSearch.canReadImages) unlinkQuiet(markerPath(this.appId));
     }
 
     /**
@@ -553,7 +562,7 @@ export class ImageTextSearch {
     }
 
     /** The system OCR was killed along with Obsidian and is off until the user allows it again. */
-    get systemKilled() { return ImageTextSearch.canIndex && !Platform.isLinux && readKill()?.continued === false; }
+    get systemKilled() { return ImageTextSearch.canReadImages && !Platform.isLinux && readKill()?.continued === false; }
 
     /**
      * "Keep using Windows OCR" (noticeKilled), or "Try again" in settings: the system OCR may start again on this computer,
@@ -636,11 +645,11 @@ export class ImageTextSearch {
         }
         // The phone checks files against the vault, which is complete only once the layout is ready (enable() runs at onload).
         const { vault, workspace } = this.plugin.app;
-        if (!ImageTextSearch.canIndex) await new Promise<void>((r) => workspace.onLayoutReady(r));
+        if (!ImageTextSearch.canReadImages) await new Promise<void>((r) => workspace.onLayoutReady(r));
         if (gen !== this.gen) return false;
         for (const [p, e] of Object.entries(old)) {
             if (p in this.index || typeof e?.m !== 'number' || !Array.isArray(e.l)) continue;
-            if (!ImageTextSearch.canIndex) {
+            if (!ImageTextSearch.canReadImages) {
                 const f = vault.getAbstractFileByPath(p);
                 if (!(f instanceof TFile) || !isPdf(f) || f.stat.mtime !== e.m) continue;
             }
@@ -775,7 +784,7 @@ export class ImageTextSearch {
 
     /** Writes this device's shared file DELAY after the last change (desktop). */
     private scheduleShared() {
-        if (!ImageTextSearch.canIndex || !this.enabled) return;
+        if (!ImageTextSearch.canReadImages || !this.enabled) return;
         if (this.sharedTimer !== null) window.clearTimeout(this.sharedTimer);
         this.sharedTimer = window.setTimeout(() => {
             this.sharedTimer = null;
@@ -826,7 +835,7 @@ export class ImageTextSearch {
      * and the files are as this device left them, so files removed by another device's cleanup come back.
      */
     private async saveShared() {
-        if (!this.enabled || !ImageTextSearch.canIndex) return;
+        if (!this.enabled || !ImageTextSearch.canReadImages) return;
         // A rebuild may have emptied the index; the scan's end schedules this again.
         if (this.scanning || this.rebuilding) return;
         const { adapter } = this.plugin.app.vault;
@@ -963,7 +972,7 @@ export class ImageTextSearch {
 
     /** A phone with no image text from any computer yet: the search modal says where it comes from. */
     get waitingForImages() {
-        return !ImageTextSearch.canIndex && !this.remote.size && !Object.keys(this.index).some(isImagePath);
+        return !ImageTextSearch.canReadImages && !this.remote.size && !Object.keys(this.index).some(isImagePath);
     }
 
     /**
@@ -1019,7 +1028,7 @@ export class ImageTextSearch {
         this.blockNoticed = false;
         this.saveDevice();
         // Not the crash guard: Rebuild would start the system OCR again on a computer where it killed Obsidian.
-        this.applyKill();
+        if (ImageTextSearch.canReadImages) this.applyKill();
         this.silentRuns = 0;
         // Until scan() sets `scanning`: a shared write already queued would otherwise write the emptied index.
         this.rebuilding = true;
@@ -1051,18 +1060,18 @@ export class ImageTextSearch {
             do {
                 this.rescan = false;
                 const gen = this.gen;
-                const gone = Object.keys(this.index).filter((p) => !isIndexedFile(vault.getAbstractFileByPath(p)) || excluded(p));
+                const gone = Object.keys(this.index).filter((p) => !ImageTextSearch.readable(vault.getAbstractFileByPath(p)) || excluded(p));
                 gone.forEach((p) => this.put(p));
                 if (gone.length) await this.save();
-                const lost = [...this.failed.keys()].filter((p) => !isIndexedFile(vault.getAbstractFileByPath(p)) || excluded(p));
+                const lost = [...this.failed.keys()].filter((p) => !ImageTextSearch.readable(vault.getAbstractFileByPath(p)) || excluded(p));
                 lost.forEach((p) => this.failed.delete(p));
                 const lostReread = [...this.reread].filter((p) => !isImageFile(vault.getAbstractFileByPath(p)) || excluded(p));
                 lostReread.forEach((p) => this.reread.delete(p));
                 if (lost.length || lostReread.length) this.saveDevice();
 
-                const all = vault.getFiles().filter((f) => isIndexedFile(f) && !excluded(f.path) && stale(f));
-                // Built-in OCR without its files: images wait for the download (not failed), PDFs go on.
-                const missing = this.engine === 'builtin' && !(await this.builtin.assets.ready());
+                const all = vault.getFiles().filter((f) => ImageTextSearch.readable(f) && !excluded(f.path) && stale(f));
+                // Built-in OCR without its files: images wait for the download (not failed), PDFs go on. Phones: no images.
+                const missing = ImageTextSearch.canReadImages && this.engine === 'builtin' && !(await this.builtin.assets.ready());
                 if (gen !== this.gen) continue; // `while` rechecks rescan: stopped, or restarted on another engine
                 // Updated from a build that only had Windows OCR: it read images here and no engine was ever chosen. The
                 // built-in OCR is about to read its first batch, which is an engine switch: setEngine() retries the images
@@ -1081,7 +1090,7 @@ export class ImageTextSearch {
                 let warned = false;
                 try {
                     for (let i = 0, n = 0; i < todo.length && gen === this.gen; i += n) {
-                        notice?.setMessage(`Enhanced Canvas: reading text in images and PDFs ${i} / ${todo.length}`);
+                        notice?.setMessage(`Enhanced Canvas: reading text in ${ImageTextSearch.canReadImages ? 'images and PDFs' : 'PDFs'} ${i} / ${todo.length}`);
                         let pdfs = 0;
                         const max = this.engine === 'builtin' ? this.builtin.batchSize : BATCH; // per batch: WASM vs WebGPU is known once the worker runs
                         for (n = 0; i + n < todo.length && n < max && pdfs < PDF_BATCH; n++) if (isPdf(todo[i + n])) pdfs++;
@@ -1696,7 +1705,7 @@ class ImageTextModal extends SuggestModal<ModalRow> {
             : total > this.shown ? `Showing ${this.shown} of ${total} results; add words or pick a type to narrow them`
             : `${total} result${total === 1 ? '' : 's'}`;
         // Before the index is complete, "no results" may just mean "not read yet".
-        const indexing = this.search.isIndexing ? 'Still reading images and PDFs; results may be incomplete.' : '';
+        const indexing = this.search.isIndexing ? `Still reading ${ImageTextSearch.canReadImages ? 'images and PDFs' : 'PDFs'}; results may be incomplete.` : '';
         const waiting = this.search.waitingForImages
             ? 'No image text has reached this device yet: a computer with this plugin reads the images, and sync brings the text here.'
             : '';
