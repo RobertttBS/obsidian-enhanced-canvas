@@ -118,9 +118,11 @@ PaddleOCR (PP-OCRv6 small), running inside Obsidian on your graphics card (WebGP
 
 -   The first run takes a few minutes for a large vault; after that only new or changed files are read.
 -   **"Rebuild image and PDF text index"** reads every file again.
--   Stored in the plugin's `ocr-index` folder; no notes are added. Large PDFs make it big (tens of MB): add folders you don't need to *Settings → Files and links → Excluded files*, which are skipped.
--   **Phones and tablets**: turn on the same setting. Image text arrives from your computers through sync (below). PDF text comes from `ocr-index`, so it reaches them only if your sync includes the plugin's `ocr-index` folder (Obsidian Sync doesn't).
--   **Several computers on one vault**: leave it on for only one if you can. Otherwise work is repeated (nothing is lost).
+-   Stored on each device in Obsidian's IndexedDB (database `enhanced-canvas-ocr-<vault id>`), outside your vault and not synced; no notes are added. Large PDFs make it big (tens of MB): add folders you don't need to *Settings → Files and links → Excluded files*, which are skipped.
+-   **Delete it**: turn off *Search text in images and PDFs*. Uninstalling the plugin doesn't delete it, so turn the setting off first.
+-   **Updating from an earlier version**: the index in the plugin's `ocr-index` folder is imported once, so nothing is read again. The folder stays for devices still on an earlier version; delete it once every device is updated.
+-   **Phones and tablets**: turn on the same setting. Image text arrives from your computers through sync (below). PDF text is imported once from the plugin's `ocr-index` folder, if your sync includes it (Obsidian Sync doesn't).
+-   **Several computers on one vault**: each reads the vault itself. Images read on one are searchable on the others through sync (below).
 
 **Image text on your other devices**
 
@@ -134,7 +136,7 @@ Each computer also writes the text of the images it read to files in the vault's
 
 **Password-protected PDFs**
 
-Click **Unlock…** in the notice after indexing, or run **"Unlock password-protected PDFs for text search"**, and enter each password once (it's tried on the other PDFs too). The password isn't saved. The text stays in the index until the PDF changes, unencrypted and synced with your vault.
+Click **Unlock…** in the notice after indexing, or run **"Unlock password-protected PDFs for text search"**, and enter each password once (it's tried on the other PDFs too). The password isn't saved. The text stays in this device's index until the PDF changes, unencrypted. Unlock it on each device.
 
 #### If reading images is paused
 

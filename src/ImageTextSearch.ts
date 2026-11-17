@@ -7,6 +7,7 @@ import type { CanvasView } from '../Canvas';
 import { matchesTextQuery, normalizeText, parseTextQuery, queryTerms, randomId } from './utils';
 import { BuiltinOcr } from './BuiltinOcr';
 import { ASSETS_BYTES, DownloadResult } from './OcrAssets';
+import { OcrIndexStore, indexDbName } from './OcrIndexStore';
 
 const IMAGE_EXT = /^(png|jpe?g|heic|webp|gif|tiff?|bmp)$/i;
 const BATCH = 50; // files per OCR process run; keeps argv short and saves progress often
@@ -58,13 +59,6 @@ type OwnShared = { id: string; base: Map<string, string>; delta: string | null; 
 type SharedList = Map<string, { path: string; part: string | undefined }[]>;
 /** A delta's comparable part (no `writtenAt`): `items` are `"path":entryJson`, in path order. */
 const deltaBody = (items: string[], removed: string[]) => `"entries":{${items.join(',')}},"removed":${JSON.stringify([...removed].sort())}`;
-const SHARDS = 64; // index files; a save rewrites only the shards that changed
-// FNV-1a over UTF-16 code units. Must never change: it decides which file holds a path.
-const shardOf = (path: string) => {
-    let h = 0x811c9dc5;
-    for (let i = 0; i < path.length; i++) h = Math.imul(h ^ path.charCodeAt(i), 0x01000193);
-    return (h >>> 0) % SHARDS;
-};
 
 /** Image: [text, x, y, w, h], box normalized to the image, origin top-left. PDF: [text, page], page 1-based. */
 export type OcrLine = [string, number, number, number, number] | [string, number];
@@ -235,15 +229,18 @@ const unlinkQuiet = (p: string) => { try { nodeFs().unlinkSync(p); } catch { /* 
 const CJK_GAP = /(?<=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-〿＀-￯]) (?=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-〿＀-￯])/gu;
 
 /**
- * Optional: on desktop, OCR every vault image into an index kept in the plugin folder (no notes are
+ * Optional: on desktop, OCR every vault image into this device's index in IndexedDB (no notes are
  * created): macOS Vision, Windows OCR, or the built-in OCR (Linux, or Windows by choice); on every
  * device, a vault-wide "Search text in images and PDFs" modal and image matches for Find in canvas.
  * Desktop also shares its image entries through files in the config folder (saveShared), which every
- * device reads (loadShared). Mobile only reads: those files and the synced index.
+ * device reads (loadShared). Mobile only reads those files, plus the PDFs it imported once from the old ocr-index.
  */
 export class ImageTextSearch {
-    /** What this device read (and, until IndexedDB, what ocr-index brought in). Searches go through entryOf(). */
+    /** What this device read (and what the old ocr-index folder brought in once), kept in IndexedDB. Searches go through entryOf(). */
     index: OcrIndex = {};
+    private store: OcrIndexStore<OcrEntry> | null = null; // null: not opened, or IndexedDB unavailable (memory only this run)
+    private loaded = false; // `index` holds the database's entries; it stays in memory across disable/enable
+    private migrating = false; // the next save records that the old ocr-index was imported
     /** Other devices' shared image text, by device id (loadShared). Read-only here. */
     remote = new Map<string, SharedDevice>();
     private sharedLoading: Promise<void> | null = null;
@@ -259,8 +256,8 @@ export class ImageTextSearch {
     private rescan = false;
     private gen = 0; // bumped by disable(), so a scan can tell its OCR process was killed on purpose
     private failed = new Map<string, number>(); // path → mtime this device couldn't read; retried once the file changes, on Rebuild, or (images) on an engine switch
-    // Images the user asked to read again with the engine now chosen (rereadImages). Device-local, not a change to the
-    // synced index: marking entries stale there would make every other device re-read them too.
+    // Images the user asked to read again with the engine now chosen (rereadImages). Kept beside the index (device
+    // state), so the entries stay searchable until they are read again.
     private reread = new Set<string>();
     private rereadNotice: Notice | null = null; // the open "read again" offer, replaced by the next engine switch
     // The engines that have read an image on this device: that engine works here, and another one's text may be worth
@@ -278,8 +275,8 @@ export class ImageTextSearch {
     private markerTimer: number | null = null; // pending removal of the crash marker (MARKER_LINGER)
     private saving: Promise<void> = Promise.resolve();
     private saveQueued = false;
-    private loadedAt: number[] = []; // per shard: mtime of the file last read or written
-    private dirty = new Set<number>(); // shards changed since the last save
+    private dirty = new Set<string>(); // paths changed since the last save
+    private clearStore = false; // rebuild(): the next save empties the database first
     private builtin = new BuiltinOcr(this.plugin);
 
     constructor(readonly plugin: EnhancedCanvas) {}
@@ -319,13 +316,10 @@ export class ImageTextSearch {
     /** True while images are still being read, so a search may miss some. */
     get isIndexing() { return this.scanning; }
 
-    private get indexDir() { return `${this.plugin.manifest.dir}/ocr-index`; }
-    private shardPath(s: number) { return `${this.indexDir}/${s.toString(16).padStart(2, '0')}.json`; }
-
-    /** The only way to change one entry: it marks the entry's shard for the next save. */
+    /** The only way to change one entry: it marks the path for the next save. */
     private put(path: string, entry?: OcrEntry) {
         if (entry) this.index[path] = entry; else delete this.index[path];
-        this.dirty.add(shardOf(path));
+        this.dirty.add(path);
     }
 
     register() {
@@ -392,7 +386,7 @@ export class ImageTextSearch {
         let queryPatched = false;
         plugin.register(around(view.constructor.prototype, {
             startSearch: (next) => function (this: typeof view, ...args: unknown[]) {
-                refresh(); // search-only devices: pick up a synced index for the next search
+                refresh(); // pick up other devices' shared image text for the next search
                 const r = next.apply(this, args);
                 // The query class is reachable only through a query, which the first search creates.
                 const proto = this.searchQuery && Object.getPrototypeOf(this.searchQuery);
@@ -465,7 +459,7 @@ export class ImageTextSearch {
         });
     }
 
-    /** Stops indexing and removes the UI. The index file stays, so re-enabling is instant. */
+    /** Stops indexing and removes the UI. The index stays (memory and IndexedDB), so re-enabling is instant. */
     disable() {
         if (!this.enabled) return;
         this.enabled = false;
@@ -486,6 +480,29 @@ export class ImageTextSearch {
         this.sharedTimer = null;
         // We killed the process ourselves: a plugin reload or a toggle off/on must not find the marker and call it a crash.
         this.clearMarker();
+    }
+
+    /**
+     * The setting turned off: disable(), then delete this device's index (§5.8 step B.5). Obsidian has no uninstall
+     * event, so this is the user's way to remove it. Not on unload: a reload must not cost a full re-read.
+     */
+    async turnOff() {
+        this.disable();
+        const gen = this.gen;
+        // In the `saving` queue: a save in flight finishes first, and load() (which waits for the queue) opens only after the delete.
+        await (this.saving = this.saving.then(async () => {
+            if (gen !== this.gen || this.enabled) return; // turned on again meanwhile: keep it
+            this.store?.close();
+            this.store = null;
+            this.index = {};
+            this.dirty.clear();
+            this.clearStore = false;
+            this.migrating = false;
+            this.loaded = false;
+            try {
+                await OcrIndexStore.delete(indexDbName(this.appId));
+            } catch (e) { console.error('Enhanced Canvas OCR: deleting the index failed', e); }
+        }));
     }
 
     /** `app.appId`: what Obsidian keys each vault's localStorage with; stays the same when the vault folder moves. */
@@ -559,45 +576,83 @@ export class ImageTextSearch {
         this.builtin.dispose();
     }
 
-    /** Reads the shards whose file changed since they were last read. */
+    /**
+     * Reads this device's index from IndexedDB, once: nothing else writes it, so later calls keep what is in memory.
+     * IndexedDB unavailable (private mode, quota): memory only for this run, with the old ocr-index imported again.
+     */
     private async load() {
-        const { adapter } = this.plugin.app.vault;
+        if (this.loaded) return;
         const gen = this.gen;
-        await this.saving; // else a disable/enable mid-save reads the old files over newer entries
-        const changed: { s: number; m: number; entries: OcrIndex }[] = [];
-        // ponytail: 64 stats per call, one at a time (lower peak memory on phones). Add a manifest file if that is slow.
-        for (let s = 0; s < SHARDS; s++) {
-            try {
-                const m = (await adapter.stat(this.shardPath(s)))?.mtime;
-                // A dirty shard has entries a failed save didn't write; the next save writes them over the file.
-                if (m === undefined || m === this.loadedAt[s] || this.dirty.has(s)) continue; // no file yet, or already read
-                changed.push({ s, m, entries: JSON.parse(await adapter.read(this.shardPath(s))) });
-            } catch { /* unreadable or mid-sync: keep what we have for this shard */ }
-        }
+        await this.saving; // a turnOff() delete still queued runs first
         if (gen !== this.gen) return;
-        const stale = new Set(changed.map((c) => c.s));
-        if (stale.size) for (const p of Object.keys(this.index)) if (stale.has(shardOf(p))) delete this.index[p];
-        for (const c of changed) { Object.assign(this.index, c.entries); this.loadedAt[c.s] = c.m; }
-        // After the shards: a retry (an earlier migration's save failed) must not overwrite newer entries.
-        if (ImageTextSearch.canIndex) await this.migrateLegacy(gen);
-    }
-
-    /** One-time: moves the single-file index of earlier builds into shards. */
-    private async migrateLegacy(gen: number) {
-        const { adapter } = this.plugin.app.vault;
-        const legacy = `${this.plugin.manifest.dir}/ocr-index.json`;
+        let store = this.store;
+        let stored: { entries: OcrIndex; migrated: boolean } | null = null;
+        // Turned off meanwhile: a connection opened here is closed, not kept (turnOff() already dropped `store`).
+        const dropped = () => { if (store !== this.store) store?.close(); };
         try {
-            if (!(await adapter.exists(legacy))) return;
-            const index: OcrIndex = JSON.parse(await adapter.read(legacy));
-            if (gen !== this.gen) return;
-            // Adds only paths the shards lack. A path a scan dropped can come back; the next scan drops it again.
-            for (const [p, e] of Object.entries(index)) if (!(p in this.index)) this.put(p, e);
-            await this.save();
-            if (!this.dirty.size) await adapter.remove(legacy); // only once every shard is on disk
-        } catch (e) { console.error('Enhanced Canvas OCR: migrating the old index failed', e); }
+            store ??= await OcrIndexStore.open<OcrEntry>(indexDbName(this.appId));
+            stored = await store.readAll();
+        } catch (e) {
+            if (gen !== this.gen) return dropped(); // closed by turnOff(), not unavailable
+            console.warn('Enhanced Canvas OCR: IndexedDB is unavailable; the index is kept in memory until Obsidian restarts', e);
+            store?.close();
+            store = null;
+        }
+        if (gen !== this.gen) return dropped();
+        this.store = store;
+        this.index = stored?.entries ?? {};
+        // Not `loaded` until the import is done: one cut short by a turn-off runs again on the next enable().
+        if (!stored?.migrated && !await this.migrate(gen)) return;
+        this.loaded = true;
     }
 
-    /** Device-local state: not in the synced index, since another device may read what this one can't (codecs, OCR). */
+    /**
+     * §5.7: imports the index earlier builds kept in the plugin folder (the `ocr-index` shards, and the single
+     * `ocr-index.json` before them), once per database. Only paths the database lacks. Phones keep only PDFs that match
+     * their file (images come from the shared files). The old files stay: devices on an earlier build still use them.
+     * False when turned off meanwhile (nothing imported).
+     */
+    private async migrate(gen: number): Promise<boolean> {
+        const { adapter } = this.plugin.app.vault;
+        const dir = this.plugin.manifest.dir;
+        const old: OcrIndex = {};
+        let complete = true; // a file that didn't read (mid-sync, damaged): try again next start
+        const read = async (path: string) => {
+            try {
+                if (await adapter.exists(path)) Object.assign(old, JSON.parse(await adapter.read(path)));
+            } catch (e) {
+                complete = false;
+                console.warn('Enhanced Canvas OCR: reading the old index failed', path, e);
+            }
+        };
+        await read(`${dir}/ocr-index.json`); // the older format first: a shard's entry is newer
+        try {
+            if (await adapter.exists(`${dir}/ocr-index`)) {
+                for (const p of (await adapter.list(`${dir}/ocr-index`)).files) if (p.endsWith('.json')) await read(p);
+            }
+        } catch (e) {
+            complete = false;
+            console.warn('Enhanced Canvas OCR: listing the old index failed', e);
+        }
+        // The phone checks files against the vault, which is complete only once the layout is ready (enable() runs at onload).
+        const { vault, workspace } = this.plugin.app;
+        if (!ImageTextSearch.canIndex) await new Promise<void>((r) => workspace.onLayoutReady(r));
+        if (gen !== this.gen) return false;
+        for (const [p, e] of Object.entries(old)) {
+            if (p in this.index || typeof e?.m !== 'number' || !Array.isArray(e.l)) continue;
+            if (!ImageTextSearch.canIndex) {
+                const f = vault.getAbstractFileByPath(p);
+                if (!(f instanceof TFile) || !isPdf(f) || f.stat.mtime !== e.m) continue;
+            }
+            // A path a scan dropped since can come back (a retried import); the next scan drops it again.
+            this.put(p, e);
+        }
+        this.migrating = complete;
+        if (this.dirty.size || this.migrating) await this.save();
+        return true;
+    }
+
+    /** Device state in localStorage, beside the index: what this device couldn't read (codecs, OCR), and the engines' status. */
     private loadDevice() {
         const d = this.plugin.app.loadLocalStorage(DEVICE_KEY);
         this.failed = new Map(Object.entries(d?.failed ?? {}).filter((e): e is [string, number] => typeof e[1] === 'number'));
@@ -619,10 +674,9 @@ export class ImageTextSearch {
         });
     }
 
-    /** Picks up files sync replaced: other devices' shared image text, and on search-only devices the index. */
+    /** Picks up other devices' shared image text that sync replaced. */
     async refresh() {
         if (!this.enabled) return;
-        if (!ImageTextSearch.canIndex) await this.load();
         await this.loadShared();
     }
 
@@ -912,29 +966,34 @@ export class ImageTextSearch {
         return !ImageTextSearch.canIndex && !this.remote.size && !Object.keys(this.index).some(isImagePath);
     }
 
-    /** Writes never overlap (that can truncate the file); calls made while one waits share it. */
+    /**
+     * Writes the changed paths to IndexedDB in one transaction. In the `saving` queue with saveShared(), so writes
+     * never overlap; calls made while one waits share it.
+     */
     private save() {
         if (this.saveQueued) return this.saving;
         this.saveQueued = true;
         return this.saving = this.saving.then(async () => {
             this.saveQueued = false;
-            const { adapter } = this.plugin.app.vault;
-            const shards = [...this.dirty];
-            this.dirty.clear();
-            // Snapshot now (no await before this), so entries changed during the writes go to the next save.
-            const out = new Map<number, OcrIndex>(shards.map((s) => [s, {}]));
-            for (const [p, e] of Object.entries(this.index)) {
-                const o = out.get(shardOf(p));
-                if (o) o[p] = e;
+            const { store } = this;
+            if (!store) { // memory only (IndexedDB unavailable, or turned off)
+                this.dirty.clear();
+                this.clearStore = false;
+                this.migrating = false;
+                return;
             }
+            // Snapshot now (no await before this), so entries changed during the write go to the next save.
+            const paths = [...this.dirty], clear = this.clearStore, migrated = this.migrating;
+            this.dirty.clear();
+            this.clearStore = false;
+            const puts: [string, OcrEntry][] = [], dels: string[] = [];
+            for (const p of paths) { const e = this.index[p]; if (e) puts.push([p, e]); else dels.push(p); }
             try {
-                if (!(await adapter.exists(this.indexDir))) await adapter.mkdir(this.indexDir);
-                for (const s of shards) {
-                    await adapter.write(this.shardPath(s), JSON.stringify(out.get(s)));
-                    this.loadedAt[s] = (await adapter.stat(this.shardPath(s)))?.mtime ?? -1;
-                }
+                await store.write(puts, dels, { clear, migrated });
+                if (migrated) this.migrating = false;
             } catch (e) {
-                shards.forEach((s) => this.dirty.add(s)); // rewriting a shard is harmless; losing one is not
+                paths.forEach((p) => this.dirty.add(p)); // the transaction wrote nothing: all of it again next time
+                if (clear) this.clearStore = true;
                 console.error('Enhanced Canvas OCR: saving the index failed', e);
             }
         });
@@ -949,7 +1008,9 @@ export class ImageTextSearch {
         this.gen++;
         this.stopOcr();
         this.index = Object.fromEntries(Object.entries(this.index).filter(([, e]) => e.pw === 'unlocked'));
-        for (let s = 0; s < SHARDS; s++) this.dirty.add(s);
+        this.clearStore = true;
+        this.dirty.clear(); // the store is emptied: deleting paths in it is moot
+        for (const p of Object.keys(this.index)) this.dirty.add(p);
         this.failed.clear();
         this.reread.clear();
         this.broken = false;
@@ -1088,7 +1149,7 @@ export class ImageTextSearch {
         return Object.entries(this.index).flatMap(([p, e]) => {
             const f = vault.getAbstractFileByPath(p);
             return e.pw === 'locked' && f instanceof TFile && e.m === f.stat.mtime ? [f] : [];
-        }).sort((a, b) => a.path.localeCompare(b.path)); // index order is by hash shard
+        }).sort((a, b) => a.path.localeCompare(b.path)); // index order isn't alphabetical
     }
 
     /** Reads a locked PDF with `password` into the index. The password is used for this read only and never stored. */
@@ -1735,7 +1796,7 @@ class PdfUnlockModal extends Modal {
             return;
         }
         contentEl.createEl('p', { text: 'Enter a PDF\'s password once to make its text searchable. A password that opens one PDF is tried on the others too. The password isn\'t saved; the text stays in the index, also through "Rebuild image and PDF text index", until the PDF changes.' });
-        contentEl.createEl('p', { cls: 'mod-warning', text: 'The text of an unlocked PDF is stored unencrypted in the index (plugin folder, ocr-index), which syncs with your vault.' });
+        contentEl.createEl('p', { cls: 'mod-warning', text: 'The text of an unlocked PDF is stored unencrypted in this device\'s index (Obsidian\'s app data, outside your vault).' });
 
         const folder = (f: TFile) => (f.parent && !f.parent.isRoot() ? f.parent.path : '');
         const pending = new Map<TFile, Setting>();

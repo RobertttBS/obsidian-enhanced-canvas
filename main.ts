@@ -1486,7 +1486,7 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 					this.plugin.settings.enableImageTextSearch = value;
 					await this.plugin.saveSettings();
 					if (value) await this.plugin.imageText.enable();
-					else this.plugin.imageText.disable();
+					else await this.plugin.imageText.turnOff();
 				})
 		);
 		// The crash guard turned the system OCR off on this computer (Obsidian was closed while it ran): the only way back
@@ -1610,10 +1610,10 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 			{
 				name: 'Search text in images and PDFs',
 				desc: !ImageTextSearch.canIndex
-					? 'Search the text in images and PDFs (command, ribbon icon, Find in canvas). Image text comes from your computers through sync (enhanced-canvas-ocr files in the config folder); PDF text from the ocr-index folder in the plugin folder, if your sync includes it.'
+					? 'Search the text in images and PDFs (command, ribbon icon, Find in canvas). Image text comes from your computers through sync (enhanced-canvas-ocr files in the config folder); PDF text from the ocr-index folder in the plugin folder, imported once, if your sync includes it. Turning this off deletes the index on this device.'
 					: `Search the text in images (OCR) and PDFs (command, ribbon icon, Find in canvas). Read on this computer, not by an online service. ${Platform.isLinux // Windows: the OCR engine setting below says which engine downloads
 						?'Images need a one-time 60 MB download (you are asked first). '
-						: ''}The first run takes a few minutes. Image text is shared with your phones and other computers through sync (enhanced-canvas-ocr files in the config folder).`,
+						: ''}The first run takes a few minutes. Image text is shared with your phones and other computers through sync (enhanced-canvas-ocr files in the config folder). Turning this off deletes the index on this computer.`,
 				render: this.bindImageTextToggle,
 			},
 			...(ImageTextSearch.canChooseEngine ? [{

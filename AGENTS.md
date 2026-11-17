@@ -62,7 +62,7 @@ Project-specific working notes are in `docs/agent/`:
 
 Design records: `docs/design-ocr-index-per-device.md` (image/PDF text index; step 2
 — sync and storage location — is decided; step A (images sync via
-per-device files in the config folder's top level) is implemented, B–C (local index in IndexedDB, PDFs read on every device) are not); `docs/design-builtin-ocr.md` (built-in
+per-device files in the config folder's top level) and B (local index in IndexedDB) are implemented, C (PDFs read on every device) is not); `docs/design-builtin-ocr.md` (built-in
 PaddleOCR engine: decisions, verified facts, worker traps, open questions).
 
 ## Keeping this current

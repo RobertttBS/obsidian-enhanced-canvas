@@ -114,9 +114,9 @@ safe.
   node's `.image-embed`, drawn once per mount (so the observer doesn't loop), removed on clear.
 - `ImageTextSearch.ts` — optional, setting `enableImageTextSearch` (default on). Indexing is
   desktop only (`ImageTextSearch.canIndex`, Linux included); mobile is search-only: it
-  reads the synced index, never writes it, registers no Rebuild command, vault events or scan,
-  and `refresh()` (run before the modal opens and before Find in canvas matches) re-reads the
-  shard files whose mtime changed. **Shared image text** (`docs/design-ocr-index-per-device.md` §5.4, step A):
+  registers no Rebuild command, vault events or scan; its own index holds only the PDFs imported once from the old
+  `ocr-index` (step C will let it read PDFs). `refresh()` (run before the modal opens and before Find in canvas
+  matches) re-reads only the shared files. **Shared image text** (`docs/design-ocr-index-per-device.md` §5.4, step A):
   Obsidian Sync carries only the config folder's top-level `.json` files to phones, so each desktop also writes its
   image entries (never PDFs or `pw`) to `${configDir}/enhanced-canvas-ocr.<id>.json` (base; split into `.<id>.1.json`…
   past 4 MB UTF-8) and `.<id>.new.json` (delta: changed entries + `removed`, against the base as last written). `<id>` is
@@ -195,23 +195,27 @@ safe.
   command, indexing devices only). There each PDF gets its own password; one that opens a PDF is tried on
   the rest. `unlockPdf()` reads it with the password and stores `pw: 'unlocked'`; the password is never
   stored (decided: type it once; text stays). `rebuild()` keeps `unlocked` entries (it couldn't re-read them);
-  a PDF changed since is re-read by the scan and so locked again. The text is plaintext in the synced index —
-  accepted, the modal warns. Earlier builds indexed locked PDFs as plain `[]`: the first scan re-reads empty
+  a PDF changed since is re-read by the scan and so locked again. The text is plaintext in this device's index
+  (never in the shared files) — accepted, the modal warns. Earlier builds indexed locked PDFs as plain `[]`: the first scan re-reads empty
   PDF entries once (`pdfLockChecked`, device-local). Index
   `{path: {m: mtime, l: [[text,x,y,w,h] | [text,page]], pw?}}` lives in
-  `<plugin dir>/ocr-index/00.json`…`3f.json`, never in `data.json` (it's ~100 MB): 64 shards, a path's
-  shard is `shardOf(path)` (FNV-1a mod 64 — never change it), each file is that shard's part of the
-  index; a missing file is an empty shard. In memory `this.index` stays one merged object. `put()`
-  marks the entry's shard in `dirty`; `save()` rewrites only dirty shards (an empty one as `{}`,
-  never deleted) and puts them back in `dirty` if a write fails. `load()` reads only shards whose
-  mtime changed and are not dirty (unsaved local entries win), and applies them in one step. On the
-  indexing computer, `migrateLegacy` runs after the shards load, adds only paths the shards lack from an
-  earlier build's single `ocr-index.json`, and deletes it only after every dirty shard is written. Rescans images whose
+  IndexedDB `enhanced-canvas-ocr-<app.appId>` (`src/OcrIndexStore.ts`; store `entries`, key = path; store `meta`
+  holds `migrated`), never in the vault or `data.json` (it's ~100 MB): per device, not synced. `load()` reads it
+  all once (`loaded`; it stays in memory across disable/enable). `put()` marks the path in `dirty`; `save()` writes
+  dirty paths in one transaction and puts them back if it fails; `rebuild()` sets `clearStore` (the save empties
+  the store first). IndexedDB unavailable → `store` null, memory only for the run. `migrate()` (§5.7) imports the
+  old `<plugin dir>/ocr-index/*.json` shards and the older `ocr-index.json` once per database (paths it lacks;
+  mobile keeps only PDFs whose `m` = file mtime, checked after layout ready since the vault tree may be incomplete
+  at onload), recording `migrated` in the same transaction, and only if every file read; `loaded` is set only after
+  it, so an import cut short by a turn-off reruns. The old files are left for devices on earlier builds. Turning
+  the setting off (`turnOff()`, from the settings toggle — not `disable()`, which also runs on unload) deletes the
+  database inside the `saving` queue; `load()` waits for that queue first, so an off→on toggle never opens the
+  database mid-delete. Rescans images whose
   mtime changed, 50 per OCR process run (10 on built-in WASM; at most `PDF_BATCH` = 5 PDFs per batch, so progress is saved often); vault events keep it current. Each scan first
   prunes entries whose image is gone. A failed OCR process run is retried one image at a time;
   files that still fail (images, or PDFs `readPdf()` can't open) go in the `failed`
   map with their mtime (skipped until the file changes, never indexed as empty). `failed`, `reread` and `readBy`
-  are per device, in `app.saveLocalStorage(DEVICE_KEY)`, not the synced index: they survive restarts, so a bad file
+  are per device, in `app.saveLocalStorage(DEVICE_KEY)`, beside the index: they survive restarts, so a bad file
   isn't retried (and re-notified) on every launch. If every
   `ALWAYS_DECODABLE` image (png/jpg/gif/tiff/bmp — not HEIC/WebP, which need Windows Store codecs) of a
   batch fails and the current engine has never read an image on this device (`readBy`; the index can't tell, it may be synced
@@ -235,7 +239,7 @@ safe.
   ("Try … OCR again", shown while `systemKilled`) is the only way back. Keep fs sync there: localStorage
   and async writes may not reach disk before the kill. PDF failures never pause. Images
   matched by Obsidian's *Excluded files* (`metadataCache.isUserIgnored`) are skipped and pruned. Index changes must go through `put()` and writes through `save()`, which serializes and
-  coalesces them — never call `adapter.write` on the index directly, and never from a search-only device. `disable()` removes
+  coalesces them — never write the database directly. `disable()` removes
   the command, ribbon and listeners and kills the process but keeps the index. Also owns
   the vault-wide "Search text in images and PDFs" `SuggestModal`: same query syntax, scans the whole
   index for the total, sorts by matching lines, numbers them all. The modal caches that list per
@@ -248,13 +252,15 @@ safe.
   with a file-type icon before the name; a canvas backlink
   opens zoomed to the image card, a PDF opens at its first matching page (`#page=N`).
   `drawOcrBoxes` skips PDF lines; PDFs get a file icon instead of a thumbnail.
-  Ceiling: one entry is never split, so a single PDF whose entry exceeds 100 MiB (about 45,000
-  pages) still puts its shard over GitHub's file limit. Setting `imageTextInCoreSearch` (`setCoreSearch()` reruns
+  Setting `imageTextInCoreSearch` (`setCoreSearch()` reruns
   open searches for it; the patcher reruns them once patched, since a search may run first): core Search reads only `.md`/`.canvas` content, so a lazy
   patcher wraps undocumented internals (checked on 1.15.1) — the search view's `startSearch`,
   its result list's `addResult`, and, from the first query instance, the query prototype's
   `match` — handing an image's OCR text in as if it were a note (`Object.create(file)` with
   `extension: 'md'`); the `addResult` wrapper also inserts an `.ec-search-thumb` `<img>` after the result's `selfEl` (core has no image preview). Patches are always on; the hooks no-op unless the feature and setting are.
+- `OcrIndexStore.ts` — IndexedDB wrapper for `ImageTextSearch`'s index: `open`, `readAll` (a cursor, not
+  `getAll()`, which returns the ~100 MB store in one IPC message), one-transaction
+  `write(puts, dels, {clear, migrated})`, `delete`. Keeps one connection; `onversionchange` closes it so a delete isn't blocked.
 - `CalloutImageResize.ts` — workaround for core (1.14.4): images inside a Live Preview
   callout widget (`.cm-callout`) get no resize corner, and any click selects the callout
   source. A markdown post-processor tags image `.internal-embed`s with `interactive-child`

@@ -109,7 +109,14 @@ pdf.js 中文抽字已在 Obsidian 內驗證（見第 4 節）；Windows OCR 只
 
 ## 5. 第 2 步：同步與儲存位置
 
-狀態：方向已決定（2026-11-17）。步驟 A 已實作（2026-11-17，`npx tsc` 通過，Obsidian 內未驗證，5.9 清單待做）；步驟 B、C 未實作。取代先前「共享資料夾做成設定」的方案。
+狀態：方向已決定（2026-11-17）。步驟 A、B 已實作（2026-11-17，`npx tsc` 通過，Obsidian 內未驗證，5.9 清單待做）；步驟 C 未實作。取代先前「共享資料夾做成設定」的方案。
+
+步驟 B 實作與本文的差異：
+- 另有 object store `meta`，key `migrated` 記錄已匯入舊 index，與匯入的 entry 寫在同一個 transaction。只在舊檔全部讀成功時才記錄，否則下次啟動再匯入一次（只補 DB 沒有的 path）。不用「DB 是空的」判斷：Rebuild 後 DB 可能是空的，會把舊 index 再匯入一次。
+- IndexedDB 開不了時，舊 `ocr-index` 仍匯入記憶體，所以不必全部重讀。
+- 關閉設定（`turnOff()`）才刪除 DB；plugin 卸載或重新載入只呼叫 `disable()`，不刪。
+- README 沒有「Files outside the vault」一節，DB 名稱與刪除方式寫在「The index」。
+- **發佈順序**：步驟 B 之後電腦不再寫 `ocr-index/`，git、iCloud 使用者的手機只有遷移那一次匯入的 PDF 文字，之後新增或修改的 PDF 搜不到，要等步驟 C 手機自己讀 PDF。所以 B 應與 C 一起發佈，不單獨發佈。
 
 步驟 A 實作與本文的差異：
 - `remote` 的值是 `{ name, writtenAt, files: path → mtime, entries: Map<path, { e, w }> }`：每個 entry 帶自己所在檔案的 `writtenAt`（`w`），`files` 用來判斷 mtime 沒變就跳過。
@@ -274,7 +281,12 @@ pdf.js 中文抽字已在 Obsidian 內驗證（見第 4 節）；Windows OCR 只
   - 加一張圖只改寫增量檔；增量超過 200 KB 後合併進基底，其他裝置的結果不變。
   - 清理指令刪掉的檔案，其他裝置也會消失。被刪的那台裝置如果還在用，下次寫入時會把檔案寫回來。
   - 把 localStorage 的 `deviceId` 複製到另一台電腦，那台會換成新 id。
-- 步驟 B：從舊版升級後不需要重讀；IndexedDB 被清除後會自動重建。
+- 步驟 B：
+  - 從舊版升級後不需要重讀（`ocr-index/` 匯入），之後 `ocr-index/` 不再被改寫。
+  - IndexedDB 被清除後會自動重建（再從 `ocr-index/` 匯入，scan 補上之後的變動）。
+  - 關閉設定後 DB 被刪除（DevTools → Application → IndexedDB），再開啟會重新匯入或重讀。
+  - Rebuild 後重新啟動，不會把舊 `ocr-index/` 再匯入。
+  - 解鎖的 PDF 重新啟動後仍可搜尋。
 - 步驟 C：iOS、Android 都能搜到中文 PDF；大型 PDF 不會讓 app 被關掉；切到背景再回來可以接著掃描。
 
 ### 5.10 未決定事項
