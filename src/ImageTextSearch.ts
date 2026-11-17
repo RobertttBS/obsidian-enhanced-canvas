@@ -11,10 +11,10 @@ import { ASSETS_BYTES, DownloadResult } from './OcrAssets';
 const IMAGE_EXT = /^(png|jpe?g|heic|webp|gif|tiff?|bmp)$/i;
 const BATCH = 50; // files per OCR process run; keeps argv short and saves progress often
 const PDF_BATCH = 5; // at most this many PDFs per batch: a large one takes seconds, and progress is saved per batch
-// localStorage (per vault, per device): `failed`, `reread`, `readImage`, `pdfLockChecked`, `broken`, `blockedBy`, `engineMigrated`
+// localStorage (per vault, per device): `failed`, `reread`, `readBy`, `pdfLockChecked`, `broken`, `blockedBy`
 const DEVICE_KEY = 'enhanced-canvas-ocr-device';
-// localStorage (per vault, per device), Windows only: 'builtin' or 'system'. Empty = not chosen yet: images wait for the
-// user to answer offerChoice(), and PowerShell is never started before that.
+// localStorage (per vault, per device), Windows only: 'builtin' or 'system'. Empty = the default, 'builtin': PowerShell
+// starts only once the user picks Windows OCR (settings, or "Keep using Windows OCR").
 const ENGINE_KEY = 'enhanced-canvas-ocr-engine';
 export type OcrEngine = 'system' | 'builtin';
 // Crash guard for the system OCR (docs/design-ocr-consent-and-crash-guard.md, part B). Endpoint security (EDR) may kill the
@@ -230,8 +230,9 @@ export class ImageTextSearch {
     // synced index: marking entries stale there would make every other device re-read them too.
     private reread = new Set<string>();
     private rereadNotice: Notice | null = null; // the open "read again" offer, replaced by the next engine switch
-    private choiceNotice: Notice | null = null; // the open offerChoice(), closed once the engine is chosen anywhere
-    private readImage = false; // this device has read an image, so OCR works here (index entries may come from another device)
+    // The engines that have read an image on this device: that engine works here, and another one's text may be worth
+    // reading again after a switch. Not the index: its entries may come from another device.
+    private readBy = new Set<OcrEngine>();
     // The system OCR itself failed: its images are skipped until Rebuild, so each change doesn't burn a new batch (or,
     // under EDR, raise a new alert). Kept on the device, so a restart doesn't start PowerShell again.
     private broken = false;
@@ -241,7 +242,6 @@ export class ImageTextSearch {
     private offerNoticed = false; // the built-in OCR download offer was shown, or a download started, this run
     private silentRuns = 0; // Windows runs in a row that failed with no error text and weren't killed by us: a likely EDR kill
     private pdfLockChecked = false; // earlier builds indexed a locked PDF as empty: the first scan re-reads empty PDFs once
-    private engineMigrated = false; // the one-time "an older build read images here, so keep Windows OCR" check ran (loadDevice)
     private markerTimer: number | null = null; // pending removal of the crash marker (MARKER_LINGER)
     private saving: Promise<void> = Promise.resolve();
     private saveQueued = false;
@@ -257,15 +257,20 @@ export class ImageTextSearch {
     /** The engine choice is offered only on Windows: macOS always uses Vision, Linux always the built-in OCR. */
     static get canChooseEngine() { return Platform.isWin && Platform.isDesktopApp; }
 
-    /**
-     * Which OCR reads images on this device (docs/design-builtin-ocr.md, decision 5). null = Windows, not chosen yet:
-     * images wait for offerChoice(), and nothing reads them (so PowerShell never starts) until the user answers.
-     */
-    get engine(): OcrEngine | null {
-        if (Platform.isMacOS) return 'system';
-        if (!Platform.isWin) return 'builtin';
+    /** What ENGINE_KEY holds; null = never chosen on this device. */
+    private get storedEngine(): OcrEngine | null {
         const v = this.plugin.app.loadLocalStorage(ENGINE_KEY);
         return v === 'builtin' || v === 'system' ? v : null;
+    }
+
+    /**
+     * Which OCR reads images on this device (docs/design-builtin-ocr.md, decision 5). Windows defaults to the built-in
+     * OCR, also after an update from a build that only had Windows OCR: PowerShell starts only by the user's choice.
+     */
+    get engine(): OcrEngine {
+        if (Platform.isMacOS) return 'system';
+        if (!Platform.isWin) return 'builtin';
+        return this.storedEngine ?? 'builtin';
     }
 
     /** The current engine failed as a whole: images wait (PDFs go on). */
@@ -439,8 +444,6 @@ export class ImageTextSearch {
         this.stopOcr();
         // We killed the process ourselves: a plugin reload or a toggle off/on must not find the marker and call it a crash.
         this.clearMarker();
-        this.choiceNotice?.hide(); // its buttons would start reading in a disabled index
-        this.choiceNotice = null;
     }
 
     /** `app.appId`: what Obsidian keys each vault's localStorage with; stays the same when the vault folder moves. */
@@ -458,15 +461,16 @@ export class ImageTextSearch {
      * At startup: a marker left behind means Obsidian was closed while the system OCR ran (killed, most likely by EDR,
      * or a quit that fired no `quit` event). Recorded for the whole computer; the user decides in noticeKilled().
      * Only ocrImagesNative() writes the marker, so it means the system OCR ran. Not when the built-in OCR is chosen now
-     * (the user switched since). Engine empty: the choice was saved to localStorage, which Chromium flushes later, but the
-     * kill came first — the synchronously written marker outlived it. Restore the choice and record the kill.
+     * (the user switched since). Engine empty on Windows: 'system' was saved to localStorage, which Chromium flushes
+     * later, but the kill came first — the synchronously written marker outlived it. Restore the choice, so this vault
+     * shows noticeKilled() instead of quietly offering the built-in OCR's download, and record the kill.
      */
     private checkMarker() {
         const p = markerPath(this.appId);
         if (!nodeFs().existsSync(p)) return;
         unlinkQuiet(p);
+        if (ImageTextSearch.canChooseEngine && this.storedEngine === null) this.plugin.app.saveLocalStorage(ENGINE_KEY, 'system');
         if (this.engine === 'builtin') return;
-        if (ImageTextSearch.canChooseEngine && this.engine === null) this.plugin.app.saveLocalStorage(ENGINE_KEY, 'system');
         const prev = readKill();
         // A kill while the user had chosen to go on counts again; one already pending (another vault found it) doesn't.
         if (prev && !prev.continued) return;
@@ -494,8 +498,8 @@ export class ImageTextSearch {
 
     /**
      * "Keep using Windows OCR" (noticeKilled), or "Try again" in settings: the system OCR may start again on this computer,
-     * and this vault uses it. On Windows the engine may still be unchosen (another vault was killed) or built-in (the
-     * user switched after the kill): either way the answer means the system OCR, so it's set rather than asked again.
+     * and this vault uses it. On Windows the engine may be built-in (the default, or the user switched after the kill):
+     * the answer means the system OCR, so it's set.
      */
     allowSystemAgain() {
         const kill = readKill();
@@ -556,26 +560,20 @@ export class ImageTextSearch {
         const d = this.plugin.app.loadLocalStorage(DEVICE_KEY);
         this.failed = new Map(Object.entries(d?.failed ?? {}).filter((e): e is [string, number] => typeof e[1] === 'number'));
         this.reread = new Set(Array.isArray(d?.reread) ? d.reread.filter((p: unknown): p is string => typeof p === 'string') : []);
-        this.readImage = d?.readImage === true;
+        // Builds before `readBy` kept one flag, `readImage`: the engine chosen then read those images, and with none
+        // chosen on Windows it was Windows OCR (the only engine before the choice existed).
+        const by: unknown[] = Array.isArray(d?.readBy) ? d.readBy
+            : d?.readImage === true ? [ImageTextSearch.canChooseEngine ? this.storedEngine ?? 'system' : this.engine] : [];
+        this.readBy = new Set(by.filter((e): e is OcrEngine => e === 'builtin' || e === 'system'));
         this.pdfLockChecked = d?.pdfLockChecked === true;
         this.broken = d?.broken === true;
         this.blockedBy = this.broken && isOcrBlock(d?.blockedBy) ? d.blockedBy : null;
-        this.engineMigrated = d?.engineMigrated === true;
-        // Once, for devices updated from a build without the engine choice (which always used Windows OCR): readImage
-        // there means Windows OCR worked on this computer, so keep it instead of asking. Never again: after
-        // removeBuiltin() empties ENGINE_KEY, readImage may come from the built-in OCR, and this would quietly start PowerShell.
-        // Not the index: it's synced, so another device's readings would look like Windows OCR working here.
-        if (!this.engineMigrated) {
-            if (ImageTextSearch.canChooseEngine && this.readImage && this.engine === null) this.plugin.app.saveLocalStorage(ENGINE_KEY, 'system');
-            this.engineMigrated = true;
-            this.saveDevice();
-        }
     }
 
     private saveDevice() {
         this.plugin.app.saveLocalStorage(DEVICE_KEY, {
-            failed: Object.fromEntries(this.failed), reread: [...this.reread], readImage: this.readImage, pdfLockChecked: this.pdfLockChecked,
-            broken: this.broken, blockedBy: this.blockedBy, engineMigrated: this.engineMigrated,
+            failed: Object.fromEntries(this.failed), reread: [...this.reread], readBy: [...this.readBy], pdfLockChecked: this.pdfLockChecked,
+            broken: this.broken, blockedBy: this.blockedBy,
         });
     }
 
@@ -669,13 +667,16 @@ export class ImageTextSearch {
                 // Built-in OCR without its files: images wait for the download (not failed), PDFs go on.
                 const missing = this.engine === 'builtin' && !(await this.builtin.assets.ready());
                 if (gen !== this.gen) continue; // `while` rechecks rescan: stopped, or restarted on another engine
-                // Windows, engine not chosen yet: images wait for the answer the same way.
-                const undecided = this.engine === null;
-                const skipImages = this.paused || missing || undecided;
+                // Updated from a build that only had Windows OCR: it read images here and no engine was ever chosen. The
+                // built-in OCR is about to read its first batch, which is an engine switch: setEngine() retries the images
+                // Windows OCR failed on, offers reading the others again, and scans again.
+                if (!missing && ImageTextSearch.canChooseEngine && this.storedEngine === null && this.readBy.has('system')) {
+                    this.setEngine('builtin');
+                    continue;
+                }
+                const skipImages = this.paused || missing;
                 if (skipImages && all.some((f) => !isPdf(f))) {
-                    // Windows OCR already known broken here: that notice offers the built-in OCR, and "use Windows OCR" means nothing.
                     if (this.paused) this.noticePaused();
-                    else if (undecided) this.offerChoice();
                     else this.offerDownload();
                 }
                 const todo = skipImages ? all.filter(isPdf) : all;
@@ -770,10 +771,10 @@ export class ImageTextSearch {
      * 'locked' = a PDF that needs a password.
      */
     private async ocr(files: TFile[], gen: number): Promise<(OcrLine[] | null | undefined | 'locked')[]> {
-        const system = this.engine === 'system';
+        const engine = this.engine;
+        const system = engine === 'system';
         const wasBroken = this.broken;
-        // Not chosen yet (scan() already holds images back): never fall through to the system OCR.
-        const skip = () => this.paused || this.engine === null;
+        const skip = () => this.paused;
         const images = skip() ? [] : files.filter((f) => !isPdf(f));
         let read = images.length ? await this.ocrImages(images) : [];
         // One bad image fails the whole run: retry one by one so it can't block the rest.
@@ -803,14 +804,15 @@ export class ImageTextSearch {
             this.broken = true;
             if (!this.blockedBy) this.blockedBy = 'stopped';
         }
-        if (read?.some(Boolean)) this.readImage = true;
+        if (read?.some(Boolean)) this.readBy.add(engine);
         // Every image failing means OCR itself is broken: pause images instead of marking them all failed. PDFs go on.
         // Only formats that always decode count: a batch of HEIC without the codec fails with OCR working fine.
-        // Not once an image was ever read on this device (readImage, not the index: it may be synced from another device):
-        // then OCR works and these files are bad (corrupt, or not really images).
+        // Not once this engine ever read an image on this device (readBy, not the index: it may be synced from another
+        // device): then OCR works and these files are bad (corrupt, or not really images). Per engine: Windows OCR
+        // working says nothing about the built-in one.
         // ocrImages() also sets broken for a known block (no OCR language, policy, antivirus), even for a single image.
         const decodable = images.flatMap((f, j) => (ALWAYS_DECODABLE.test(f.extension) ? [j] : []));
-        if (decodable.length > 1 && decodable.every((j) => !read?.[j]) && !this.readImage) {
+        if (decodable.length > 1 && decodable.every((j) => !read?.[j]) && !this.readBy.has(engine)) {
             console.warn('Enhanced Canvas OCR: no image could be read, pausing image OCR:', decodable.map((j) => images[j].path));
             this.pause();
         }
@@ -877,38 +879,25 @@ export class ImageTextSearch {
     }
 
     /**
-     * Windows, engine not chosen yet, images to read: ask once per run, in plain words (docs/design-ocr-consent-and-crash-guard.md, A).
-     * A notice, not a modal: this comes from a background scan, often at startup, right where the release notes modal opens.
-     * Closed without an answer: asked again next run; images wait meanwhile and PowerShell isn't started.
+     * The built-in OCR's files are missing (first use, a file added since, or IndexedDB cleared): offer the download
+     * once per run. A notice, not a modal: this comes from a background scan, often at startup, right where the release
+     * notes modal opens. Closed without an answer: offered again next run; images wait meanwhile.
      */
-    private offerChoice() {
-        if (this.offerNoticed) return;
-        this.offerNoticed = true;
-        this.choiceNotice?.hide();
-        const notice = this.choiceNotice = new Notice(createFragment((el) => {
-            el.appendText('Enhanced Canvas: choose how to read the text in your images. Both ways run on your computer. ');
-            const button = (text: string, engine: OcrEngine) => el.createEl('button', { text }).addEventListener('click', (e) => {
-                e.stopPropagation();
-                notice.hide();
-                this.setEngine(engine);
-            });
-            button(`Built-in OCR (recommended, ${MB(ASSETS_BYTES)} MB download)`, 'builtin');
-            button('Windows OCR', 'system');
-            el.createDiv({ text: 'Built-in OCR is more accurate and reads many languages at once, but is slow without a graphics card. Windows OCR needs no download and reads one language; company security software may block it. Change this later in settings → OCR engine.' });
-        }), 0);
-    }
-
-    /** The built-in OCR's files are missing (first use, or IndexedDB cleared): offer the download once per run. */
     private offerDownload() {
         if (this.offerNoticed) return;
         this.offerNoticed = true;
+        const bytes = this.builtin.assets.missingBytes; // scan() just called ready()
         const notice = new Notice(createFragment((el) => {
-            el.appendText(`Enhanced Canvas: to read the text in your images, the built-in OCR needs a one-time download of about ${MB(ASSETS_BYTES)} MB. It then runs on your computer. PDFs are indexed meanwhile. `);
+            // Some files are here already: an update added one (or a download stopped halfway).
+            el.appendText(bytes < ASSETS_BYTES
+                ? `Enhanced Canvas: the built-in OCR needs one more download of about ${MB(bytes)} MB before it can read new images. PDFs are indexed meanwhile. `
+                : `Enhanced Canvas: to read the text in your images, the built-in OCR needs a one-time download of about ${MB(ASSETS_BYTES)} MB. It then runs on your computer. PDFs are indexed meanwhile. `);
             el.createEl('button', { text: 'Download' }).addEventListener('click', (e) => {
                 e.stopPropagation();
                 notice.hide();
                 void this.downloadBuiltin();
             });
+            if (ImageTextSearch.canChooseEngine) el.createDiv({ text: 'To use Windows OCR instead (no download, one language; company security software may block it), choose it in settings → OCR engine.' });
         }), 0);
     }
 
@@ -954,10 +943,8 @@ export class ImageTextSearch {
      */
     setEngine(engine: OcrEngine) {
         if (!ImageTextSearch.canChooseEngine) return;
-        const first = this.engine === null; // the first choice: no previous engine's text to offer reading again
+        const other = [...this.readBy].some((e) => e !== engine); // another engine read images here: offer reading them again
         this.plugin.app.saveLocalStorage(ENGINE_KEY, engine);
-        this.choiceNotice?.hide(); // answered here (settings, the killed notice) rather than in offerChoice()
-        this.choiceNotice = null;
         this.blockNoticed = false; // the new engine may be paused too: say so once more
         this.gen++; // the running batch is dropped, not failed
         this.stopOcr();
@@ -965,10 +952,11 @@ export class ImageTextSearch {
         const { vault } = this.plugin.app;
         const retry = [...this.failed.keys()].filter((p) => isImageFile(vault.getAbstractFileByPath(p)));
         retry.forEach((p) => this.failed.delete(p));
-        if (retry.length) this.saveDevice();
+        this.saveDevice(); // always: also writes a `readBy` that loadDevice() worked out from the engine key just replaced
         if (engine === 'builtin') void this.downloadBuiltin(); // scans once the files are there
         else if (this.enabled) void this.scan();
-        if (this.enabled && !first) this.offerReread(engine);
+        if (this.enabled && other) this.offerReread(engine);
+        else this.rereadNotice?.hide(); // an open offer names the engine just left
     }
 
     /** After an engine switch: images already read keep the old engine's text until the user asks to read them again. */
@@ -1000,7 +988,7 @@ export class ImageTextSearch {
         void this.scan(); // the built-in OCR without its files: images wait for the download, which scans again
     }
 
-    /** Command: frees the ~31 MB and goes back to asking (offerChoice on Windows, offerDownload on Linux). Never quietly to PowerShell. */
+    /** Command: frees the ~60 MB. The engine stays as chosen: the built-in OCR offers the download again, Windows OCR goes on. */
     private async removeBuiltin() {
         if (this.builtin.assets.isDownloading) {
             new Notice('Enhanced Canvas: the built-in OCR is still downloading. Try again once it finishes.');
@@ -1008,7 +996,6 @@ export class ImageTextSearch {
         }
         this.gen++;
         this.stopOcr();
-        if (ImageTextSearch.canChooseEngine) this.plugin.app.saveLocalStorage(ENGINE_KEY, null);
         try {
             await this.builtin.assets.clear();
         } catch (e) {
@@ -1016,8 +1003,8 @@ export class ImageTextSearch {
             new Notice('Enhanced Canvas: couldn\'t remove the built-in OCR files. See the developer console (Ctrl+Shift+I).');
             return;
         }
-        new Notice(`Enhanced Canvas: removed the built-in OCR files from this device.${Platform.isWin ? ' The next time images need reading, you\'ll be asked how to read them.' : ''}`);
-        // A fresh start for the next notices: Linux offers the download again, Windows asks again (or says the system OCR is paused).
+        new Notice(`Enhanced Canvas: removed the built-in OCR files from this device.`);
+        // A fresh start for the next notices: with the built-in OCR chosen, the download is offered again.
         this.builtinBroken = false;
         this.blockNoticed = false;
         this.offerNoticed = false;
@@ -1065,7 +1052,6 @@ export class ImageTextSearch {
 
     private async ocrImages(files: TFile[]): Promise<(OcrLine[] | null)[] | null> {
         if (this.engine === 'system') return this.ocrImagesNative(files);
-        if (this.engine === null) return null; // not chosen yet: ocr() never gets here, but never guess an engine
         const gen = this.gen;
         const read = await this.builtin.read(files, () => gen === this.gen);
         // Same CJK_GAP pass as the Windows path. Here, not in BuiltinOcr: that file may only `import type` from this one.

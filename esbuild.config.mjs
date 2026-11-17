@@ -4,7 +4,6 @@ import { builtinModules as builtins } from "node:module";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { gzipSync } from "node:zlib";
 
 const banner =
 `/*
@@ -18,25 +17,26 @@ const prod = (process.argv[2] === "production");
 // Virtual module `ocr-worker-source`: the OCR Worker (src/ocr-worker.js) bundled on its own as a browser script
 // against the WebGPU build of onnxruntime-web (which also runs WASM-only), exported as text, so it ships inside
 // main.js and starts from a Blob URL (src/BuiltinOcr.ts).
-// Virtual module `ocr-wasm-source`: onnxruntime's asyncify .wasm for that build, gzip -9 + base64, also as text.
-// Shipped inside main.js (docs/design-builtin-ocr.md, decision 4): only model data is downloaded at run time, never code.
+// onnxruntime's asyncify .wasm for that build is not in main.js: the plugin downloads it with the models from the
+// `ocr-assets-N` release (src/OcrAssets.ts; docs/design-builtin-ocr.md, decision 4). The glue code bundled here only
+// works with the .wasm of the same onnxruntime-web version, so the build fails unless node_modules' file has the
+// SHA-256 that OcrAssets.ts downloads.
 const OCR_WASM = "node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm";
-const OCR_WASM_SHA256 = "ca319e9539cd0f1e291cf56074760121eaf39650f5dbf84b6e52c07f4b2944ec";
-let ocrWasm; // once per process: gzip -9 of 28 MB takes seconds, and watch mode rebuilds often
+let ocrWasmHash; // hashed once per process (29 MB, and watch mode rebuilds often); OcrAssets.ts is read on every build
+const checkOcrWasm = async () => {
+	const got = ocrWasmHash ??= createHash("sha256").update(await readFile(OCR_WASM)).digest("hex");
+	// The .wasm's own entry in FILES, not the hash anywhere in the file.
+	const entry = (await readFile("src/OcrAssets.ts", "utf8")).split("\n").find((l) => l.includes(`name: '${path.basename(OCR_WASM)}'`));
+	if (!entry?.includes(`sha256: '${got}'`)) {
+		throw new Error(`${OCR_WASM} has SHA-256 ${got}, which src/OcrAssets.ts doesn't list: onnxruntime-web changed. Upload this .wasm to a new ocr-assets release and update TAG and FILES there.`);
+	}
+};
 const ocrSources = {
 	name: "ocr-sources",
 	setup(build) {
-		build.onResolve({ filter: /^ocr-(worker|wasm)-source$/ }, (args) => ({ path: args.path, namespace: "ocr-source" }));
-		build.onLoad({ filter: /^ocr-wasm-source$/, namespace: "ocr-source" }, async () => {
-			ocrWasm ??= (async () => {
-				const buf = await readFile(OCR_WASM);
-				const got = createHash("sha256").update(buf).digest("hex");
-				if (got !== OCR_WASM_SHA256) throw new Error(`${OCR_WASM}: SHA-256 ${got}, expected ${OCR_WASM_SHA256} (onnxruntime-web version changed?)`);
-				return gzipSync(buf, { level: 9 }).toString("base64");
-			})();
-			return { contents: await ocrWasm, loader: "text" };
-		});
+		build.onResolve({ filter: /^ocr-worker-source$/ }, (args) => ({ path: args.path, namespace: "ocr-source" }));
 		build.onLoad({ filter: /^ocr-worker-source$/, namespace: "ocr-source" }, async () => {
+			await checkOcrWasm();
 			const result = await esbuild.build({
 				entryPoints: ["src/ocr-worker.js"],
 				bundle: true,

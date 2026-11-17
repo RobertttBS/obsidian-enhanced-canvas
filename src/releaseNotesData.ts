@@ -2,8 +2,9 @@
 export const whatsNew = `
 ## What's new
 
-- **Built-in OCR on Windows**: when a notice asks how to read images, click **Built-in OCR (recommended)**: more accurate, many languages at once, and unaffected by company security software (31 MB download, slow without a graphics card). Already on Windows OCR? Switch in settings → *OCR engine*.
-- **Search text in images on Linux**: click **Download** in the notice (31 MB, once).
+- **Built-in OCR on Windows**: click **Download** in the notice (60 MB, once) to read images with the built-in OCR: more accurate, many languages at once, and unaffected by company security software (slow without a graphics card). Prefer Windows OCR? Choose it in settings → *OCR engine*.
+- **Search text in images on Linux**: click **Download** in the notice (60 MB, once).
+- **Already using the built-in OCR?** Click **Download** in the notice once more (29 MB) so new images keep being read.
 - **Reading images paused?** Click **Use built-in OCR** in the notice.
 `;
 
@@ -37,8 +38,8 @@ Search words or a \`[[link]]\` across the Canvas: \`a b\` needs both words, \`a 
 ### Search text in images and PDFs
 Search the text inside every image (OCR) and PDF in your vault, read on your computer. *Find in canvas* also matches image and PDF cards.
 - **Where:** command *Search text in images and PDFs* or the ribbon icon.
-- **Settings:** *Search text in images and PDFs* (on by default), *Show image and PDF results in Search* (adds them to core Search), *OCR engine* (Windows; **Built-in** is recommended).
-- **Linux:** click **Download** in the notice (31 MB, once).
+- **Settings:** *Search text in images and PDFs* (on by default), *Show image and PDF results in Search* (adds them to core Search), *OCR engine* (Windows; **Built-in** is the default).
+- **Windows, Linux:** click **Download** in the notice (60 MB, once).
 - **Locked PDFs:** click **Unlock…** in the notice after indexing.
 - **Mobile:** turn on the same setting to search the index synced from your computer.
 

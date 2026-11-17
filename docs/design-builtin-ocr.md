@@ -10,10 +10,9 @@
 | 使用者 | 之前 | 現在 |
 |---|---|---|
 | macOS | Vision | 不變，看不到任何新東西 |
-| Windows，系統 OCR 正常 | Windows OCR | 不變，看不到任何新東西 |
-| Windows，系統 OCR 被擋（EDR、AppLocker、沒有語言包） | 圖片讀取暫停 | 通知上按一次改用內建 OCR |
+| Windows（新安裝或從舊版更新） | Windows OCR | 預設內建 OCR：通知上按一次下載（2026-11-17 改，見決定 5） |
 | Linux 桌面版 | 不能建索引 | 用內建 OCR 建索引（按一次下載） |
-| 想手動選用的人（Windows） | 無 | 設定裡把「OCR engine」切到內建 |
+| 想用 Windows OCR 的人 | — | 設定裡把「OCR engine」切到 Windows OCR |
 
 ### 不在範圍內
 
@@ -27,9 +26,9 @@
 
 ### 決定 1：下載要先問（按一次）
 
-模型約 31 MB。Obsidian 安裝 plugin 時只會抓 `main.js`、`manifest.json`、`styles.css`，所以模型只能在執行時下載。
+模型約 31 MB，加上 onnxruntime 的 wasm 約 29 MB，共約 60 MB（決定 4）。Obsidian 安裝 plugin 時只會抓 `main.js`、`manifest.json`、`styles.css`，所以模型只能在執行時下載。
 
-採用：需要內建 OCR 時顯示通知，使用者按一次「Download」（在設定裡切到 Built-in 本身就是明確的選擇，直接開始下載）。不採用「直接下載、通知只顯示進度」：計量網路或公司網路上未經同意下載 31 MB，審核與使用者觀感的風險較高。系統 OCR 正常的 Windows 與 macOS 使用者零操作、零下載。
+採用：需要內建 OCR 時顯示通知，使用者按一次「Download」（在設定裡切到 Built-in 本身就是明確的選擇，直接開始下載）。不採用「直接下載、通知只顯示進度」：計量網路或公司網路上未經同意下載 60 MB，審核與使用者觀感的風險較高。macOS 使用者零操作、零下載。
 
 ### 決定 2：資產放本專案的 GitHub release
 
@@ -39,7 +38,7 @@
 專用 release，tag `ocr-assets-1`，不附在每個版本的 release 上：
 
 - Obsidian 只看 tag 等於 `manifest.json` 版本號的 release，其他 tag 不影響安裝與更新。
-- 模型不隨 plugin 版本變動，不必每次發版重傳 31 MB。
+- 模型與 wasm 不隨 plugin 版本變動，不必每次發版重傳 60 MB。
 - 建立時取消勾選「Set as latest release」，避免 BRAT 之類的工具把它當成最新版。
 - 換模型或換 onnxruntime 版本時開 `ocr-assets-2`，舊的保留，舊版 plugin 才不會壞。
 
@@ -50,26 +49,33 @@
 | PaddleOCR 模型（上游） | Apache-2.0 | PaddleOCR repo 的 LICENSE |
 | `snowfluke/ppu-paddle-ocr-models`（轉成 `.onnx` 的版本） | Apache-2.0 | Hugging Face 模型卡的 license 標記；說明寫模型來自 PaddleOCR |
 | onnxruntime-web（wasm） | MIT | 套件的 `package.json` |
-| ppu-paddle-ocr（打包進 `main.js`） | MIT | 套件的 `package.json` |
+| ppu-paddle-ocr、onnxruntime-web 的 JS（打包進 `main.js`） | MIT | 套件的 `package.json` |
 
-release 說明要列出三個檔的來源、版本與授權，並附 Apache-2.0 的授權文字；打包進 `main.js` 的部分見 `THIRD-PARTY-NOTICES.md`。模型卡沒有另外說明轉換者是否加了額外條件；該 repo 的 LICENSE 檔內容沒有逐字讀過。
+release 說明要列出四個檔的來源、版本與授權，並附 Apache-2.0 的授權文字；打包進 `main.js` 的部分見 `THIRD-PARTY-NOTICES.md`。模型卡沒有另外說明轉換者是否加了額外條件；該 repo 的 LICENSE 檔內容沒有逐字讀過。
 
 ### 決定 3：模型存在 IndexedDB
 
-不在 vault 裡，不會被 git、iCloud、Syncthing 同步 31 MB。代價：使用者看不到檔案；清除 Obsidian 資料時會消失，需要重新下載（`ready()` 回 false 時走同一套下載提示）。不採用 plugin 資料夾的 `ocr-wasm/`：每個 vault 各下載一次，且會被檔案同步工具帶著走。
+不在 vault 裡，不會被 git、iCloud、Syncthing 同步 60 MB。代價：使用者看不到檔案；清除 Obsidian 資料時會消失，需要重新下載（`ready()` 回 false 時走同一套下載提示）。不採用 plugin 資料夾的 `ocr-wasm/`：每個 vault 各下載一次，且會被檔案同步工具帶著走。
 
-### 決定 4：wasm 打包進 `main.js`，只下載資料
+### 決定 4：wasm 跟模型一起從 release 下載（2026-11-17 改；原本打包進 `main.js`）
 
-Obsidian 開發者政策：
+maintainer 決定：onnxruntime 的 `.wasm`（28.7 MB）放在 `ocr-assets-1`，和模型一起下載、驗 SHA-256、存 IndexedDB，不再內嵌。理由：內嵌讓所有使用者（含手機、macOS、永遠用不到內建 OCR 的人）每次更新都多下載約 9.5 MB，`main.js` 載入時多一個約 9.5 MB 的字串。
+
+- `main.js` 內仍有 onnxruntime 的 JS 膠水碼（在 worker 原始碼裡）。膠水碼和 wasm 必須同版本：`esbuild.config.mjs` 在 build 時算 `node_modules` 裡 wasm 的 SHA-256，`src/OcrAssets.ts` 沒列這個值就讓 build 失敗。換 onnxruntime 版本＝開新的 `ocr-assets-N`。
+- 下載的 wasm 只有雜湊符合 plugin 內寫死的值才會存下來、才會執行，所以執行的位元組仍由這一版 plugin 決定，不會被遠端換掉。
+- 已經下載過三個模型檔的裝置：`ready()` 發現少一個檔，再顯示一次下載提示，只補抓 wasm（逐檔續傳）。1.0.38 不認得這個檔，不受影響。
+- **已接受的風險**：下面的政策可以被解讀成不允許這樣做。README 已寫明下載內容、來源與雜湊檢查；若審核有意見，備案是改回內嵌（本決定的前一版，`git log` 可查）。
+
+以下是原本的分析（保留作為風險依據）。Obsidian 開發者政策：
 
 - **允許但要揭露**：「Network use. Clearly explain which remote services are used and why they're needed.」→ README 寫明。
 - **不允許**：「Install or update themselves or their dependencies.」
 
-onnxruntime 的 `.wasm` 是執行檔，執行時下載它可以被解讀為「安裝相依套件」；模型與字典是資料。所以 wasm 以 gzip -9 加 base64 打包進 `main.js`（約 +9.5 MB），只下載三個資料檔（約 31 MB）。代價是所有使用者（含手機、含永遠用不到內建 OCR 的人）每次更新都多下載約 9.5 MB，`main.js` 載入時也多一個約 9.5 MB 的字串。附帶好處：wasm 與打包進去的 onnxruntime 永遠同版本。若這個代價不可接受，備案是問 Obsidian 團隊能否下載 wasm。
+onnxruntime 的 `.wasm` 是執行檔，執行時下載它可以被解讀為「安裝相依套件」；模型與字典是資料。原本因此把 wasm 以 gzip -9 加 base64 打包進 `main.js`（約 +9.5 MB），只下載三個資料檔。
 
 ### 決定 5：引擎選擇存在裝置上
 
-`app.saveLocalStorage('enhanced-canvas-ocr-engine')`，不進 `data.json`：`data.json` 會跟著 vault 同步，但「公司電腦要用內建、家裡的 Mac 用 Vision」是每台裝置各自的事。macOS 一律系統、Linux 一律內建、Windows 依這個鍵；鍵是空的＝還沒選，圖片等使用者回答 `offerChoice()` 的通知，不啟動 PowerShell（`docs/design-ocr-consent-and-crash-guard.md` A，含舊版使用者一次性轉換、`removeBuiltin()` 回到還沒選）。
+`app.saveLocalStorage('enhanced-canvas-ocr-engine')`，不進 `data.json`：`data.json` 會跟著 vault 同步，但「公司電腦要用內建、家裡的 Mac 用 Vision」是每台裝置各自的事。macOS 一律系統、Linux 一律內建、Windows 依這個鍵；鍵是空的＝預設內建（2026-11-17 改）。新安裝、從只有 Windows OCR 的舊版更新、`removeBuiltin()` 之後都是內建，圖片等使用者按下載；只有使用者自己選 Windows OCR（設定，或 killed 通知的「Keep using」）才會啟動 PowerShell。原本的「還沒選」狀態、`offerChoice()` 二選一通知、舊版使用者一次性轉成 `'system'`（`engineMigrated`）都已移除。已經存了 `'system'` 的裝置不動：分不出是自己選的還是 1.0.38 轉換的。
 
 用內建但資產還沒就緒時，圖片跳過（不記為失敗），PDF 照常，並顯示下載提示。**不退回系統 OCR**：使用者選內建可能正是為了避開 PowerShell。
 
@@ -105,7 +111,6 @@ onnxruntime 的 `.wasm` 是執行檔，執行時下載它可以被解讀為「�
 - Linux 上的行為（WebGPU 在 Linux 的 Electron 可能預設不可用，預期會退回 WASM）。
 - Obsidian 關閉「硬體加速」時是否正確退回 WASM。
 - 同一台電腦的不同 vault 是否共用同一個 IndexedDB 資料庫（資料庫名稱不含 vault id，預期共用）。
-- 手機載入約 10 MB 的 `main.js` 對啟動時間的影響。
 
 ## 4. 資產
 
@@ -114,16 +119,15 @@ onnxruntime 的 `.wasm` 是執行檔，執行時下載它可以被解讀為「�
 | `det.onnx` | 9,880,512 | `d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e` |
 | `rec.onnx` | 21,159,378 | `5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634` |
 | `dict.txt` | 74,948 | `41557512862dfe31970cf22407742b629725461dd84c0d8771bde9c87c2202c8` |
+| `ort-wasm-simd-threaded.asyncify.wasm` | 28,747,738 | `ca319e9539cd0f1e291cf56074760121eaf39650f5dbf84b6e52c07f4b2944ec` |
 
-來源：`https://huggingface.co/snowfluke/ppu-paddle-ocr-models`（`detection/PP-OCRv6_small_det.onnx`、`recognition/PP-OCRv6_small_rec.onnx`、`recognition/ppocrv6_dict.txt`）。`scripts/fetch-ocr-assets.mjs` 抓下並驗雜湊，維護者手動上傳到 `ocr-assets-1`。tag 與雜湊是 `src/OcrAssets.ts` 的常數，不做成設定。
-
-onnxruntime 的 wasm（`ort-wasm-simd-threaded.asyncify.wasm`，28,747,738 位元組，SHA-256 `ca319e9539cd0f1e291cf56074760121eaf39650f5dbf84b6e52c07f4b2944ec`）不下載，build 時驗雜湊後打包在 `main.js` 內（`esbuild.config.mjs` 的 `ocr-wasm-source`）。
+前三個的來源：`https://huggingface.co/snowfluke/ppu-paddle-ocr-models`（`detection/PP-OCRv6_small_det.onnx`、`recognition/PP-OCRv6_small_rec.onnx`、`recognition/ppocrv6_dict.txt`）。wasm 來自 `node_modules/onnxruntime-web/dist/`（`onnxruntime-web@1.31.1`，未修改）。`scripts/fetch-ocr-assets.mjs` 抓下（wasm 是從 `node_modules` 複製）並驗雜湊，維護者手動把四個檔上傳到 `ocr-assets-1`。tag 與雜湊是 `src/OcrAssets.ts` 的常數，不做成設定。
 
 ## 5. 風險與備案
 
 | 風險 | 影響 | 備案 |
 |---|---|---|
-| `main.js` 約 10 MB 讓手機啟動變慢或更新變慢 | 所有使用者受影響 | 量過再決定；若不可接受，問 Obsidian 團隊能否改為下載 wasm |
+| 審核認定下載 wasm 是「安裝相依套件」 | 上架或更新被擋 | 改回內嵌在 `main.js`（決定 4 的前一版） |
 | 內顯上 WebGPU 很慢或不穩 | 公司筆電上體驗差 | 已有 WASM 退路（GPU 連續失敗兩次後本次執行改用 WASM）；必要時加裝置層級的「不使用 GPU」選項 |
 | 公司網路擋 GitHub release 的轉址網域 | 下載失敗 | 清楚的錯誤訊息與 Retry；之後做手動匯入 |
 | IndexedDB 被清除 | 需要重新下載 | `ready()` 回 false 時走同一套下載提示 |

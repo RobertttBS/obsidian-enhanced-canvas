@@ -1,5 +1,4 @@
 import type { TFile } from 'obsidian';
-import wasmSource from 'ocr-wasm-source';
 import workerSource from 'ocr-worker-source';
 import type EnhancedCanvas from '../main';
 import type { OcrLine } from './ImageTextSearch';
@@ -8,8 +7,8 @@ import { OcrAssets } from './OcrAssets';
 /**
  * The built-in OCR (docs/design-builtin-ocr.md): PaddleOCR (PP-OCRv6 small, onnxruntime-web, single thread) in a
  * Web Worker (src/ocr-worker.js), on WebGPU when available, else WASM. ImageTextSearch.ocrImages() uses it instead of
- * the system OCR on Linux, or on Windows when the device-local engine choice is 'builtin'. The model files come from
- * OcrAssets; the onnxruntime .wasm ships inside main.js (`ocr-wasm-source`). Only obsidian and browser APIs here: no
+ * the system OCR on Linux, or on Windows when the device-local engine is 'builtin' (the default). The model files and
+ * the onnxruntime .wasm come from OcrAssets (downloaded once); its JS glue is bundled in the worker source. Only obsidian and browser APIs here: no
  * Node modules (mobile loads this file too).
  */
 const INIT_TIMEOUT = 60_000;
@@ -27,17 +26,6 @@ type Reply =
     | { type: 'ocr-error'; id: number; error: string };
 /** A reply, 'timeout', or null: the worker errored or was disposed. */
 type Outcome = Reply | 'timeout' | null;
-
-/** The 'gzip' DecompressionStream (Electron has it; TypeScript 4.7's DOM lib doesn't declare it). */
-declare const DecompressionStream: { new (format: 'gzip'): TransformStream<Uint8Array, Uint8Array> };
-
-/** The bundled onnxruntime .wasm, decompressed. A fresh buffer per call: the worker takes it by transfer. */
-async function unpackWasm(): Promise<ArrayBuffer> {
-    const bin = atob(wasmSource);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
-}
 
 export class BuiltinOcr {
     readonly assets = new OcrAssets();
@@ -137,15 +125,8 @@ export class BuiltinOcr {
     /** Starts and initializes the worker; returns the milliseconds it took, or null on failure. */
     private async start(alive: () => boolean): Promise<number | null> {
         const t = performance.now();
-        const models = await this.assets.load();
-        if (!models) return null; // logged by load(); ImageTextSearch checks ready() before each scan
-        let wasm: ArrayBuffer;
-        try {
-            wasm = await unpackWasm();
-        } catch (e) {
-            console.error(LOG, 'unpacking the bundled wasm failed:', e);
-            return null;
-        }
+        const files = await this.assets.load(); // fresh buffers: the worker takes them by transfer
+        if (!files) return null; // logged by load(); ImageTextSearch checks ready() before each scan
         if (!alive()) return null;
         let worker: Worker;
         try {
@@ -172,7 +153,7 @@ export class BuiltinOcr {
             this.settle?.(null);
         };
         const reply = this.wait(INIT_TIMEOUT);
-        const [det, rec, dict] = models;
+        const [det, rec, dict, wasm] = files;
         worker.postMessage({ type: 'init', gpu: this.gpu, wasm, det, rec, dict }, [wasm, det, rec, dict]);
         const r = await reply;
         if (this.worker !== worker) return null; // disposed meanwhile

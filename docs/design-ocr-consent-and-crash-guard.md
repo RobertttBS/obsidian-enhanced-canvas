@@ -3,6 +3,8 @@
 > 狀態：A 和 B 都已實作（`src/ImageTextSearch.ts`），`tsc` 通過，**尚未**在 Obsidian 裡或有 XDR 的電腦上驗證。實作時的選擇：`killed` 撐過 Rebuild（Rebuild 後重新套用整台裝置的判定）；「從設定重新開」＝設定裡「Search text in images and PDFs」旁的「Try … OCR again」按鈕（只在判定生效時出現）。已做過一輪 review（對照 `src/ImageTextSearch.ts` 和 1.0.37 的程式碼），結論已併入下文；
 > 第 6 節是 review 的回答，第 7 節是決定、建議的預設值和實作順序。
 > 所有判定都是讀程式碼推論的，沒有在 Obsidian 裡跑過，也沒有在有 XDR 的電腦上驗證過。
+>
+> **2026-11-17 更新：A 的「還沒決定」狀態已移除。** Windows 預設就是 Built-in（空的 `ENGINE_KEY` ＝ Built-in），不再用 `offerChoice()` 二選一，也不再把舊版使用者轉成 System；圖片等使用者在下載通知上按 Download，要用 Windows OCR 得自己到設定裡選。下文 A 的二選一通知、`readImage` 轉換、「不同意＝Windows OCR」都是歷史紀錄。B 不變。見 `docs/design-builtin-ocr.md` 決定 5。
 
 ## 1. 背景
 

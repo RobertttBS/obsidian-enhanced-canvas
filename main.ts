@@ -1508,15 +1508,12 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 	private bindOcrEngine = (setting: Setting) => {
 		const engine = this.plugin.imageText.engine;
 		setting.addDropdown((dropdown) => {
-			// Not chosen yet: shown until a choice is made, then removed (it can't be chosen back).
-			if (engine === null) dropdown.addOption('', 'Not chosen yet');
 			dropdown
 				.addOption('builtin', 'Built-in (recommended)')
 				.addOption('system', 'Windows OCR')
-				.setValue(engine ?? '')
+				.setValue(engine)
 				.onChange((value) => {
 					if (value !== 'builtin' && value !== 'system') return;
-					dropdown.selectEl.querySelector('option[value=""]')?.remove();
 					this.plugin.imageText.setEngine(value);
 				});
 		});
@@ -1614,14 +1611,14 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 				name: 'Search text in images and PDFs',
 				desc: !ImageTextSearch.canIndex
 					? 'Search the text in images and PDFs (command, ribbon icon, Find in canvas), using the index synced from a computer (ocr-index in the plugin folder).'
-					: `Search the text in images (OCR) and PDFs (command, ribbon icon, Find in canvas). Read on this computer, never uploaded. ${Platform.isLinux
-						? 'Images need a one-time 31 MB download (you are asked first). '
+					: `Search the text in images (OCR) and PDFs (command, ribbon icon, Find in canvas). Read on this computer, never uploaded. ${Platform.isLinux // Windows: the OCR engine setting below says which engine downloads
+						?'Images need a one-time 60 MB download (you are asked first). '
 						: ''}The first run takes a few minutes.`,
 				render: this.bindImageTextToggle,
 			},
 			...(ImageTextSearch.canChooseEngine ? [{
 				name: 'OCR engine',
-				desc: 'Built-in: more accurate, many languages, unaffected by company security software; 31 MB download, slow without a graphics card. Windows OCR: no download, one language, runs PowerShell, which security software may block.',
+				desc: 'Built-in: more accurate, many languages, unaffected by company security software; 60 MB download, slow without a graphics card. Windows OCR: no download, one language, runs PowerShell, which security software may block.',
 				render: this.bindOcrEngine,
 			}] : []),
 			{

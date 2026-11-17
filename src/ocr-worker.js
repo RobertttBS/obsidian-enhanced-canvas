@@ -2,6 +2,7 @@
 // can't resolve `ppu-paddle-ocr/web`, and nothing .ts imports this file, so tsc never sees these packages.
 // Bundled to a string, against onnxruntime-web/webgpu, by the `ocr-sources` plugin in esbuild.config.mjs and
 // started from a Blob URL. That one build also runs WASM-only, with the same asyncify .wasm and .onnx models.
+// The .wasm arrives in the init message (downloaded by src/OcrAssets.ts); only its JS glue is bundled here.
 import * as ort from 'onnxruntime-web';
 import { PaddleOcrService } from 'ppu-paddle-ocr/web';
 
@@ -23,7 +24,7 @@ self.onmessage = async ({ data }) => {
             ort.env.wasm.wasmBinary = data.wasm;
             ort.env.wasm.numThreads = 1;
             // ppu-paddle-ocr/web points this at jsDelivr on import; while it is set, onnxruntime imports its
-            // glue module from there on every start. Cleared, it uses the bundled glue + wasmBinary: no network.
+            // glue module from there on every start. Cleared, it uses the bundled glue + wasmBinary: no network here.
             ort.env.wasm.wasmPaths = undefined;
             // data.gpu: try WebGPU. Without navigator.gpu (no adapter API at all, e.g. hardware acceleration off on
             // some systems) go straight to WASM instead of letting the library try and fall back.

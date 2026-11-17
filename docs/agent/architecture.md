@@ -132,15 +132,16 @@ safe.
   `ocrImagesNative()` only, so mobile never loads it (keep it that way: a top-level import breaks
   mobile). **Built-in OCR** (`docs/design-builtin-ocr.md`): `engine` picks the image OCR per batch — macOS
   `'system'`, Linux `'builtin'`, Windows whatever the device-local key `ENGINE_KEY`
-  (`enhanced-canvas-ocr-engine`, `app.saveLocalStorage`, never `data.json`) says — empty = `null`, not chosen yet:
-  `scan()` holds images back (like missing built-in files) and `offerChoice()` asks once per run (Built-in OCR, recommended /
-  Windows OCR); nothing may start PowerShell while it's `null`. `loadDevice()` once (`engineMigrated`)
-  sets `'system'` when `readImage` is already true (an older build read images with Windows OCR here); never
-  repeat it, since after `removeBuiltin()` (which empties the key, so the user is asked again) `readImage` may come
-  from the built-in OCR. The key is set by `offerChoice()`, the "OCR engine"
+  (`enhanced-canvas-ocr-engine`, `app.saveLocalStorage`, never `data.json`) says — empty (`storedEngine` null) = the default,
+  `'builtin'`, also for devices updated from a build that only had Windows OCR (no migration to `'system'`): PowerShell
+  starts only once the user picks Windows OCR. `removeBuiltin()` leaves the key alone: the built-in OCR offers the download again, a Windows OCR user stays on
+  Windows OCR. An empty key with `'system'` in `readBy` (an update from a build that only had Windows OCR) becomes
+  `'builtin'` through `setEngine()` in `scan()`, just before the built-in OCR's first batch. The key is set by the "OCR engine"
   setting (Windows only, `canChooseEngine`) or the paused notice's "Use built-in OCR" button (`setEngine()`, which
   bumps `gen`, so a running batch is dropped, not failed, and the scan restarts). `setEngine()` also drops the
-  images from `failed` (the other engine may read them; PDF failures stay, no OCR) and, if images are indexed,
+  images from `failed` (the other engine may read them; PDF failures stay, no OCR) and, if another engine read images on this device
+  (`readBy`, the engines that have read an image here, in `DEVICE_KEY`; builds before it kept one `readImage` flag,
+  which `loadDevice()` reads as the stored engine, or Windows OCR with none stored) and images are indexed,
   `offerReread()` shows one notice (replacing a previous one) whose button runs `rereadImages()`: every indexed
   image goes in the device-local `reread` set (`DEVICE_KEY`; never `m` in the synced index, or every other device
   would re-read too), which `stale()` treats as stale; a read removes it (success replaces the text, failure keeps
@@ -150,15 +151,16 @@ safe.
   onnxruntime-web, single thread) in a classic Worker started from a Blob URL; the worker source is
   `src/ocr-worker.js`, bundled to a string against `onnxruntime-web/webgpu` by the `ocr-worker-source` virtual module
   (`esbuild.config.mjs`). It is `.js` because tsc (`moduleResolution: "node"`, TS 4.7) can't resolve
-  `ppu-paddle-ocr/web`; don't make it `.ts`. The asyncify `.wasm` ships inside `main.js` (virtual module
-  `ocr-wasm-source`: SHA-256 checked at build, gzip -9, base64; ~9.5 MB of main.js) and is unpacked with
-  `DecompressionStream` on every worker start (the buffer is transferred) — never at module load, mobile loads the
-  module too. Only data is downloaded (Obsidian policy: no runtime code installs): `OcrAssets.ts` fetches `det.onnx`,
-  `rec.onnx`, `dict.txt` from this repo's GitHub release `ocr-assets-1` with `requestUrl` (fetch hits CORS), checks
+  `ppu-paddle-ocr/web`; don't make it `.ts`. The asyncify `.wasm` is **not** in `main.js` (only its JS glue is,
+  inside the worker source): it is downloaded with the models (`docs/design-builtin-ocr.md`, decision 4), and
+  `esbuild.config.mjs` fails the build unless `node_modules`' `.wasm` has the SHA-256 listed in `OcrAssets.ts` (glue
+  and `.wasm` must be the same onnxruntime-web version). `OcrAssets.ts` fetches `det.onnx`,
+  `rec.onnx`, `dict.txt`, `ort-wasm-simd-threaded.asyncify.wasm` from this repo's GitHub release `ocr-assets-1` with `requestUrl` (fetch hits CORS), checks
   the SHA-256 constants before storing, and keeps them in IndexedDB `enhanced-canvas-ocr-assets` (key
-  `<tag>/<name>`, no vault id; outside the vault so sync doesn't carry 31 MB). Resumes per file, verifies only on
-  write, one `download()` at a time; `clear()` (command "Remove downloaded built-in OCR files") deletes the database and
-  resets the engine key. A new model or onnxruntime version needs a new tag (and `scripts/fetch-ocr-assets.mjs`
+  `<tag>/<name>`, no vault id; outside the vault so sync doesn't carry 60 MB; `load()` returns fresh buffers, which the worker takes by transfer). Resumes per file
+  (so a device that has the models fetches only a file added later), verifies only on
+  write, one `download()` at a time; `clear()` (command "Remove downloaded built-in OCR files") deletes the database (the engine key stays).
+  `missingBytes` (as of the last `ready()`) lets `offerDownload()` say how much is left when an update added a file. A new model or onnxruntime version needs a new tag (and `scripts/fetch-ocr-assets.mjs`
   prepares the files; the maintainer uploads them). The worker tries WebGPU (`['webgpu', 'wasm']`) unless
   `navigator.gpu` is missing (then `['wasm']`); the log line ends with `ep=...`; after two GPU worker failures in a
   row (init, or the timeout/"restarting the worker" path) it uses WASM until Obsidian restarts; a GPU init failure
@@ -195,11 +197,11 @@ safe.
   mtime changed, 50 per OCR process run (10 on built-in WASM; at most `PDF_BATCH` = 5 PDFs per batch, so progress is saved often); vault events keep it current. Each scan first
   prunes entries whose image is gone. A failed OCR process run is retried one image at a time;
   files that still fail (images, or PDFs `readPdf()` can't open) go in the `failed`
-  map with their mtime (skipped until the file changes, never indexed as empty). `failed`, `reread` and `readImage`
+  map with their mtime (skipped until the file changes, never indexed as empty). `failed`, `reread` and `readBy`
   are per device, in `app.saveLocalStorage(DEVICE_KEY)`, not the synced index: they survive restarts, so a bad file
   isn't retried (and re-notified) on every launch. If every
   `ALWAYS_DECODABLE` image (png/jpg/gif/tiff/bmp — not HEIC/WebP, which need Windows Store codecs) of a
-  batch fails and this device has never read an image (`readImage`; the index can't tell, it may be synced
+  batch fails and the current engine has never read an image on this device (`readBy`; the index can't tell, it may be synced
   from another device), or the first 3 single-retry runs fail as whole runs, OCR itself is broken (`pause()`):
   `broken` for the system OCR, `builtinBroken` (this run only) for the built-in one; `paused` is the current
   engine's. It skips images (PDFs keep indexing) until the "Rebuild image and PDF text index" command, which

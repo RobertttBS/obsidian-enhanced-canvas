@@ -96,11 +96,11 @@ PDFs need no OCR: their embedded text is indexed on every computer.
 
 **Windows: choose an engine**
 
-The first time images need reading, a notice asks which engine to use (PDFs are indexed meanwhile). Change it later in settings → *OCR engine* (per vault and computer). After a switch, a notice offers **Read again with…** for images already read.
+Built-in OCR is the default: the first time images need reading, click **Download** in the notice (PDFs are indexed meanwhile). To use Windows OCR instead, choose it in settings → *OCR engine* (per vault and computer). After a switch, a notice offers **Read again with…** for images already read.
 
 |                           | Built-in OCR (recommended)                          | Windows OCR                                    |
 | ------------------------- | --------------------------------------------------- | ---------------------------------------------- |
-| Download                  | About 31 MB, once                                   | None                                           |
+| Download                  | About 60 MB, once                                   | None                                           |
 | Languages                 | Many at once                                        | One (see [Limits](#limits))                    |
 | Speed per image           | ~0.3 s with a graphics card, several s without      | ~0.3 s                                         |
 | Company security software | Not affected (runs inside Obsidian)                 | May block it or close Obsidian (runs PowerShell) |
@@ -109,7 +109,7 @@ The first time images need reading, a notice asks which engine to use (PDFs are 
 
 PaddleOCR (PP-OCRv6 small), running inside Obsidian on your graphics card (WebGPU) or CPU.
 
--   **Download**: about 31 MB from this project's GitHub release, once per computer, only after you choose it. Each file is SHA-256 checked. Your images are never uploaded.
+-   **Download**: about 60 MB from this project's GitHub release ([`ocr-assets-1`](https://github.com/RobertttBS/obsidian-enhanced-canvas/releases/tag/ocr-assets-1)), once per computer, only after you click **Download**: the text recognition models (31 MB) and the ONNX Runtime WebAssembly engine that runs them (29 MB, unmodified from `onnxruntime-web` 1.31.1). Each file is SHA-256 checked against a value fixed in the plugin. Your images are never uploaded.
 -   **Storage**: Obsidian's IndexedDB on this computer, not your vault.
 -   **Remove**: run **"Remove downloaded built-in OCR files"**.
 -   **Licenses**: models Apache-2.0, libraries MIT. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
