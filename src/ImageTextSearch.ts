@@ -4,7 +4,7 @@ import { around } from 'monkey-around';
 
 import EnhancedCanvas from '../main';
 import type { CanvasView } from '../Canvas';
-import { matchesTextQuery, normalizeText, parseTextQuery, queryTerms } from './utils';
+import { matchesTextQuery, normalizeText, parseTextQuery, queryTerms, randomId } from './utils';
 import { BuiltinOcr } from './BuiltinOcr';
 import { ASSETS_BYTES, DownloadResult } from './OcrAssets';
 
@@ -27,6 +27,7 @@ const MARKER_LINGER = 10_000; // ponytail: a guess; EDR may kill Obsidian just a
 type KillVerdict = { kills: number; continued: boolean };
 const PAGE = 50; // results the modal shows at first, and adds per "Show more"
 const COMMAND_ID = 'search-image-text';
+const CLEAN_SHARED_ID = 'remove-other-devices-image-text';
 const REBUILD_ID = 'rebuild-image-text-index';
 const UNLOCK_ID = 'unlock-pdfs-for-text-search';
 const REMOVE_BUILTIN_ID = 'remove-builtin-ocr-files';
@@ -36,6 +37,27 @@ const DOWNLOAD_FAILED: Record<Exclude<DownloadResult, 'ok'>, string> = {
     hash: 'The downloaded built-in OCR file didn\'t match. It may have been altered or cut off.',
     storage: 'Couldn\'t save the built-in OCR files (storage may be full).',
 };
+// Shared image text (docs/design-ocr-index-per-device.md §5.4): files in the config folder's top level, the only place
+// there Obsidian Sync carries to phones (subfolders and plugin data aren't). Each desktop writes only its own files:
+// a base `enhanced-canvas-ocr.<id>.json` (split into `.<id>.1.json`… past PART_BYTES) and a delta `.<id>.new.json`.
+const SHARED_FILE = /^enhanced-canvas-ocr\.([0-9a-f]+)(?:\.(new|\d+))?\.json$/;
+const SHARED_ID_KEY = 'enhanced-canvas-ocr-id'; // localStorage (per vault, per device): this device's id in the file names
+const SHARED_DELAY = 30_000; // a write waits for this much quiet, so a burst of changes uploads once
+const DELTA_BYTES = 200_000; // a larger delta is merged into the base
+const PART_BYTES = 4_000_000; // per file, under Obsidian Sync Standard's 5 MB
+const utf8Bytes = (s: string) => new TextEncoder().encode(s).length; // not s.length: CJK is 3 bytes in UTF-8
+/** One entry as the shared files store it: images only, so never `pw`. Also the text compared to skip a write. */
+const entryJson = (e: OcrEntry) => JSON.stringify({ m: e.m, l: e.l });
+/** An image entry read from another device's file; `w` is that file's `writtenAt`. */
+type SharedEntry = { e: OcrEntry; w: number };
+/** Another device's shared files: `files` = path → mtime when read, to skip unchanged files. */
+type SharedDevice = { name: string; writtenAt: number; files: Record<string, number>; entries: Map<string, SharedEntry> };
+/** This device's shared files as last read or written: `base` = path → entryJson in the base, `delta` = the delta's body. */
+type OwnShared = { id: string; base: Map<string, string>; delta: string | null; files: Map<string, number> };
+/** Shared files by device id. */
+type SharedList = Map<string, { path: string; part: string | undefined }[]>;
+/** A delta's comparable part (no `writtenAt`): `items` are `"path":entryJson`, in path order. */
+const deltaBody = (items: string[], removed: string[]) => `"entries":{${items.join(',')}},"removed":${JSON.stringify([...removed].sort())}`;
 const SHARDS = 64; // index files; a save rewrites only the shards that changed
 // FNV-1a over UTF-16 code units. Must never change: it decides which file holds a path.
 const shardOf = (path: string) => {
@@ -54,6 +76,8 @@ type OcrEntry = { m: number; l: OcrLine[]; pw?: 'locked' | 'unlocked' };
 type OcrIndex = Record<string, OcrEntry>;
 
 export const isImageFile = (f: TAbstractFile | null): f is TFile => f instanceof TFile && IMAGE_EXT.test(f.extension);
+/** By the path alone: an index entry's file may be gone. */
+const isImagePath = (p: string) => { const dot = p.lastIndexOf('.'); return dot > p.lastIndexOf('/') && IMAGE_EXT.test(p.slice(dot + 1)); };
 /** Files in the index: images (OCR) and PDFs (their embedded text layer only; scanned pages stay unsearchable). */
 const isPdf = (f: TFile) => f.extension.toLowerCase() === 'pdf';
 const isIndexedFile = (f: TAbstractFile | null): f is TFile => isImageFile(f) || (f instanceof TFile && isPdf(f));
@@ -214,10 +238,19 @@ const CJK_GAP = /(?<=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-�
  * Optional: on desktop, OCR every vault image into an index kept in the plugin folder (no notes are
  * created): macOS Vision, Windows OCR, or the built-in OCR (Linux, or Windows by choice); on every
  * device, a vault-wide "Search text in images and PDFs" modal and image matches for Find in canvas.
- * Mobile only reads the synced index.
+ * Desktop also shares its image entries through files in the config folder (saveShared), which every
+ * device reads (loadShared). Mobile only reads: those files and the synced index.
  */
 export class ImageTextSearch {
+    /** What this device read (and, until IndexedDB, what ocr-index brought in). Searches go through entryOf(). */
     index: OcrIndex = {};
+    /** Other devices' shared image text, by device id (loadShared). Read-only here. */
+    remote = new Map<string, SharedDevice>();
+    private sharedLoading: Promise<void> | null = null;
+    private sharedSeen = new Map<string, string>(); // device id → its files' mtimes when last read, read or not
+    private own: OwnShared | null = null; // this device's shared files, known after the first write (desktop)
+    private sharedTimer: number | null = null; // pending saveShared()
+    private rebuilding = false; // rebuild() emptied the index and its scan hasn't started
     private enabled = false;
     private refs: EventRef[] = [];
     private ribbon: HTMLElement | null = null;
@@ -397,7 +430,10 @@ export class ImageTextSearch {
         }
 
         this.plugin.addCommand({ id: COMMAND_ID, name: 'Search text in images and PDFs', callback: this.open });
+        this.plugin.addCommand({ id: CLEAN_SHARED_ID, name: 'Remove image text from other devices…', callback: this.openCleanShared });
         this.ribbon = this.plugin.addRibbonIcon('scan-text', 'Search text in images and PDFs', this.open);
+        await this.loadShared();
+        if (gen !== this.gen) return;
         this.setCoreSearch();
         // Search-only devices never write the index: the indexing computer owns the file.
         if (!ImageTextSearch.canIndex) return;
@@ -415,12 +451,14 @@ export class ImageTextSearch {
                     if (!this.index[f.path]) return;
                     this.put(f.path);
                     void this.save();
+                    this.scheduleShared();
                 }),
                 app.vault.on('rename', (f, old) => {
                     if (!this.index[old]) return;
                     this.put(f.path, this.index[old]);
                     this.put(old);
                     void this.save();
+                    this.scheduleShared();
                 }),
             ];
             void this.scan();
@@ -438,10 +476,14 @@ export class ImageTextSearch {
         this.ribbon = null;
         this.setCoreSearch(); // removes image results from open searches
         this.plugin.removeCommand(COMMAND_ID);
+        this.plugin.removeCommand(CLEAN_SHARED_ID);
         this.plugin.removeCommand(REBUILD_ID);
         this.plugin.removeCommand(UNLOCK_ID);
         this.plugin.removeCommand(REMOVE_BUILTIN_ID);
         this.stopOcr();
+        // Dropped, not written: the scan after the next enable() schedules it again, and saveShared() compares with the files.
+        if (this.sharedTimer !== null) window.clearTimeout(this.sharedTimer);
+        this.sharedTimer = null;
         // We killed the process ourselves: a plugin reload or a toggle off/on must not find the marker and call it a crash.
         this.clearMarker();
     }
@@ -577,9 +619,297 @@ export class ImageTextSearch {
         });
     }
 
-    /** On search-only devices, picks up an index file that sync replaced. */
+    /** Picks up files sync replaced: other devices' shared image text, and on search-only devices the index. */
     async refresh() {
-        if (this.enabled && !ImageTextSearch.canIndex) await this.load();
+        if (!this.enabled) return;
+        if (!ImageTextSearch.canIndex) await this.load();
+        await this.loadShared();
+    }
+
+    /** This device's id in its shared file names; null until its first write. */
+    private get storedId(): string | null {
+        const v = this.plugin.app.loadLocalStorage(SHARED_ID_KEY);
+        return typeof v === 'string' && /^[0-9a-f]+$/.test(v) ? v : null;
+    }
+
+    private newId() {
+        const id = randomId();
+        this.plugin.app.saveLocalStorage(SHARED_ID_KEY, id);
+        return id;
+    }
+
+    /** Shown in the cleanup command, and how a copied id is noticed (ownShared). */
+    private get deviceName() {
+        try { const h = nodeOs().hostname(); if (h) return h; } catch { /* below */ }
+        return Platform.isMacOS ? 'Mac' : Platform.isWin ? 'Windows' : Platform.isLinux ? 'Linux' : 'Computer';
+    }
+
+    /** Shared files in the config folder's top level, by device id. */
+    private async listShared() {
+        const { adapter, configDir } = this.plugin.app.vault;
+        const out: SharedList = new Map();
+        for (const path of (await adapter.list(configDir)).files) {
+            const m = SHARED_FILE.exec(path.slice(path.lastIndexOf('/') + 1));
+            if (!m) continue;
+            const files = out.get(m[1]) ?? [];
+            files.push({ path, part: m[2] });
+            out.set(m[1], files);
+        }
+        return out;
+    }
+
+    /**
+     * Reads the other devices' shared files that changed since the last read (all devices; this one's are skipped).
+     * A device whose files fail to read (mid-sync, damaged, another device's id inside) keeps what was read before.
+     * Calls made while one runs share it.
+     */
+    loadShared() {
+        return this.sharedLoading ??= this.readShared().finally(() => (this.sharedLoading = null));
+    }
+
+    private async readShared() {
+        const { adapter } = this.plugin.app.vault;
+        let listed: SharedList;
+        try { listed = await this.listShared(); } catch (e) { console.warn('Enhanced Canvas OCR: listing shared image text failed', e); return; }
+        const self = this.own?.id ?? this.storedId;
+        listed.delete(self ?? '');
+        for (const id of [...this.remote.keys()]) if (!listed.has(id)) this.remote.delete(id); // removed (cleanup command)
+        for (const id of [...this.sharedSeen.keys()]) if (!listed.has(id)) this.sharedSeen.delete(id);
+        for (const [id, list] of listed) {
+            try {
+                const files: Record<string, number> = {};
+                for (const { path } of list) {
+                    const s = await adapter.stat(path);
+                    if (s) files[path] = s.mtime;
+                }
+                const sig = JSON.stringify(files);
+                if (this.sharedSeen.get(id) === sig) continue; // read before (or failed before: not again until it changes)
+                this.sharedSeen.set(id, sig);
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const docs: { part: string | undefined; d: any }[] = [];
+                for (const { path, part } of list) {
+                    if (!(path in files)) continue;
+                    const d = JSON.parse(await adapter.read(path));
+                    if (d?.v !== 1 || d.device !== id || typeof d.entries !== 'object' || !d.entries) throw new Error(`not ${id}'s shared file: ${path}`);
+                    docs.push({ part, d });
+                }
+                if (!docs.length) continue;
+                // A delta alone (mid-sync: it's small and arrives first, or the base is being replaced) isn't the device's text.
+                if (!docs.some((x) => x.part === undefined)) throw new Error(`no base file yet for ${id}`);
+                // The base, then the delta: its `removed` first, then its entries over the base.
+                const entries = new Map<string, SharedEntry>();
+                const add = (d: { writtenAt: unknown; entries: Record<string, unknown> }) => {
+                    const w = typeof d.writtenAt === 'number' ? d.writtenAt : 0;
+                    for (const [p, e] of Object.entries(d.entries) as [string, OcrEntry][]) {
+                        if (typeof e?.m === 'number' && Array.isArray(e.l)) entries.set(p, { e: { m: e.m, l: e.l }, w });
+                    }
+                };
+                const delta = docs.find((x) => x.part === 'new')?.d;
+                for (const { part, d } of docs) if (part !== 'new') add(d);
+                if (delta) {
+                    if (Array.isArray(delta.removed)) for (const p of delta.removed) entries.delete(p);
+                    add(delta);
+                }
+                const name = String((delta ?? docs[0].d).name ?? '');
+                const writtenAt = Math.max(...docs.map(({ d }) => (typeof d.writtenAt === 'number' ? d.writtenAt : 0)));
+                this.remote.set(id, { name, writtenAt, files, entries });
+            } catch (e) {
+                console.warn('Enhanced Canvas OCR: reading shared image text failed; keeping the last read', id, e);
+            }
+        }
+    }
+
+    /** Writes this device's shared file DELAY after the last change (desktop). */
+    private scheduleShared() {
+        if (!ImageTextSearch.canIndex || !this.enabled) return;
+        if (this.sharedTimer !== null) window.clearTimeout(this.sharedTimer);
+        this.sharedTimer = window.setTimeout(() => {
+            this.sharedTimer = null;
+            // In the save queue: writes never overlap, with each other or with the index's.
+            this.saving = this.saving.then(() => this.saveShared());
+        }, SHARED_DELAY);
+    }
+
+    /**
+     * This device's shared files as on disk, read once per run. A `name` other than this computer's means the id came
+     * along in a copied profile (migration, disk or VM clone): this computer takes a new id and leaves those files to
+     * the one they belong to.
+     */
+    private async ownShared(): Promise<OwnShared> {
+        const { adapter } = this.plugin.app.vault;
+        const id = this.storedId;
+        const own: OwnShared = { id: id ?? this.newId(), base: new Map(), delta: null, files: new Map() };
+        if (!id) return own;
+        const list = (await this.listShared()).get(id) ?? [];
+        try {
+            for (const { path, part } of list) {
+                const s = await adapter.stat(path);
+                own.files.set(path, s?.mtime ?? -1);
+                const d = JSON.parse(await adapter.read(path));
+                if (d?.v !== 1 || d.device !== id || typeof d.entries !== 'object' || !d.entries) throw new Error(`damaged: ${path}`);
+                if (typeof d.name === 'string' && d.name !== this.deviceName) {
+                    console.info(`Enhanced Canvas OCR: this device's shared image text file belongs to "${d.name}"; taking a new id.`);
+                    return { id: this.newId(), base: new Map(), delta: null, files: new Map() };
+                }
+                const items = Object.entries(d.entries as OcrIndex).map(([p, e]) => [p, entryJson(e)] as const);
+                if (part !== 'new') for (const [p, j] of items) own.base.set(p, j);
+                else own.delta = deltaBody(items.map(([p, j]) => `${JSON.stringify(p)}:${j}`), Array.isArray(d.removed) ? d.removed : []);
+            }
+        } catch (e) {
+            // Unknown content: every file counts as changed, so the next write replaces them all.
+            console.warn('Enhanced Canvas OCR: reading this device\'s shared image text failed; it will be rewritten', e);
+            own.base.clear();
+            own.delta = null;
+            for (const p of own.files.keys()) own.files.set(p, -1);
+        }
+        return own;
+    }
+
+    /**
+     * Writes this device's image entries for other devices (§5.4): normally only the delta, against the base as last
+     * written; past DELTA_BYTES, or when a base file is missing or changed, a new base and then an empty delta (that
+     * order: a device reading the new base with the old delta still gets every entry). Skipped when nothing changed
+     * and the files are as this device left them, so files removed by another device's cleanup come back.
+     */
+    private async saveShared() {
+        if (!this.enabled || !ImageTextSearch.canIndex) return;
+        // A rebuild may have emptied the index; the scan's end schedules this again.
+        if (this.scanning || this.rebuilding) return;
+        const { adapter } = this.plugin.app.vault;
+        try {
+            const own = this.own ??= await this.ownShared();
+            if (!this.enabled) return;
+            // Snapshot without an await before it, in path order so the same entries give the same text.
+            const now = new Map<string, string>();
+            for (const p of Object.keys(this.index).sort()) {
+                const e = this.index[p];
+                if (isImagePath(p) && !e.pw) now.set(p, entryJson(e));
+            }
+            if (!now.size && !own.files.size) return; // nothing read, nothing written yet
+            const name = this.deviceName;
+            const head = (writtenAt: number) => `{"v":1,"device":${JSON.stringify(own.id)},"name":${JSON.stringify(name)},"writtenAt":${writtenAt},`;
+            const deltaPath = this.sharedPath(own.id, 'new');
+            const write = async (path: string, text: string) => {
+                await adapter.write(path, text);
+                own.files.set(path, (await adapter.stat(path))?.mtime ?? -1);
+            };
+            const unchanged = async (path: string) => {
+                const m = (await adapter.stat(path))?.mtime;
+                return m !== undefined && m === own.files.get(path);
+            };
+
+            const baseFiles = [...own.files.keys()].filter((p) => p !== deltaPath);
+            let merge = !baseFiles.length;
+            for (const p of baseFiles) if (!merge && !(await unchanged(p))) merge = true;
+            if (!merge) {
+                const changed: string[] = [];
+                for (const [p, j] of now) if (own.base.get(p) !== j) changed.push(`${JSON.stringify(p)}:${j}`);
+                const removed = [...own.base.keys()].filter((p) => !now.has(p));
+                const body = deltaBody(changed, removed);
+                if (body === own.delta && await unchanged(deltaPath)) return;
+                const text = `${head(Date.now())}${body}}`;
+                if (utf8Bytes(text) <= DELTA_BYTES) {
+                    await write(deltaPath, text);
+                    own.delta = body;
+                    return;
+                }
+            }
+            // Merge: the base in parts of at most PART_BYTES, by path, so one path is in one file.
+            const writtenAt = Date.now();
+            const parts: string[][] = [[]];
+            let size = utf8Bytes(head(writtenAt)) + 16;
+            for (const [p, j] of now) {
+                const item = `${JSON.stringify(p)}:${j}`, n = utf8Bytes(item) + 1;
+                if (parts[parts.length - 1].length && size + n > PART_BYTES) { parts.push([]); size = utf8Bytes(head(writtenAt)) + 16; }
+                parts[parts.length - 1].push(item);
+                size += n;
+            }
+            const paths = parts.map((_, i) => this.sharedPath(own.id, i));
+            for (let i = 0; i < parts.length; i++) await write(paths[i], `${head(writtenAt)}"entries":{${parts[i].join(',')}}}`);
+            own.base = new Map(now);
+            for (const p of baseFiles) {
+                if (paths.includes(p)) continue;
+                if (await adapter.exists(p)) await adapter.remove(p); // fewer parts than before
+                own.files.delete(p);
+            }
+            const empty = deltaBody([], []);
+            await write(deltaPath, `${head(writtenAt)}${empty}}`);
+            own.delta = empty;
+        } catch (e) {
+            // The files may be half written: the next write replaces them all instead of diffing against them.
+            if (this.own) for (const p of this.own.files.keys()) this.own.files.set(p, -1);
+            console.error('Enhanced Canvas OCR: saving the shared image text failed', e);
+        }
+    }
+
+    /** Part 0 is the base file itself; 'new' is the delta. */
+    private sharedPath(id: string, part: number | 'new') {
+        return `${this.plugin.app.vault.configDir}/enhanced-canvas-ocr.${id}${part === 0 ? '' : `.${part}`}.json`;
+    }
+
+    private openCleanShared = () => {
+        if (this.enabled) void this.loadShared().then(() => { if (this.enabled) new SharedCleanupModal(this).open(); });
+    };
+
+    /** Deletes other devices' shared files (the cleanup command). Never this device's own. */
+    async removeShared(ids: string[]) {
+        const { adapter } = this.plugin.app.vault;
+        let failed = 0;
+        for (const id of ids) {
+            const d = this.remote.get(id);
+            if (!d || id === this.own?.id) continue;
+            try {
+                for (const p of Object.keys(d.files)) if (await adapter.exists(p)) await adapter.remove(p);
+                this.remote.delete(id);
+            } catch (e) {
+                failed++;
+                console.error('Enhanced Canvas OCR: removing shared image text failed', id, e);
+            } finally {
+                // Read again whatever is there next: files synced back with their old mtimes, or the ones left by a failure.
+                this.sharedSeen.delete(id);
+            }
+        }
+        if (this.inCoreSearch) this.setCoreSearch();
+        return failed;
+    }
+
+    /**
+     * The entry search and display use for `path` (§5.4): this device's own if it matches the file's mtime; else a
+     * shared one that matches, the latest written; else the latest written shared one; else this device's.
+     */
+    entryOf(path: string): OcrEntry | null {
+        const local = this.index[path];
+        if (!this.remote.size) return local ?? null;
+        const f = this.plugin.app.vault.getAbstractFileByPath(path);
+        const m = f instanceof TFile ? f.stat.mtime : undefined;
+        if (local && local.m === m) return local;
+        let best: SharedEntry | null = null, bestMatches = false;
+        for (const d of this.remote.values()) {
+            const s = d.entries.get(path);
+            if (!s) continue;
+            const matches = s.e.m === m;
+            if (!best || (matches && !bestMatches) || (matches === bestMatches && s.w > best.w)) { best = s; bestMatches = matches; }
+        }
+        return best?.e ?? local ?? null;
+    }
+
+    /** Whether any entry, this device's or shared, exists for `path`. */
+    private hasEntry(path: string) {
+        if (path in this.index) return true;
+        for (const d of this.remote.values()) if (d.entries.has(path)) return true;
+        return false;
+    }
+
+    /** Every path with an entry, this device's or shared. */
+    private entryPaths() {
+        const paths = new Set(Object.keys(this.index));
+        for (const d of this.remote.values()) for (const p of d.entries.keys()) paths.add(p);
+        return paths;
+    }
+
+    /** A phone with no image text from any computer yet: the search modal says where it comes from. */
+    get waitingForImages() {
+        return !ImageTextSearch.canIndex && !this.remote.size && !Object.keys(this.index).some(isImagePath);
     }
 
     /** Writes never overlap (that can truncate the file); calls made while one waits share it. */
@@ -630,7 +960,13 @@ export class ImageTextSearch {
         // Not the crash guard: Rebuild would start the system OCR again on a computer where it killed Obsidian.
         this.applyKill();
         this.silentRuns = 0;
-        await this.save();
+        // Until scan() sets `scanning`: a shared write already queued would otherwise write the emptied index.
+        this.rebuilding = true;
+        try {
+            await this.save();
+        } finally {
+            this.rebuilding = false;
+        }
         new Notice('Enhanced Canvas: rebuilding the image and PDF text index…');
         void this.scan();
     }
@@ -732,6 +1068,7 @@ export class ImageTextSearch {
         } finally {
             this.scanning = false;
         }
+        this.scheduleShared();
         // One notice per scan, never a password prompt: indexing runs in the background, often at startup.
         if (locked && this.enabled) {
             const n = this.lockedPdfs().length;
@@ -1153,9 +1490,9 @@ export class ImageTextSearch {
         return n;
     }
 
-    /** OCR lines of one image with their normalized text; null when off or not indexed. */
+    /** OCR lines of one image with their normalized text (entryOf); null when off or not indexed. */
     textOf(path: string) {
-        const l = this.index[path]?.l;
+        const l = this.enabled ? this.entryOf(path)?.l : undefined;
         return this.enabled && l ? { lines: l, norm: this.norm(l) } : null;
     }
 
@@ -1170,7 +1507,9 @@ export class ImageTextSearch {
         const counts: Record<FileKind, number> = { all: 0, image: 0, pdf: 0 };
         if (!terms.length) return { results, counts };
         // ponytail: linear scan of the whole index for the total; fine for a few thousand images.
-        for (const [path, { l }] of Object.entries(this.index)) {
+        for (const path of this.entryPaths()) {
+            const l = this.entryOf(path)?.l;
+            if (!l) continue;
             const norm = this.norm(l);
             // Per line, so a phrase can't span OCR lines: every match then has a line to box.
             if (!matchesTextQuery(query, (t) => norm.some((n) => n.includes(t)))) continue;
@@ -1192,7 +1531,7 @@ export class ImageTextSearch {
         const map = new Map<string, string[]>();
         for (const [source, links] of Object.entries(this.plugin.app.metadataCache.resolvedLinks)) {
             for (const dest in links) {
-                if (!this.index[dest]) continue;
+                if (!this.hasEntry(dest)) continue;
                 const sources = map.get(dest);
                 if (sources) sources.push(source); else map.set(dest, [source]);
             }
@@ -1297,7 +1636,10 @@ class ImageTextModal extends SuggestModal<ModalRow> {
             : `${total} result${total === 1 ? '' : 's'}`;
         // Before the index is complete, "no results" may just mean "not read yet".
         const indexing = this.search.isIndexing ? 'Still reading images and PDFs; results may be incomplete.' : '';
-        this.countEl.setText([count, indexing].filter(Boolean).join(' · '));
+        const waiting = this.search.waitingForImages
+            ? 'No image text has reached this device yet: a computer with this plugin reads the images, and sync brings the text here.'
+            : '';
+        this.countEl.setText([count, indexing, waiting].filter(Boolean).join(' · '));
         return page;
     }
 
@@ -1446,6 +1788,51 @@ class PdfUnlockModal extends Modal {
             });
             row.addButton((b) => { button = b; b.setButtonText('Unlock').setCta().onClick(() => void submit()); });
         }
+    }
+
+    onClose() {
+        this.contentEl.empty();
+    }
+}
+
+/** "Remove image text from other devices…": one row per other device's shared files, removed only when ticked. */
+class SharedCleanupModal extends Modal {
+    constructor(private search: ImageTextSearch) {
+        super(search.plugin.app);
+    }
+
+    onOpen() {
+        this.setTitle('Remove image text from other devices');
+        const { contentEl } = this;
+        const devices = [...this.search.remote].sort((a, b) => b[1].writtenAt - a[1].writtenAt);
+        if (!devices.length) {
+            contentEl.createEl('p', { text: 'No image text from other devices is in this vault.' });
+            return;
+        }
+        contentEl.createEl('p', { text: 'Each computer that reads images shares their text with your other devices. Remove the ones you no longer use. A computer still in use writes its text again the next time it reads images.' });
+        const picked = new Set<string>();
+        let button!: ButtonComponent;
+        for (const [id, d] of devices) {
+            const n = d.entries.size;
+            new Setting(contentEl)
+                .setName(d.name || 'Unnamed device')
+                .setDesc(`Last written ${new Date(d.writtenAt).toLocaleString()} · ${n} image${n === 1 ? '' : 's'}`)
+                .addToggle((t) => t.onChange((on) => {
+                    if (on) picked.add(id); else picked.delete(id);
+                    button.setDisabled(!picked.size);
+                }));
+        }
+        new Setting(contentEl).addButton((b) => {
+            button = b;
+            b.setButtonText('Remove').setWarning().setDisabled(true).onClick(async () => {
+                b.setDisabled(true);
+                const failed = await this.search.removeShared([...picked]);
+                new Notice(failed
+                    ? 'Enhanced Canvas: couldn\'t remove some of the image text. See the developer console (Ctrl+Shift+I).'
+                    : 'Enhanced Canvas: removed the image text of the selected devices.');
+                this.close();
+            });
+        });
     }
 
     onClose() {

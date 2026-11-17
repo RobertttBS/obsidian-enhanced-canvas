@@ -116,7 +116,20 @@ safe.
   desktop only (`ImageTextSearch.canIndex`, Linux included); mobile is search-only: it
   reads the synced index, never writes it, registers no Rebuild command, vault events or scan,
   and `refresh()` (run before the modal opens and before Find in canvas matches) re-reads the
-  shard files whose mtime changed. OCRs every
+  shard files whose mtime changed. **Shared image text** (`docs/design-ocr-index-per-device.md` §5.4, step A):
+  Obsidian Sync carries only the config folder's top-level `.json` files to phones, so each desktop also writes its
+  image entries (never PDFs or `pw`) to `${configDir}/enhanced-canvas-ocr.<id>.json` (base; split into `.<id>.1.json`…
+  past 4 MB UTF-8) and `.<id>.new.json` (delta: changed entries + `removed`, against the base as last written). `<id>` is
+  `randomId()` in localStorage `enhanced-canvas-ocr-id`; `ownShared()` (first write per run) takes a new id when the
+  base's `name` isn't this `os.hostname()` (a copied profile). `saveShared()` runs 30 s after a scan ends or a
+  rename/delete (`scheduleShared`), in the `saving` queue, never mid-scan; it writes only the delta, merging (new base
+  first, then an empty delta) past 200 KB or when a base file is missing/changed; it skips only when the delta body is
+  unchanged *and* the file still has the mtime it wrote (so files another device's cleanup removed come back). Every
+  device reads the others' files into `remote` (`loadShared()`, at enable and in `refresh()`; per device, skipped while
+  the files' mtimes are unchanged; a bad read keeps the last one). Search and display go through `entryOf()`
+  (own entry if `m` = file mtime, else a matching shared one with the latest `writtenAt`, else the latest shared one,
+  else own); `scan`'s `stale`, `lockedPdfs`, rename/delete and reread stay on `this.index`. Command "Remove image text
+  from other devices…" (`SharedCleanupModal`, all devices) deletes ticked devices' files; never automatic. OCRs every
   vault image by spawning the system `osascript -l JavaScript` with an inline JXA script
   that calls Vision.framework (macOS), or `powershell.exe -Command -` (Windows PowerShell 5.1;
   PowerShell 7 can't load WinRT) with `WIN_OCR_SCRIPT` calling `Windows.Media.Ocr`: the script goes in

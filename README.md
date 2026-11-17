@@ -90,7 +90,7 @@ Run **"Search text in images and PDFs"** or click the ribbon icon. Same query sy
 | macOS                 | macOS OCR (Vision, via `osascript`)                        |
 | Windows 10/11         | [Built-in OCR](#built-in-ocr) (recommended) or Windows OCR |
 | Linux                 | [Built-in OCR](#built-in-ocr)                              |
-| iPhone, iPad, Android | None: they search the index synced from a computer         |
+| iPhone, iPad, Android | None: they search the image text synced from a computer     |
 
 PDFs need no OCR: their embedded text is indexed on every computer.
 
@@ -119,8 +119,18 @@ PaddleOCR (PP-OCRv6 small), running inside Obsidian on your graphics card (WebGP
 -   The first run takes a few minutes for a large vault; after that only new or changed files are read.
 -   **"Rebuild image and PDF text index"** reads every file again.
 -   Stored in the plugin's `ocr-index` folder; no notes are added. Large PDFs make it big (tens of MB): add folders you don't need to *Settings → Files and links → Excluded files*, which are skipped.
--   **Phones and tablets**: turn on the same setting, and make sure your sync includes `ocr-index`.
+-   **Phones and tablets**: turn on the same setting. Image text arrives from your computers through sync (below). PDF text comes from `ocr-index`, so it reaches them only if your sync includes the plugin's `ocr-index` folder (Obsidian Sync doesn't).
 -   **Several computers on one vault**: leave it on for only one if you can. Otherwise work is repeated (nothing is lost).
+
+**Image text on your other devices**
+
+Each computer also writes the text of the images it read to files in the vault's config folder (`.obsidian`, top level), which Obsidian Sync, iCloud and other sync tools carry to your phones and other computers:
+
+-   `enhanced-canvas-ocr.<device id>.json` (also `.<device id>.1.json`… when large) and `enhanced-canvas-ocr.<device id>.new.json` (recent changes). Each computer writes only its own files. They hold image text only, never PDF text.
+-   A phone or tablet whose config folder isn't `.obsidian` (e.g. `.obsidian-mobile`) doesn't see them.
+-   An image renamed or deleted on a phone shows up correctly once a computer has caught up.
+-   **A computer you no longer use**: run **"Remove image text from other devices…"** and tick it.
+-   These files stay when you uninstall the plugin: delete `enhanced-canvas-ocr.*.json` in the config folder by hand.
 
 **Password-protected PDFs**
 

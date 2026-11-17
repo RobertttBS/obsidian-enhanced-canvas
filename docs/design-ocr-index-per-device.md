@@ -1,6 +1,6 @@
 # 設計決策：圖片與 PDF 文字 index 改為每台裝置自己建立
 
-狀態：第 1 步已實作（PDF 改用 pdf.js：`1e62a31`；Windows 圖片 OCR：`5bfd901`、`bcd935b`、`9a628a1`。Windows OCR 2026-11-15 在 Windows 11 以腳本驗證，尚未在 Obsidian 內完整驗證）。第 2 步方向已決定（2026-11-17，見第 5 節），未實作。基準 commit：`bbe6964`（64-shard，只考慮單台 Mac 寫入）。
+狀態：第 1 步已實作（PDF 改用 pdf.js：`1e62a31`；Windows 圖片 OCR：`5bfd901`、`bcd935b`、`9a628a1`。Windows OCR 2026-11-15 在 Windows 11 以腳本驗證，尚未在 Obsidian 內完整驗證）。第 2 步方向已決定（2026-11-17，見第 5 節），步驟 A 已實作、未在 Obsidian 內驗證。基準 commit：`bbe6964`（64-shard，只考慮單台 Mac 寫入）。
 決策日期：2026-11-15。
 
 ## 1. 起因
@@ -109,7 +109,12 @@ pdf.js 中文抽字已在 Obsidian 內驗證（見第 4 節）；Windows OCR 只
 
 ## 5. 第 2 步：同步與儲存位置
 
-狀態：方向已決定（2026-11-17），未實作。取代先前「共享資料夾做成設定」的方案。
+狀態：方向已決定（2026-11-17）。步驟 A 已實作（2026-11-17，`npx tsc` 通過，Obsidian 內未驗證，5.9 清單待做）；步驟 B、C 未實作。取代先前「共享資料夾做成設定」的方案。
+
+步驟 A 實作與本文的差異：
+- `remote` 的值是 `{ name, writtenAt, files: path → mtime, entries: Map<path, { e, w }> }`：每個 entry 帶自己所在檔案的 `writtenAt`（`w`），`files` 用來判斷 mtime 沒變就跳過。
+- 選擇規則 3（都不符合 mtime）：選共享檔中 `writtenAt` 最新的；沒有共享 entry 才用本機的（本機 entry 沒有 `writtenAt`）。
+- `PdfUnlockModal` 的警告沒有改：解鎖的 PDF 文字仍只在 `ocr-index`，共享檔不含 PDF。
 
 ### 5.1 Obsidian Sync 在 `.obsidian` 內同步什麼（使用者實測，2026-11-17）
 
@@ -237,7 +242,7 @@ pdf.js 中文抽字已在 Obsidian 內驗證（見第 4 節）；Windows OCR 只
    - 寫入要排在 `saving` 佇列裡，與現有的 `save()` 規則一樣：寫入不能重疊。
 5. 4 MB（UTF-8 位元組）拆檔，以及檔案數變少時刪除多出的 `.1.json`…。
 6. 清理指令（5.5）。
-7. 文字：設定說明（`main.ts` 約第 1613 行，以及 `ImageTextSearch.ts` 約第 1396 行的警告）、README（檔名）、`releaseNotesData.ts`（how-to：手機怎麼搜尋圖片文字）。
+7. 文字：設定說明（`main.ts` 約第 1613 行，以及 `ImageTextSearch.ts` 約第 1396 行的警告）、README（檔名）、`releaseNotesData.ts`（how-to：手機怎麼搜尋圖片文字；尚未改，發佈時再寫）。
 8. 這一步仍然保留 `ocr-index/` 的讀寫。git、iCloud 使用者的手機在步驟 B 之前都不受影響。
 
 **步驟 B：本機 index 移到 IndexedDB**

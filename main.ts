@@ -1606,14 +1606,14 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 				],
 			},
 			// Desktop reads images: macOS Vision, Windows OCR, or the built-in OCR (Linux, or Windows by choice).
-			// Mobile searches the synced index.
+			// Mobile searches what sync brings from a computer.
 			{
 				name: 'Search text in images and PDFs',
 				desc: !ImageTextSearch.canIndex
-					? 'Search the text in images and PDFs (command, ribbon icon, Find in canvas), using the index synced from a computer (ocr-index in the plugin folder).'
-					: `Search the text in images (OCR) and PDFs (command, ribbon icon, Find in canvas). Read on this computer, never uploaded. ${Platform.isLinux // Windows: the OCR engine setting below says which engine downloads
+					? 'Search the text in images and PDFs (command, ribbon icon, Find in canvas). Image text comes from your computers through sync (enhanced-canvas-ocr files in the config folder); PDF text from the ocr-index folder in the plugin folder, if your sync includes it.'
+					: `Search the text in images (OCR) and PDFs (command, ribbon icon, Find in canvas). Read on this computer, not by an online service. ${Platform.isLinux // Windows: the OCR engine setting below says which engine downloads
 						?'Images need a one-time 60 MB download (you are asked first). '
-						: ''}The first run takes a few minutes.`,
+						: ''}The first run takes a few minutes. Image text is shared with your phones and other computers through sync (enhanced-canvas-ocr files in the config folder).`,
 				render: this.bindImageTextToggle,
 			},
 			...(ImageTextSearch.canChooseEngine ? [{
