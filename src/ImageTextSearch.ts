@@ -483,6 +483,8 @@ export class ImageTextSearch {
         this.plugin.removeCommand(REBUILD_ID);
         this.plugin.removeCommand(UNLOCK_ID);
         this.plugin.removeCommand(REMOVE_BUILTIN_ID);
+        this.rereadNotice?.hide(); // its button does nothing while off
+        this.rereadNotice = null;
         this.stopOcr();
         // Dropped, not written: the scan after the next enable() schedules it again, and saveShared() compares with the files.
         if (this.sharedTimer !== null) window.clearTimeout(this.sharedTimer);
@@ -492,8 +494,12 @@ export class ImageTextSearch {
     }
 
     /**
-     * The setting turned off: disable(), then delete this device's index (§5.8 step B.5). Obsidian has no uninstall
-     * event, so this is the user's way to remove it. Not on unload: a reload must not cost a full re-read.
+     * The setting turned off (only the toggle, on this device: a synced data.json doesn't call this): disable(), then
+     * delete everything the feature keeps on this device (§5.8 step B.5): the index, the device state, the built-in
+     * OCR's downloaded files (shared by every vault on this device: another vault offers the download again), and this
+     * computer's shared image text files (other devices then stop finding its text). Obsidian has no uninstall event,
+     * so this is the user's way to remove it all. Not on unload: a reload must not cost a full re-read. Kept: the
+     * engine choice and the device id (preferences), and the kill verdict (a safety record for the whole computer).
      */
     async turnOff() {
         this.disable();
@@ -511,6 +517,22 @@ export class ImageTextSearch {
             try {
                 await OcrIndexStore.delete(indexDbName(this.appId));
             } catch (e) { console.error('Enhanced Canvas OCR: deleting the index failed', e); }
+            this.plugin.app.saveLocalStorage(DEVICE_KEY, null);
+            if (!this.builtin.assets.isDownloading) {
+                try { await this.builtin.assets.clear(); } catch (e) { console.error('Enhanced Canvas OCR: removing the built-in OCR files failed', e); }
+                // As removeBuiltin(): turned on again this run, the download is offered again.
+                this.builtinBroken = false;
+                this.blockNoticed = false;
+                this.offerNoticed = false;
+            }
+            const id = this.storedId;
+            if (ImageTextSearch.canReadImages && id) {
+                const { adapter } = this.plugin.app.vault;
+                try {
+                    for (const { path } of (await this.listShared()).get(id) ?? []) await adapter.remove(path);
+                } catch (e) { console.error('Enhanced Canvas OCR: removing this device\'s shared image text failed', e); }
+                this.own = null;
+            }
         }));
     }
 

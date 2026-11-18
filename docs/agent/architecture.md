@@ -212,7 +212,9 @@ safe.
   it, so an import cut short by a turn-off reruns. The old files are left for devices on earlier builds. Turning
   the setting off (`turnOff()`, from the settings toggle — not `disable()`, which also runs on unload) deletes the
   database inside the `saving` queue; `load()` waits for that queue first, so an off→on toggle never opens the
-  database mid-delete. Rescans images whose
+  database mid-delete. The same step also clears `DEVICE_KEY`, the built-in OCR assets (`OcrAssets.clear()`; that
+  database is per device, so other vaults there download again) and, on desktop, this device's shared files; it keeps
+  `ENGINE_KEY`, `SHARED_ID_KEY` and the kill verdict. Rescans images whose
   mtime changed, 50 per OCR process run (10 on built-in WASM; at most `PDF_BATCH` = 5 PDFs per batch, so progress is saved often); vault events keep it current. Each scan first
   prunes entries whose image is gone. A failed OCR process run is retried one image at a time;
   files that still fail (images, or PDFs `readPdf()` can't open) go in the `failed`

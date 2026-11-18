@@ -1610,10 +1610,10 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 			{
 				name: 'Search text in images and PDFs',
 				desc: !ImageTextSearch.canReadImages
-					? 'Search the text in images and PDFs (command, ribbon icon, Find in canvas). PDFs are read on this device; the first run takes a while and continues where it stopped if the app is closed. Image text comes from your computers through sync (enhanced-canvas-ocr files in the config folder). Turning this off deletes the index on this device.'
+					? 'Search the text in images and PDFs (command, ribbon icon, Find in canvas). PDFs are read on this device; the first run takes a while and continues where it stopped if the app is closed. Image text comes from your computers through sync (enhanced-canvas-ocr files in the config folder). Turning this off deletes the index and any downloaded OCR files on this device.'
 					: `Search the text in images (OCR) and PDFs (command, ribbon icon, Find in canvas). Read on this computer, not by an online service. ${Platform.isLinux // Windows: the OCR engine setting below says which engine downloads
 						?'Images need a one-time 60 MB download (you are asked first). '
-						: ''}The first run takes a few minutes. Image text is shared with your phones and other computers through sync (enhanced-canvas-ocr files in the config folder). Turning this off deletes the index on this computer.`,
+						: ''}The first run takes a few minutes. Image text is shared with your phones and other computers through sync (enhanced-canvas-ocr files in the config folder). Turning this off deletes, on this computer, the index, the downloaded built-in OCR files and the image text it shared.`,
 				render: this.bindImageTextToggle,
 			},
 			...(ImageTextSearch.canChooseEngine ? [{

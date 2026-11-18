@@ -119,7 +119,7 @@ PaddleOCR (PP-OCRv6 small), running inside Obsidian on your graphics card (WebGP
 -   The first run takes a few minutes for a large vault; after that only new or changed files are read.
 -   **"Rebuild image and PDF text index"** reads every file again.
 -   Stored on each device in Obsidian's IndexedDB (database `enhanced-canvas-ocr-<vault id>`), outside your vault and not synced; no notes are added. Large PDFs make it big (tens of MB): add folders you don't need to *Settings → Files and links → Excluded files*, which are skipped.
--   **Delete it**: turn off *Search text in images and PDFs*. Uninstalling the plugin doesn't delete it, so turn the setting off first.
+-   **Delete it**: turn off *Search text in images and PDFs* on each device. That device's index, its downloaded built-in OCR files (about 60 MB, shared by the vaults on that device: another vault asks to download them again) and, on a computer, the image text it shared through sync are deleted. Uninstalling the plugin doesn't delete them, so turn the setting off first.
 -   **Updating from an earlier version**: the index in the plugin's `ocr-index` folder is imported once, so nothing is read again. The folder stays for devices still on an earlier version; delete it once every device is updated.
 -   **Phones and tablets**: turn on the same setting. PDFs are read on the device: the first run starts a few seconds after the vault opens, takes longer than on a computer, and continues where it stopped if the app is closed or put in the background. Image text arrives from your computers through sync (below).
 -   **Several computers on one vault**: each reads the vault itself. Images read on one are searchable on the others through sync (below).
