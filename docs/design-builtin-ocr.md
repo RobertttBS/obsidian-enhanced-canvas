@@ -16,7 +16,7 @@
 
 ### 不在範圍內
 
-- 手機（iOS、Android）：維持只搜尋同步過來的索引。
+- 手機（iOS、Android）：維持只搜尋同步過來的索引。曾試做手機讀圖，2026-11-19 放棄，見決定 8。
 - macOS 上提供內建 OCR。
 - 語言選單（PP-OCRv6 small 一個模型涵蓋 50 多種語言）。
 - 手動匯入模型檔（下載被擋時的替代方案）。先做清楚的錯誤訊息，之後再評估。
@@ -87,6 +87,18 @@ onnxruntime 的 `.wasm` 是執行檔，執行時下載它可以被解讀為「�
 
 切換引擎後，舊引擎讀失敗的圖片會自動重試，沒讀過的圖本來就會讀；已讀過的不自動重讀（大型 vault 要好幾分鐘，而且索引會同步，整份重寫會牽動所有裝置）。改為一則帶「Read again with …」按鈕的通知，待重讀清單存在裝置端（`DEVICE_KEY` 的 `reread`），不改同步的索引。
 
+### 決定 8：手機不做圖片 OCR（2026-11-19，維護者決定，試做後放棄）
+
+試做過的版本（未 commit）：手機只讀沒有任何裝置共享文字的圖；下載時先問；啟動後自動在背景讀；只用 WASM、偵測上限 960 px、一批一張。另外寫了閃退保護：讀圖前寫一個 marker 檔，同一張圖連續閃退兩次就跳過。
+
+放棄的原因：iPhone 15 Pro 實機上，在手機上貼的一張普通截圖讓 Obsidian 連續閃退兩次。那張圖是 `IMG_5483.png`（1179×2556、16-bit、Display P3、2.9 MB）。閃退保護照設計運作，第二次後跳過了那張圖。同格式的 `IMG_1842.png` 在 spike 中讀成功 3/3。iOS「分析資料」裡沒有 `JetsamEvent`，也沒有 crash 紀錄。
+
+推測（未確認）：WebKit 對 WebContent 程序有自己的記憶體上限，超過時直接結束程序，不寫 jetsam 紀錄。OCR worker、畫面、Sync 共用這份額度。要確認，必須用 Mac Safari 的網頁檢閱器連上 iPhone。
+
+若要重做，可以先試：
+- 讀圖前先在 worker 裡把圖縮小。
+- 只在 app 閒置時讀。
+
 ## 3. 已驗證的事實
 
 ### 原型階段（Chromium 與 Obsidian 內，2026-11-16）
@@ -104,6 +116,18 @@ onnxruntime 的 `.wasm` 是執行檔，執行時下載它可以被解讀為「�
 3. **WebGPU 只能用 `.onnx`。** `.ort` 模型在 WebGPU 上建不起 session（`Failed to find op_id: com.ms.internal.nhwc:Conv:1`），函式庫靜默退回 WASM。
 4. **session 一次建一個。** 函式庫同時建偵測與辨識兩個 session，WebGPU 拒絕第二個（`another WebGPU EP inference session is being created`），那一個靜默退回 WASM。Worker 內把 `InferenceSession.create` 序列化。
 5. Windows 上 `requestAdapter()` 的 `powerPreference` 被忽略，無法指定用哪一張顯示卡。
+
+### 手機實測（iPhone 15 Pro、iOS 18.7、Obsidian 1.15.1，2026-11-18）
+
+以暫時的 spike 指令在真機上跑 11 輪，報告寫在 vault 根目錄再由 Sync 帶回。之後的試做與放棄見決定 8。
+
+- Obsidian iOS 的 WKWebView 能跑這套：Blob URL classic Worker、IndexedDB 存 60 MB 資產（下載 6.6 秒）、`navigator.gpu` 存在且 `ep=webgpu` 可用。`hardwareConcurrency=4`、`crossOriginIsolated=false`。
+- 辨識品質與 Mac Vision 相當（中文、英文、數字）。
+- **預設設定會讓 Obsidian 閃退**（iOS 終止整個 app，報告停在某張圖的 `start`）。條件：同一次啟動中先讀過任何一張圖，再讀大圖（`Untitled 2 4.png`，2166×924）。WASM 預設 8/10 次閃退；大圖排第一張 4/4 成功。WebGPU、縮到 1280 px、每張圖換新 worker、等啟動工作結束、lean 選項（無 arena、`recBatchSize: 1`、偵測 960 px）都閃退過。
+- onnxruntime 的 wasm 記憶體是 shared（`{"initial":256,"maximum":65536,"shared":true}`）。預設設定讀大圖時 heap 長到 372 MB。每次長大前暫停不能避免閃退；建立時直接給 400 MB 會讓 onnxruntime 初始化失敗（`no available backend found`）。閃退的真正原因未確認：iOS 的 JS 讀不到整個 app 的記憶體用量。
+- **只把偵測上限改成 960 px（`detection.maxSideLength: 960`，其餘預設）、WASM：3/3 次讀完 11 張圖**（B 加上 vault 中最大的 10 張，3.3–12 MB 的 GIF、JPG、PNG），heap 最高 330 MB，每張 1.2–16 秒。同一設定的 WebGPU 在第 2 張（12 MB GIF）閃退。
+- 960 px 的代價：多數圖字數為電腦的 90% 以上，小字多的圖會少讀（一張 38%、一張 65%）。
+- `ppu-paddle-ocr` 有記憶體內結果快取（`core/image-cache.js`，10 筆，以取樣位元組為鍵）：同一張圖第二次辨識約 18 ms，不會真的跑模型。
 
 ### 尚未驗證
 
