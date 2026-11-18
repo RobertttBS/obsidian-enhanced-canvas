@@ -15,6 +15,8 @@ export interface EnhancedCanvasSettings {
 
     enableImageTextSearch: boolean;
     imageTextInCoreSearch: boolean;
+    /** imageTextInCoreSearch was turned on once for users who had the old default (off) saved. */
+    coreSearchTurnedOn: boolean;
 }
 
 export const DEFAULT_SETTINGS: EnhancedCanvasSettings = {
@@ -33,5 +35,6 @@ export const DEFAULT_SETTINGS: EnhancedCanvasSettings = {
     maxAutoResizeHeight: 1000,
 
     enableImageTextSearch: true,
-    imageTextInCoreSearch: false,
+    imageTextInCoreSearch: true,
+    coreSearchTurnedOn: false,
 };

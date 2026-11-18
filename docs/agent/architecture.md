@@ -256,7 +256,8 @@ safe.
   with a file-type icon before the name; a canvas backlink
   opens zoomed to the image card, a PDF opens at its first matching page (`#page=N`).
   `drawOcrBoxes` skips PDF lines; PDFs get a file icon instead of a thumbnail.
-  Setting `imageTextInCoreSearch` (`setCoreSearch()` reruns
+  Setting `imageTextInCoreSearch` (on by default since 1.0.41; `loadSettings()` turns it on once for
+  users with the old `false` saved, guarded by `coreSearchTurnedOn`; `setCoreSearch()` reruns
   open searches for it; the patcher reruns them once patched, since a search may run first): core Search reads only `.md`/`.canvas` content, so a lazy
   patcher wraps undocumented internals (checked on 1.15.1) — the search view's `startSearch`,
   its result list's `addResult`, and, from the first query instance, the query prototype's

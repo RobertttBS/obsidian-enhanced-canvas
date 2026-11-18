@@ -610,6 +610,14 @@ export default class EnhancedCanvas extends Plugin {
 
     async loadSettings() {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        // 1.0.41 turns image results in core Search on by default. Every save writes the whole object, so existing
+        // users have the old default (false) saved: turn it on once. A flag, not previousRelease: that one only
+        // moves when the release notes modal closes, and never with showReleaseNotes off.
+        if (!this.settings.coreSearchTurnedOn) {
+            this.settings.imageTextInCoreSearch = true;
+            this.settings.coreSearchTurnedOn = true;
+            await this.saveSettings();
+        }
     }
 
     async saveSettings() {

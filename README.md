@@ -81,7 +81,7 @@ Run **"Search text in images and PDFs"** or click the ribbon icon. Same query sy
 **Elsewhere**
 
 -   **Find in canvas** matches image and PDF cards too.
--   *Show image and PDF results in Search* adds them to core Search. Add `-file:.md -file:.canvas` to show only them.
+-   *Show image and PDF results in Search* (on by default) adds them to core Search. Add `-file:.md -file:.canvas` to show only them, or turn the setting off to hide them.
 
 **How images are read**
 

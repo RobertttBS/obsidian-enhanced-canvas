@@ -2,10 +2,10 @@
 export const whatsNew = `
 ## What's new
 
-- **Search PDFs on phones and tablets**: turn on *Search text in images and PDFs* on the device, and it reads your PDFs itself; no computer needed.
-- **Image text on all your devices**: images read on one computer become searchable on your phones and other computers through Obsidian Sync, iCloud or your other sync. Nothing to set up.
-- **A computer you no longer use**: run **Remove image text from other devices…** and tick it.
-- **Password-protected PDFs**: click **Unlock…** on each device.
+- **Search text in images and PDFs**: run the command *Search text in images and PDFs* or click the ribbon icon. On Windows and Linux, click **Download** in the notice first (60 MB, once). On phones, turn on *Search text in images and PDFs* in Settings; image text comes from your computers through sync.
+- **Image and PDF results in Search**: core Search lists images and PDFs whose text matches, with a preview of each image. Type a word in Search to try it.
+- **Show only images and PDFs**: add \`-file:.md -file:.canvas\` to your search.
+- **Hide them**: Settings → Enhanced Canvas → turn off *Show image and PDF results in Search*.
 `;
 
 // Shown on first install and after every update. Add an entry when a feature ships.
@@ -38,7 +38,7 @@ Search words or a \`[[link]]\` across the Canvas: \`a b\` needs both words, \`a 
 ### Search text in images and PDFs
 Search the text inside every image (OCR) and PDF in your vault. *Find in canvas* also matches image and PDF cards.
 - **Where:** command *Search text in images and PDFs* or the ribbon icon.
-- **Settings:** *Search text in images and PDFs* (on by default), *Show image and PDF results in Search* (adds them to core Search), *OCR engine* (Windows; **Built-in** is the default).
+- **Settings:** *Search text in images and PDFs* (on by default), *Show image and PDF results in Search* (on by default; adds them to core Search, turn it off to hide them), *OCR engine* (Windows; **Built-in** is the default).
 - **Windows, Linux:** click **Download** in the notice (60 MB, once).
 - **Locked PDFs:** click **Unlock…** in the notice after indexing, on each device.
 - **Mobile:** turn on the same setting. PDFs are read on the device; image text comes from your computers through sync.
