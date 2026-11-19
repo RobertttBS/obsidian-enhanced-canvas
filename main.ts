@@ -13,7 +13,8 @@ import {
 	TFolder,
 	Vault,
 	Notice,
-	Platform
+	Platform,
+	requireApiVersion,
 } from 'obsidian';
 import { CanvasEdgeData, CanvasNodeData, CanvasData } from "obsidian/canvas";
 import { around } from "monkey-around";
@@ -482,7 +483,7 @@ export default class EnhancedCanvas extends Plugin {
 	/** Applies or removes the body CSS class that gates the optional visual styles. */
 	toggleCSSClass(enabled: boolean) {
 		// Main window only: popouts mirror its body classes.
-		document.body.toggleClass('enhanced-canvas-enabled', enabled);
+		this.app.workspace.containerEl.ownerDocument.body.toggleClass('enhanced-canvas-enabled', enabled);
 	}
 
 	/**
@@ -849,7 +850,7 @@ export default class EnhancedCanvas extends Plugin {
 			this.registerDomEvent(doc, 'click', handleClick, true);
 		};
 
-		attachTo(document);
+		attachTo(this.app.workspace.containerEl.ownerDocument); // the main window's
 
 		this.app.workspace.iterateAllLeaves((leaf) => {
 			const doc = leaf.view.containerEl.ownerDocument;
@@ -1506,7 +1507,8 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 					.setTooltip('Obsidian was closed while reading images, possibly by security software. It may happen again.')
 					.onClick(() => {
 						this.plugin.imageText.allowSystemAgain();
-						this.display(); // also switches OCR engine to System: the dropdown must show it
+						// Also switches OCR engine to System: the dropdown must show it. 1.13+ re-reads the definitions.
+						if (requireApiVersion('1.13.0')) this.update(); else this.render();
 					})
 			);
 		}
@@ -1639,6 +1641,10 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 
 	// Obsidian < 1.13.0 fallback: renders the same definitions imperatively.
 	display(): void {
+		this.render();
+	}
+
+	private render() {
 		const { containerEl } = this;
 		containerEl.empty();
 

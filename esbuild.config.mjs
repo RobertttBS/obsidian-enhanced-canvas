@@ -76,6 +76,8 @@ const context = await esbuild.context({
 		...builtins],
 	format: "cjs",
 	target: "es2018",
+	// Emit import() as require(): a native import("fs") can't resolve in Obsidian's renderer (src/ImageTextSearch.ts loadNode).
+	supported: { "dynamic-import": false },
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,

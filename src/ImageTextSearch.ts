@@ -188,28 +188,32 @@ const AV_BLOCKED = /ScriptContainedMaliciousContent|malicious content|antivirus/
  */
 function longPath(p: string) {
     if (p.length < 260 || p.startsWith('\\\\?\\')) return p;
-    // eslint-disable-next-line @typescript-eslint/no-var-requires -- Node module, loaded lazily: only desktop calls this
-    const path: typeof import('path') = require('path');
-    const full = path.win32.resolve(p);
+    const full = nodePath().win32.resolve(p);
     return full.startsWith('\\\\') ? `\\\\?\\UNC\\${full.slice(2)}` : `\\\\?\\${full}`;
 }
 
 // Files outside the vault (README: "Files outside the vault"). Sync fs on purpose: a write that's still queued when
 // EDR kills the process is lost, and so is localStorage, which Chromium flushes to disk later.
-// eslint-disable-next-line @typescript-eslint/no-var-requires -- Node module, loaded lazily: only desktop calls this
-const nodeFs = (): typeof import('fs') => require('fs');
-// eslint-disable-next-line @typescript-eslint/no-var-requires -- Node module, loaded lazily: only desktop calls this
-const nodePath = (): typeof import('path') => require('path');
-// eslint-disable-next-line @typescript-eslint/no-var-requires -- Node module, loaded lazily: only desktop calls this
-const nodeOs = (): typeof import('os') => require('os');
+// Node modules don't exist on mobile: loaded once by loadNode() on desktop, before enable(). Called earlier (or on
+// mobile), the getters throw; every caller outside the scan path catches.
+let node: { fs: typeof import('fs'); path: typeof import('path'); os: typeof import('os'); cp: typeof import('child_process') } | null = null;
+async function loadNode() {
+    if (node || !Platform.isDesktopApp) return;
+    const [fs, path, os, cp] = await Promise.all([import('fs'), import('path'), import('os'), import('child_process')]);
+    node = { fs, path, os, cp };
+}
+const nodeMods = () => { if (!node) throw new Error('Enhanced Canvas OCR: Node modules not loaded'); return node; };
+const nodeFs = () => nodeMods().fs;
+const nodePath = () => nodeMods().path;
+const nodeOs = () => nodeMods().os;
 /** Per vault, in the temp folder: present while a system OCR process runs (and MARKER_LINGER after). */
 const markerPath = (appId: string) => nodePath().join(nodeOs().tmpdir(), `enhanced-canvas-ocr-running-${appId}`);
 /** Per computer, somewhere not synced, roaming or cleaned up: %LOCALAPPDATA% on Windows, Application Support on macOS. */
 function killPath() {
-    const { join } = nodePath(), os = nodeOs();
+    const path = nodePath(), os = nodeOs();
     const base = Platform.isWin ? process.env.LOCALAPPDATA
-        : Platform.isMacOS ? join(os.homedir(), 'Library', 'Application Support') : undefined;
-    return join(base || os.tmpdir(), 'obsidian-enhanced-canvas', 'ocr-killed.json');
+        : Platform.isMacOS ? path.join(os.homedir(), 'Library', 'Application Support') : undefined;
+    return path.join(base || os.tmpdir(), 'obsidian-enhanced-canvas', 'ocr-killed.json');
 }
 function readKill(): KillVerdict | null {
     try {
@@ -330,6 +334,7 @@ export class ImageTextSearch {
     }
 
     register() {
+        void loadNode(); // early, so settings' systemKilled and the quit handler work with the feature off
         this.plugin.register(() => this.disable());
         // A normal quit isn't a kill. Sync: nothing async finishes once Obsidian quits. Not always fired (forced
         // shutdown), so a leftover marker only asks (noticeKilled), never decides alone.
@@ -420,6 +425,7 @@ export class ImageTextSearch {
         this.enabled = true;
         const { app } = this.plugin;
         const gen = this.gen;
+        await loadNode();
         await this.load();
         // Turned off while reading (and maybe on again: that later call does the setup).
         if (gen !== this.gen) return;
@@ -543,7 +549,7 @@ export class ImageTextSearch {
     private clearMarker() {
         if (this.markerTimer !== null) window.clearTimeout(this.markerTimer);
         this.markerTimer = null;
-        if (ImageTextSearch.canReadImages) unlinkQuiet(markerPath(this.appId));
+        if (ImageTextSearch.canReadImages && node) unlinkQuiet(markerPath(this.appId));
     }
 
     /**
@@ -794,7 +800,8 @@ export class ImageTextSearch {
                     if (Array.isArray(delta.removed)) for (const p of delta.removed) entries.delete(p);
                     add(delta);
                 }
-                const name = String((delta ?? docs[0].d).name ?? '');
+                const rawName = (delta ?? docs[0].d).name;
+                const name = typeof rawName === 'string' ? rawName : '';
                 const writtenAt = Math.max(...docs.map(({ d }) => (typeof d.writtenAt === 'number' ? d.writtenAt : 0)));
                 this.remote.set(id, { name, writtenAt, files, entries });
             } catch (e) {
@@ -1493,9 +1500,7 @@ export class ImageTextSearch {
     private ocrImagesNative(files: TFile[]): Promise<(OcrLine[] | null)[] | null> {
         const adapter = this.plugin.app.vault.adapter;
         if (!(adapter instanceof FileSystemAdapter)) return Promise.resolve(null);
-        // Required lazily: child_process doesn't exist on mobile, where this never runs.
-        // eslint-disable-next-line @typescript-eslint/no-var-requires -- Node module, loaded lazily: only desktop calls this
-        const { spawn }: typeof import('child_process') = require('child_process');
+        const { spawn } = nodeMods().cp;
         const gen = this.gen;
         const paths = files.map((f) => Platform.isWin ? longPath(adapter.getFullPath(f.path)) : adapter.getFullPath(f.path));
         // A hung process must not stall indexing forever.
@@ -1922,8 +1927,9 @@ class SharedCleanupModal extends Modal {
         }
         new Setting(contentEl).addButton((b) => {
             button = b;
-            // setDestructive is 1.13+; setWarning (deprecated) for older versions.
-            ('setDestructive' in b ? b.setDestructive() : b.setWarning()).setButtonText('Remove').setDisabled(true).onClick(async () => {
+            // setDestructive is 1.13+. Older versions: the class setWarning() (deprecated) adds.
+            if ('setDestructive' in b) b.setDestructive(); else (b as ButtonComponent).buttonEl.addClass('mod-warning');
+            b.setButtonText('Remove').setDisabled(true).onClick(async () => {
                 b.setDisabled(true);
                 const failed = await this.search.removeShared([...picked]);
                 new Notice(failed

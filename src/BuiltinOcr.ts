@@ -78,7 +78,7 @@ export class BuiltinOcr {
                     if (ms === null) return null;
                     init += ms;
                 }
-                const worker = this.worker as Worker | null;
+                const worker = this.worker;
                 if (!worker) return null; // disposed while starting
                 const id = ++this.nextId;
                 const reply = this.wait(IMAGE_TIMEOUT, id);

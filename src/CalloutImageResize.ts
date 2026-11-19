@@ -40,9 +40,9 @@ function sourceImageEmbeds(text: string): { from: number; text: string }[] {
 	const out: { from: number; text: string }[] = [];
 	for (const m of text.matchAll(EMBED)) {
 		const dest = m[3]?.trim();
-		const target = m[1] ?? (dest!.startsWith('<') ? dest!.slice(1, dest!.indexOf('>')) : dest!.split(/\s/)[0]);
+		const target = m[1] ?? (dest.startsWith('<') ? dest.slice(1, dest.indexOf('>')) : dest.split(/\s/)[0]);
 		if (m[3] && target.includes('://')) continue; // external URLs render as plain <img>
-		if (isImagePath(target)) out.push({ from: m.index!, text: m[0] });
+		if (isImagePath(target)) out.push({ from: m.index, text: m[0] });
 	}
 	return out;
 }

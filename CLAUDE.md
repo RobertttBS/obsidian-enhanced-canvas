@@ -14,7 +14,9 @@ Deep detail lives in `docs/agent/`; read the relevant one when you're in that co
 - `npx tsc --noEmit` — the **only** correctness gate. esbuild ignores type errors,
   so a green `dev` build proves nothing. Run this after edits.
 - `npm run build` exists but isn't in the maintainer's flow — don't run unless asked.
-- No tests, no lint, no CI. Behavior is only observable by reloading in Obsidian.
+- `npm run lint` — Obsidian's review rules (`eslint-plugin-obsidianmd`), run before a
+  release. Not a gate: older code still has `no-unsafe-*` findings.
+- No tests, no CI. Behavior is only observable by reloading in Obsidian.
 
 ## Mental model
 
