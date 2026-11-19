@@ -29,6 +29,13 @@ import { isVersionNewer, randomId } from "./src/utils";
 import { ReleaseNotesModal } from "./src/ReleaseNotesModal";
 import { registerCalloutImageResize } from "./src/CalloutImageResize";
 
+declare global {
+	interface Window {
+		/** The unload cleanup still running, handed to the next instance on reload. */
+		enhancedCanvasCleanup?: Promise<string[]>;
+	}
+}
+
 interface CanvasNodeWithFlag extends CanvasNode {
     _autoHeightTimer?: number | null;
     autoHeightEnabled?: boolean;
@@ -318,9 +325,11 @@ export default class EnhancedCanvas extends Plugin {
 	 * The desired state is aggregated across all canvases first, then compared
 	 * against the metadata cache, so each note gets at most one
 	 * `processFrontMatter` write — and none at all when it is already up to
-	 * date, which is the common case on restart.
+	 * date, which is the common case on restart. `ignoreCache` skips that
+	 * check: right after the unload cleanup the cache still shows the keys it
+	 * just removed.
 	 */
-	async syncAllCanvasProperties() {
+	async syncAllCanvasProperties(ignoreCache = false) {
 		if (!this.settings.enableFrontmatter) return;
 
 		interface DesiredProps {
@@ -395,7 +404,7 @@ export default class EnhancedCanvas extends Plugin {
 			if (!file || file.extension !== 'md') return;
 
 			const cached = this.app.metadataCache.getFileCache(file)?.frontmatter;
-			if (cached) {
+			if (cached && !ignoreCache) {
 				const cachedCanvas = frontmatterValueToArray(cached.canvas);
 				const cachedKeys = Object.keys(cached);
 				const canvasKeyIndex = cachedKeys.indexOf('canvas');
@@ -541,7 +550,13 @@ export default class EnhancedCanvas extends Plugin {
 		registerCalloutImageResize(this);
 
 		try {
-			await this.syncAllCanvasProperties();
+			// A reload unloads the old instance first; its cleanup is still
+			// stripping notes. Wait for it, or the sync below trusts the stale
+			// cache, skips those notes and they lose their keys.
+			const pendingCleanup = window.enhancedCanvasCleanup;
+			delete window.enhancedCanvasCleanup;
+			if (pendingCleanup) await pendingCleanup;
+			await this.syncAllCanvasProperties(!!pendingCleanup);
 		} catch (error) {
 			console.error("Enhanced Canvas: Error in metadata update loop", error);
 			return;
@@ -1356,7 +1371,8 @@ export default class EnhancedCanvas extends Plugin {
 		this.toggleCSSClass(false);
 
 		this.sendToCanvas.clearSelectedCanvas(false);
-		void this.cleanupCanvasProperties();
+		// Not awaited by Obsidian; the next instance's onload waits for it.
+		window.enhancedCanvasCleanup = this.cleanupCanvasProperties();
 	}
 
 	/**
@@ -1456,6 +1472,9 @@ class EnhancedCanvasSettingTab extends PluginSettingTab {
 
 					this.plugin.settings.enableFrontmatter = value;
 					await this.plugin.saveSettings();
+					// Fill the properties now, not on the next load. Skip the cache:
+					// right after turning it off, it still shows the removed keys.
+					await this.plugin.syncAllCanvasProperties(true);
 				})
 		);
 	};

@@ -16,7 +16,10 @@ against Canvas internals — ESLint allows it).
 Features register from `onload()`: the `register*` methods plus
 `canvasTagImport.register()` — plugin commands, canvas auto-link, file-manager
 patches, focus-canvas, exploder, tag import, find in canvas (`new CanvasFind(this).register()`), image text search (`this.imageText.register()`, a no-op unless `enableImageTextSearch`), node auto-height, default node size, callout image resize (`registerCalloutImageResize(this)`). `onload` then runs `syncAllCanvasProperties`; `onunload` strips the
-properties. Get the live method line numbers with:
+properties. On a reload the strip is still running when the new instance loads, so
+`onunload` stores its promise in `window.enhancedCanvasCleanup` and `onload` waits
+for it, then syncs with `ignoreCache` (the cache still shows the stripped keys).
+Without the wait, a reload leaves random notes with no `canvas` key. Get the live method line numbers with:
 
 ```
 grep -nE "register[A-Z]\w*\(|syncAllCanvasProperties|ensureCanvasKeyOrder|writeLinkSet" main.ts
