@@ -1,4 +1,4 @@
-import { ButtonComponent, EventRef, FileSystemAdapter, Modal, Notice, Platform, Setting, SuggestModal, TAbstractFile, TFile, loadPdfJs, setIcon } from 'obsidian';
+import { ButtonComponent, EventRef, FileSystemAdapter, Modal, Notice, Platform, Setting, SuggestModal, TAbstractFile, TFile, loadPdfJs, requireApiVersion, setIcon } from 'obsidian';
 import { around } from 'monkey-around';
 
 import EnhancedCanvas from '../main';
@@ -1928,7 +1928,7 @@ class SharedCleanupModal extends Modal {
         new Setting(contentEl).addButton((b) => {
             button = b;
             // setDestructive is 1.13+. Older versions: the class setWarning() (deprecated) adds.
-            if ('setDestructive' in b) b.setDestructive(); else (b as ButtonComponent).buttonEl.addClass('mod-warning');
+            if (requireApiVersion('1.13.0')) b.setDestructive(); else b.buttonEl.addClass('mod-warning');
             b.setButtonText('Remove').setDisabled(true).onClick(async () => {
                 b.setDisabled(true);
                 const failed = await this.search.removeShared([...picked]);
