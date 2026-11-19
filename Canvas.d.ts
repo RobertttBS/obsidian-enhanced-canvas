@@ -1,5 +1,5 @@
 import { ItemView, TFile } from "obsidian"
-import type { CanvasData, CanvasEdgeData, CanvasNodeData } from "obsidian/canvas"
+import type { CanvasData } from "obsidian/canvas"
 
 export type { AllCanvasNodeData, CanvasData, CanvasEdgeData, CanvasNodeData } from "obsidian/canvas"
 

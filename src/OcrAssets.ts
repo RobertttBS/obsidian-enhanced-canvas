@@ -35,7 +35,7 @@ function open(): Promise<IDBDatabase> {
         const req = indexedDB.open(DB, 1);
         req.onupgradeneeded = () => req.result.createObjectStore(STORE);
         req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
+        req.onerror = () => reject(req.error ?? new Error('IndexedDB request failed'));
         req.onblocked = () => reject(new Error('IndexedDB open blocked'));
     });
 }
@@ -48,7 +48,7 @@ async function run<T>(mode: IDBTransactionMode, make: (s: IDBObjectStore) => IDB
             const tx = db.transaction(STORE, mode);
             const req = make(tx.objectStore(STORE));
             tx.oncomplete = () => resolve(req.result);
-            tx.onerror = () => reject(tx.error ?? req.error);
+            tx.onerror = () => reject(tx.error ?? req.error ?? new Error('IndexedDB transaction failed'));
             tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'));
         });
     } finally {
@@ -108,7 +108,7 @@ export class OcrAssets {
         return new Promise((resolve, reject) => {
             const req = indexedDB.deleteDatabase(DB);
             req.onsuccess = () => resolve();
-            req.onerror = () => reject(req.error);
+            req.onerror = () => reject(req.error ?? new Error('IndexedDB request failed'));
             // Another window holds a connection: deletion finishes once it closes; nothing to wait for here.
             req.onblocked = () => resolve();
         });

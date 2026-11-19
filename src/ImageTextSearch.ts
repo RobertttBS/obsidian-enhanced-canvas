@@ -1,5 +1,4 @@
 import { ButtonComponent, EventRef, FileSystemAdapter, Modal, Notice, Platform, Setting, SuggestModal, TAbstractFile, TFile, loadPdfJs, setIcon } from 'obsidian';
-import type { ChildProcess } from 'child_process';
 import { around } from 'monkey-around';
 
 import EnhancedCanvas from '../main';
@@ -189,19 +188,20 @@ const AV_BLOCKED = /ScriptContainedMaliciousContent|malicious content|antivirus/
  */
 function longPath(p: string) {
     if (p.length < 260 || p.startsWith('\\\\?\\')) return p;
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const full = (require('path') as typeof import('path')).win32.resolve(p);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires -- Node module, loaded lazily: only desktop calls this
+    const path: typeof import('path') = require('path');
+    const full = path.win32.resolve(p);
     return full.startsWith('\\\\') ? `\\\\?\\UNC\\${full.slice(2)}` : `\\\\?\\${full}`;
 }
 
 // Files outside the vault (README: "Files outside the vault"). Sync fs on purpose: a write that's still queued when
 // EDR kills the process is lost, and so is localStorage, which Chromium flushes to disk later.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const nodeFs = () => require('fs') as typeof import('fs');
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const nodePath = () => require('path') as typeof import('path');
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const nodeOs = () => require('os') as typeof import('os');
+// eslint-disable-next-line @typescript-eslint/no-var-requires -- Node module, loaded lazily: only desktop calls this
+const nodeFs = (): typeof import('fs') => require('fs');
+// eslint-disable-next-line @typescript-eslint/no-var-requires -- Node module, loaded lazily: only desktop calls this
+const nodePath = (): typeof import('path') => require('path');
+// eslint-disable-next-line @typescript-eslint/no-var-requires -- Node module, loaded lazily: only desktop calls this
+const nodeOs = (): typeof import('os') => require('os');
 /** Per vault, in the temp folder: present while a system OCR process runs (and MARKER_LINGER after). */
 const markerPath = (appId: string) => nodePath().join(nodeOs().tmpdir(), `enhanced-canvas-ocr-running-${appId}`);
 /** Per computer, somewhere not synced, roaming or cleaned up: %LOCALAPPDATA% on Windows, Application Support on macOS. */
@@ -227,7 +227,8 @@ function writeKill(v: KillVerdict) {
 const unlinkQuiet = (p: string) => { try { nodeFs().unlinkSync(p); } catch { /* already gone */ } };
 
 // Windows OCR puts a space between CJK characters; drop it so "中文" matches.
-const CJK_GAP = /(?<=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-〿＀-￯]) (?=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-〿＀-￯])/gu;
+// No lookbehind: iOS before 16.4 can't parse one, and the whole plugin would fail to load. Replace with '$1'.
+const CJK_GAP = /([\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\u3000-\u303f\uff00-\uffef]) (?=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\u3000-\u303f\uff00-\uffef])/gu;
 
 /**
  * Optional: on desktop, OCR every vault image into this device's index in IndexedDB (no notes are
@@ -252,7 +253,7 @@ export class ImageTextSearch {
     private enabled = false;
     private refs: EventRef[] = [];
     private ribbon: HTMLElement | null = null;
-    private proc: ChildProcess | null = null;
+    private proc: { kill(): void } | null = null; // a child_process ChildProcess (desktop only)
     private scanning = false;
     private rescan = false;
     private gen = 0; // bumped by disable(), so a scan can tell its OCR process was killed on purpose
@@ -348,8 +349,8 @@ export class ImageTextSearch {
     /** Reruns open core searches, so image results follow imageTextInCoreSearch. */
     setCoreSearch() {
         for (const leaf of this.plugin.app.workspace.getLeavesOfType('search')) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const view = leaf.view as any;
+            // Core Search's view: undocumented internals.
+            const view = leaf.view as unknown as { getQuery?(): string; searchQuery: unknown; startSearch?(): void };
             if (!view.getQuery?.()) continue;
             view.searchQuery = null; // else the same query only rechecks files the last run matched
             view.startSearch?.();
@@ -365,8 +366,7 @@ export class ImageTextSearch {
     private patchCoreSearch() {
         // A deferred (not yet shown) leaf has no startSearch; take the first loaded one.
         const view = this.plugin.app.workspace.getLeavesOfType('search')
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            .map((l) => l.view as any)
+            .map((l) => l.view as unknown as { startSearch?: unknown; searchQuery: object | null; dom?: { addResult?: unknown } })
             .find((v) => typeof v?.startSearch === 'function' && typeof v.dom?.addResult === 'function');
         if (!view) return false;
         const ocr = (f: TFile) => {
@@ -537,8 +537,7 @@ export class ImageTextSearch {
     }
 
     /** `app.appId`: what Obsidian keys each vault's localStorage with; stays the same when the vault folder moves. */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    private get appId(): string { return (this.plugin.app as any).appId ?? 'default'; }
+    private get appId(): string { return (this.plugin.app as unknown as { appId?: string }).appId ?? 'default'; }
 
     /** Removes this vault's crash marker now (sync), cancelling a pending delayed removal. */
     private clearMarker() {
@@ -770,8 +769,8 @@ export class ImageTextSearch {
                 const sig = JSON.stringify(files);
                 if (this.sharedSeen.get(id) === sig) continue; // read before (or failed before: not again until it changes)
                 this.sharedSeen.set(id, sig);
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const docs: { part: string | undefined; d: any }[] = [];
+                type Doc = { name?: unknown; writtenAt: unknown; entries: Record<string, unknown>; removed?: unknown };
+                const docs: { part: string | undefined; d: Doc }[] = [];
                 for (const { path, part } of list) {
                     if (!(path in files)) continue;
                     const d = JSON.parse(await adapter.read(path));
@@ -833,7 +832,7 @@ export class ImageTextSearch {
                 const d = JSON.parse(await adapter.read(path));
                 if (d?.v !== 1 || d.device !== id || typeof d.entries !== 'object' || !d.entries) throw new Error(`damaged: ${path}`);
                 if (typeof d.name === 'string' && d.name !== this.deviceName) {
-                    console.info(`Enhanced Canvas OCR: this device's shared image text file belongs to "${d.name}"; taking a new id.`);
+                    console.debug(`Enhanced Canvas OCR: this device's shared image text file belongs to "${d.name}"; taking a new id.`);
                     return { id: this.newId(), base: new Map(), delta: null, files: new Map() };
                 }
                 const items = Object.entries(d.entries as OcrIndex).map(([p, e]) => [p, entryJson(e)] as const);
@@ -1447,21 +1446,24 @@ export class ImageTextSearch {
      * (no printing, copying…) opens without one.
      */
     private async readPdf(f: TFile, gen: number, password?: string): Promise<OcrLine[] | null | 'locked'> {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let doc: any;
+        // The parts of pdf.js's PDFDocumentProxy used here (loadPdfJs() is untyped).
+        let doc: {
+            numPages: number; destroy(): Promise<void>;
+            getPage(i: number): Promise<{ getTextContent(): Promise<{ items: { str?: string; hasEOL?: boolean }[] }>; cleanup(): void }>;
+        } | undefined;
         try {
             const pdfjs = await loadPdfJs();
             // Without the CMaps, CJK text in CID fonts (e.g. LaTeX output) comes out mostly empty. Same URL as Obsidian's PDF view.
-            doc = await pdfjs.getDocument({ data: await this.plugin.app.vault.readBinary(f), password, cMapUrl: '/lib/pdfjs/cmaps/', cMapPacked: true }).promise;
+            const pdf = doc = await pdfjs.getDocument({ data: await this.plugin.app.vault.readBinary(f), password, cMapUrl: '/lib/pdfjs/cmaps/', cMapPacked: true }).promise;
             const lines: OcrLine[] = [];
-            for (let i = 1; i <= doc.numPages; i++) {
+            for (let i = 1; i <= pdf.numPages; i++) {
                 if (gen !== this.gen) return null; // disabled or rebuilding: the caller drops this batch
-                const page = await doc.getPage(i);
+                const page = await pdf.getPage(i);
                 let cur = '';
                 const flush = () => {
                     // Math fonts without a Unicode map give control characters for − · ×: unsearchable noise.
                     // A tab separates words, so it becomes a space instead.
-                    // eslint-disable-next-line no-control-regex
+                    // eslint-disable-next-line no-control-regex -- stripping control characters is the point
                     for (const t of cur.split(/\r\n|\r|\n/)) { const s = t.replace(/\t/g, ' ').replace(/[\u0000-\u001f\u007f]/g, '').trim(); if (s) lines.push([s, i]); }
                     cur = '';
                 };
@@ -1484,7 +1486,7 @@ export class ImageTextSearch {
         const gen = this.gen;
         const read = await this.builtin.read(files, () => gen === this.gen);
         // Same CJK_GAP pass as the Windows path. Here, not in BuiltinOcr: that file may only `import type` from this one.
-        read?.forEach((l) => l?.forEach((x) => (x[0] = x[0].replace(CJK_GAP, ''))));
+        read?.forEach((l) => l?.forEach((x) => (x[0] = x[0].replace(CJK_GAP, '$1'))));
         return read;
     }
 
@@ -1492,8 +1494,8 @@ export class ImageTextSearch {
         const adapter = this.plugin.app.vault.adapter;
         if (!(adapter instanceof FileSystemAdapter)) return Promise.resolve(null);
         // Required lazily: child_process doesn't exist on mobile, where this never runs.
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { spawn } = require('child_process') as typeof import('child_process');
+        // eslint-disable-next-line @typescript-eslint/no-var-requires -- Node module, loaded lazily: only desktop calls this
+        const { spawn }: typeof import('child_process') = require('child_process');
         const gen = this.gen;
         const paths = files.map((f) => Platform.isWin ? longPath(adapter.getFullPath(f.path)) : adapter.getFullPath(f.path));
         // A hung process must not stall indexing forever.
@@ -1513,7 +1515,7 @@ export class ImageTextSearch {
         try {
             nodeFs().writeFileSync(marker, String(Date.now()));
         } catch (e) { console.warn('Enhanced Canvas OCR: couldn\'t write the crash marker', e); }
-        const ended = (proc: ChildProcess) => {
+        const ended = (proc: object) => {
             // Disabled: disable() already removed it. A newer run: that run owns the marker now.
             if (!this.enabled || (this.proc && this.proc !== proc)) return;
             if (this.markerTimer !== null) window.clearTimeout(this.markerTimer);
@@ -1564,7 +1566,7 @@ export class ImageTextSearch {
                     if (code !== 0 || (!out.trim() && err.trim())) throw new Error(err || `OCR process exited with ${code ?? signal}`);
                     const read: (OcrLine[] | null)[] = JSON.parse(out);
                     if (!Array.isArray(read) || read.length !== files.length) throw new Error(`OCR returned ${Array.isArray(read) ? read.length : 'no'} results for ${files.length} images`);
-                    if (Platform.isWin) for (const l of read) l?.forEach((x) => (x[0] = x[0].replace(CJK_GAP, '')));
+                    if (Platform.isWin) for (const l of read) l?.forEach((x) => (x[0] = x[0].replace(CJK_GAP, '$1')));
                     resolve(read);
                 } catch (e) {
                     if (gen === this.gen) console.error('Enhanced Canvas OCR:', e); // else killed by disable()
@@ -1745,7 +1747,7 @@ class ImageTextModal extends SuggestModal<ModalRow> {
         this.inputEl.dispatchEvent(new Event('input'));
         this.resultContainerEl.scrollTop = top;
         // ponytail: chooser is private Obsidian API; without it selection resets to the first row.
-        (this as any).chooser?.setSelectedItem?.(first, false);
+        (this as unknown as { chooser?: { setSelectedItem?(i: number, scroll: boolean): void } }).chooser?.setSelectedItem?.(first, false);
         this.resultContainerEl.children[first]?.scrollIntoView({ block: 'nearest' });
     }
 
@@ -1783,8 +1785,12 @@ class ImageTextModal extends SuggestModal<ModalRow> {
      * A PDF opens at the page of its first match. An image opens the note that embeds it, at
      * the embed's line (a canvas zooms to the image card); else the image itself.
      */
-    async onChooseSuggestion(row: ModalRow) {
+    onChooseSuggestion(row: ModalRow) {
         if (isShowMore(row)) return; // handled in selectSuggestion
+        void this.openRow(row);
+    }
+
+    private async openRow(row: ImageTextResult) {
         const { path, hits } = row;
         const first = hits[0];
         if (first?.length === 2) {
@@ -1916,7 +1922,8 @@ class SharedCleanupModal extends Modal {
         }
         new Setting(contentEl).addButton((b) => {
             button = b;
-            b.setButtonText('Remove').setWarning().setDisabled(true).onClick(async () => {
+            // setDestructive is 1.13+; setWarning (deprecated) for older versions.
+            ('setDestructive' in b ? b.setDestructive() : b.setWarning()).setButtonText('Remove').setDisabled(true).onClick(async () => {
                 b.setDisabled(true);
                 const failed = await this.search.removeShared([...picked]);
                 new Notice(failed

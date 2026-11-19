@@ -24,7 +24,7 @@ export class OcrIndexStore<T> {
                 req.result.createObjectStore(META);
             };
             req.onsuccess = () => resolve(new OcrIndexStore<T>(req.result));
-            req.onerror = () => reject(req.error);
+            req.onerror = () => reject(req.error ?? new Error('IndexedDB request failed'));
             req.onblocked = () => reject(new Error('IndexedDB open blocked'));
         });
     }
@@ -34,7 +34,7 @@ export class OcrIndexStore<T> {
         return new Promise((resolve, reject) => {
             const req = indexedDB.deleteDatabase(name);
             req.onsuccess = () => resolve();
-            req.onerror = () => reject(req.error);
+            req.onerror = () => reject(req.error ?? new Error('IndexedDB request failed'));
             req.onblocked = () => resolve(); // finishes once the other connection closes
         });
     }
@@ -58,7 +58,7 @@ export class OcrIndexStore<T> {
             };
             const migrated = tx.objectStore(META).get(MIGRATED);
             tx.oncomplete = () => resolve({ entries, migrated: migrated.result === true });
-            tx.onerror = () => reject(tx.error);
+            tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction failed'));
             tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'));
         });
     }
@@ -76,7 +76,7 @@ export class OcrIndexStore<T> {
             for (const k of dels) store.delete(k);
             if (opts.migrated) tx.objectStore(META).put(true, MIGRATED);
             tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+            tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction failed'));
             tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'));
         });
     }

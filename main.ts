@@ -17,7 +17,7 @@ import {
 } from 'obsidian';
 import { CanvasEdgeData, CanvasNodeData, CanvasData } from "obsidian/canvas";
 import { around } from "monkey-around";
-import { Canvas, CanvasEdge, CanvasNode, CanvasView, Position, Size } from 'Canvas';
+import { Canvas, CanvasEdge, CanvasNode, CanvasView } from 'Canvas';
 import { CanvasExploder } from './src/CanvasExploder';
 import { SendToCanvas } from './src/SendToCanvas';
 import { CanvasTagImport } from './src/CanvasTagImport';

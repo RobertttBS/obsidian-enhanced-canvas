@@ -104,7 +104,7 @@ export class BuiltinOcr {
             const sorted = [...times].sort((a, b) => a - b);
             const median = sorted.length ? sorted[sorted.length >> 1] : 0;
             const max = sorted.length ? sorted[sorted.length - 1] : 0;
-            console.info(`${LOG} ${files.length} images, ${times.length} read, ${((performance.now() - t0) / 1000).toFixed(1)} s total, median ${Math.round(median)} ms, max ${Math.round(max)} ms, init ${Math.round(init)} ms, crossOriginIsolated=${this.isolated}, threads=${this.threads}, ep=${this.ep}`);
+            console.debug(`${LOG} ${files.length} images, ${times.length} read, ${((performance.now() - t0) / 1000).toFixed(1)} s total, median ${Math.round(median)} ms, max ${Math.round(max)} ms, init ${Math.round(init)} ms, crossOriginIsolated=${this.isolated}, threads=${this.threads}, ep=${this.ep}`);
         }
     }
 
