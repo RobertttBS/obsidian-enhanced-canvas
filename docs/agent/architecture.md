@@ -259,6 +259,17 @@ safe.
   with a file-type icon before the name; a canvas backlink
   opens zoomed to the image card, a PDF opens at its first matching page (`#page=N`).
   `drawOcrBoxes` skips PDF lines; PDFs get a file icon instead of a thumbnail.
+  Hovering a row triggers `hover-link` with source `search` (so core Search's Page preview
+  Mod-key setting applies; the modal is the `HoverParent`). Hover Editor keeps popovers open
+  while any `body>.modal-container` exists, so the `hoverPopover` setter wraps its
+  `shouldShowSelf` to hide this modal's container from that check; Hover Editor then closes it on
+  mouse-out with its own delay. It ignores `unload()`, so `closePopover` calls the internal
+  `hide()` from `onClose` and from every `getSuggestions` call (each one redraws the rows, and a
+  removed row fires no mouse-out); `closePopover` leaves a pinned popover open, and `onClose`
+  runs `undos` (restores `shouldShowSelf`, drops the class) so it holds no modal DOM;
+  linktext is the file path (+ `#page=N` for a PDF). The setter tags each popover
+  `ec-ocr-popover`; `styles.css` lifts only those above the modal (an already-pinned popover on
+  the workspace stays below it), gated by `body:has(.ec-ocr-modal)`.
   Setting `imageTextInCoreSearch` (on by default since 1.0.41; `loadSettings()` turns it on once for
   users with the old `false` saved, guarded by `coreSearchTurnedOn`; `setCoreSearch()` reruns
   open searches for it; the patcher reruns them once patched, since a search may run first): core Search reads only `.md`/`.canvas` content, so a lazy

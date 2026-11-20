@@ -258,3 +258,8 @@ body {
     font-size: var(--font-ui-small);
     text-align: center;
 }
+
+/* Page preview from the image-text search modal: popovers sit below modals by default. */
+body:has(.ec-ocr-modal) .popover.hover-popover.ec-ocr-popover { /* beats Hover Editor's .popover.hover-editor.is-active */
+    z-index: calc(var(--layer-modal) + 1);
+}

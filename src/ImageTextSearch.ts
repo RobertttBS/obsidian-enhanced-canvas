@@ -1,4 +1,4 @@
-import { ButtonComponent, EventRef, FileSystemAdapter, Modal, Notice, Platform, Setting, SuggestModal, TAbstractFile, TFile, loadPdfJs, requireApiVersion, setIcon } from 'obsidian';
+import { ButtonComponent, EventRef, FileSystemAdapter, HoverParent, HoverPopover, Modal, Notice, Platform, Setting, SuggestModal, TAbstractFile, TFile, loadPdfJs, requireApiVersion, setIcon } from 'obsidian';
 import { around } from 'monkey-around';
 
 import EnhancedCanvas from '../main';
@@ -1667,7 +1667,43 @@ type ShowMore = { more: number };
 type ModalRow = ImageTextResult | ShowMore;
 const isShowMore = (r: ModalRow): r is ShowMore => 'more' in r;
 
-class ImageTextModal extends SuggestModal<ModalRow> {
+/**
+ * Leaves a pinned Hover Editor popover open. hide() is internal API; Hover Editor's popover
+ * ignores unload() and closes only on hide().
+ */
+const closePopover = (p: HoverPopover | null) => {
+    const he = p as { hide?: () => void; isPinned?: boolean } | null;
+    if (he?.isPinned) return;
+    if (he?.hide) he.hide(); else p?.unload();
+};
+
+class ImageTextModal extends SuggestModal<ModalRow> implements HoverParent {
+    private popover: HoverPopover | null = null;
+    /** Run on close: a popover kept open (pinned) must not hold this modal or stay lifted. */
+    private undos: (() => void)[] = [];
+    get hoverPopover() { return this.popover; }
+    /**
+     * Tags the popover so styles.css lifts only this modal's popovers above it. Hover Editor keeps
+     * its popovers open while any `body>.modal-container` exists, so mouse-out never closes them
+     * over this modal. Its own hover tracking is fine: hide just this modal's container from that
+     * check (internal API; core Page preview needs nothing).
+     */
+    set hoverPopover(p: HoverPopover | null) {
+        if (p === this.popover) return; // already wrapped
+        this.popover = p;
+        if (!p) return;
+        // A microtask, in case the popover assigns itself before it creates hoverEl.
+        queueMicrotask(() => p.hoverEl?.addClass('ec-ocr-popover'));
+        this.undos.push(() => p.hoverEl?.removeClass('ec-ocr-popover'));
+        const he: { hoverEl?: HTMLElement; shouldShowSelf?: () => boolean } = p;
+        const own = he.shouldShowSelf, container = this.containerEl;
+        if (!he.hoverEl?.hasClass('hover-editor') || !own) return;
+        he.shouldShowSelf = () => {
+            container.removeClass('modal-container');
+            try { return Boolean(own.call(he)); } finally { container.addClass('modal-container'); }
+        };
+        this.undos.push(() => { he.shouldShowSelf = own; });
+    }
     private backlinks: Map<string, string[]>;
     private countEl: HTMLElement;
     private filterEl: HTMLElement; // hidden until there's a query: no results, nothing to filter
@@ -1681,6 +1717,7 @@ class ImageTextModal extends SuggestModal<ModalRow> {
         super(search.plugin.app);
         this.backlinks = search.backlinks();
         this.setPlaceholder('Search text inside images and PDFs: words, OR, "exact phrase"');
+        this.modalEl.addClass('ec-ocr-modal'); // styles.css lifts page previews above this modal
         // modal's own document (pop-out windows)
         const filterEl = this.filterEl = this.modalEl.createDiv('ec-ocr-filter');
         const segmentEl = filterEl.createDiv('ec-ocr-segment');
@@ -1719,6 +1756,9 @@ class ImageTextModal extends SuggestModal<ModalRow> {
 
     getSuggestions(query: string): ModalRow[] {
         const key = `${this.kind}\n${query}`;
+        // Every call redraws the rows, and a removed row fires no mouseleave.
+        closePopover(this.hoverPopover);
+        this.hoverPopover = null;
         if (this.cache?.key !== key) this.shown = PAGE; // a new query or filter starts from the top again
         // Reuse the list only once the index is complete; while it's still being read, rescan so
         // "Show more" and switching back to a tab pick up the files read since.
@@ -1765,6 +1805,12 @@ class ImageTextModal extends SuggestModal<ModalRow> {
         const { path, hits, terms, n } = item;
         // search() keeps only existing files, but a cached page can outlive a delete or rename.
         const file = this.app.vault.getAbstractFileByPath(path);
+        // Page preview, as in core Search: source 'search' follows that entry's Mod-key setting.
+        // ponytail: a PDF previews at its first match's page; a '#' in any file name breaks the link.
+        const page = hits[0]?.length === 2 ? `#page=${hits[0][1]}` : '';
+        if (file) el.addEventListener('mouseover', (event) => this.app.workspace.trigger('hover-link', {
+            event, source: 'search', hoverParent: this, targetEl: el, linktext: path + page, sourcePath: '',
+        }));
         const row = el.createDiv('ec-ocr-result');
         const thumb = row.createDiv('ec-ocr-thumb');
         const isImage = isImageFile(file);
@@ -1784,6 +1830,14 @@ class ImageTextModal extends SuggestModal<ModalRow> {
         }
         const notes = this.backlinks.get(path);
         if (notes) meta.createDiv({ cls: 'ec-ocr-notes', text: '↳ ' + notes.map((n) => n.split('/').pop()?.replace(/\.md$/, '')).join(', ') });
+    }
+
+    onClose() {
+        super.onClose();
+        closePopover(this.hoverPopover); // a popover left open would float over the workspace
+        this.hoverPopover = null;
+        for (const undo of this.undos) undo();
+        this.undos = [];
     }
 
     /**
