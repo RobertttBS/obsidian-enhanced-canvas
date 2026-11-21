@@ -198,7 +198,9 @@ function longPath(p: string) {
 // mobile), the getters throw; every caller outside the scan path catches.
 let node: { fs: typeof import('fs'); path: typeof import('path'); os: typeof import('os'); cp: typeof import('child_process') } | null = null;
 async function loadNode() {
-    if (node || !Platform.isDesktopApp) return;
+    // First statement, `isDesktop` not `isDesktopApp`: the Obsidian review bot's lint only accepts this exact guard.
+    if (!Platform.isDesktop) return;
+    if (node) return;
     const [fs, path, os, cp] = await Promise.all([import('fs'), import('path'), import('os'), import('child_process')]);
     node = { fs, path, os, cp };
 }
@@ -288,7 +290,7 @@ export class ImageTextSearch {
     constructor(readonly plugin: EnhancedCanvas) {}
 
     /** Desktop reads images and PDFs; mobile reads only PDFs (pdf.js runs there too) and gets image text from the shared files. */
-    static get canReadImages() { return Platform.isDesktopApp; }
+    static get canReadImages() { return Platform.isDesktop; } // same flag as loadNode(): emulated mobile reads PDFs only
 
     /** A file this device reads into its own index. */
     private static readable(f: TAbstractFile | null): f is TFile {
@@ -296,7 +298,7 @@ export class ImageTextSearch {
     }
 
     /** The engine choice is offered only on Windows: macOS always uses Vision, Linux always the built-in OCR. */
-    static get canChooseEngine() { return Platform.isWin && Platform.isDesktopApp; }
+    static get canChooseEngine() { return Platform.isWin && Platform.isDesktop; }
 
     /** What ENGINE_KEY holds; null = never chosen on this device. */
     private get storedEngine(): OcrEngine | null {
