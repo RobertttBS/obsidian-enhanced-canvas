@@ -260,6 +260,7 @@ body {
 }
 
 /* Page preview from the image-text search modal: popovers sit below modals by default. */
-body:has(.ec-ocr-modal) .popover.hover-popover.ec-ocr-popover { /* beats Hover Editor's .popover.hover-editor.is-active */
+/* The modal removes ec-ocr-popover on close; `body` adds specificity to beat Hover Editor's .popover.hover-editor.is-active. */
+body .popover.hover-popover.ec-ocr-popover {
     z-index: calc(var(--layer-modal) + 1);
 }

@@ -269,7 +269,8 @@ safe.
   runs `undos` (restores `shouldShowSelf`, drops the class) so it holds no modal DOM;
   linktext is the file path (+ `#page=N` for a PDF). The setter tags each popover
   `ec-ocr-popover`; `styles.css` lifts only those above the modal (an already-pinned popover on
-  the workspace stays below it), gated by `body:has(.ec-ocr-modal)`.
+  the workspace stays below it); `onClose` dropping the class is the only gate (no `:has`,
+  which the review lint flags for performance).
   Setting `imageTextInCoreSearch` (on by default since 1.0.41; `loadSettings()` turns it on once for
   users with the old `false` saved, guarded by `coreSearchTurnedOn`; `setCoreSearch()` reruns
   open searches for it; the patcher reruns them once patched, since a search may run first): core Search reads only `.md`/`.canvas` content, so a lazy
