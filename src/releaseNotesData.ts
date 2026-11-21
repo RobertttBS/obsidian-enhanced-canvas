@@ -6,6 +6,7 @@ export const whatsNew = `
 - **Image and PDF results in Search**: core Search lists images and PDFs whose text matches, with a preview of each image. Type a word in Search to try it.
 - **Show only images and PDFs**: add \`-file:.md -file:.canvas\` to your search.
 - **Hide them**: Settings → Enhanced Canvas → turn off *Show image and PDF results in Search*.
+- **Page preview**: in *Search text in images and PDFs*, hover a result to preview the image or the matching PDF page. If Settings → Page preview → *Search* requires Cmd/Ctrl, hold that key while you hover.
 `;
 
 // Shown on first install and after every update. Add an entry when a feature ships.
@@ -38,6 +39,7 @@ Search words or a \`[[link]]\` across the Canvas: \`a b\` needs both words, \`a 
 ### Search text in images and PDFs
 Search the text inside every image (OCR) and PDF in your vault. *Find in canvas* also matches image and PDF cards.
 - **Where:** command *Search text in images and PDFs* or the ribbon icon.
+- **Preview:** hover a result to see the image or the matching PDF page (Settings → Page preview → *Search* sets whether Cmd/Ctrl is needed).
 - **Settings:** *Search text in images and PDFs* (on by default), *Show image and PDF results in Search* (on by default; adds them to core Search, turn it off to hide them), *OCR engine* (Windows; **Built-in** is the default).
 - **Windows, Linux:** click **Download** in the notice (60 MB, once).
 - **Locked PDFs:** click **Unlock…** in the notice after indexing, on each device.
